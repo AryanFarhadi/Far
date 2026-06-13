@@ -1501,6 +1501,19 @@ function resolveModulePath(qualifier, parsed, api) {
  * @param {string} modPath
  */
 function moduleFlatMethods(api, modPath) {
+  if (isGeomNamespaceModule(modPath)) {
+    const geomRec = getStdlibClassRecord(modPath);
+    if (geomRec?.members?.length) {
+      return geomRec.members
+        .filter((m) => m.kind === 'method' && m.signature?.startsWith('static '))
+        .map((m) => ({
+          name: m.name,
+          signature: m.signature,
+          detail: `${modPath}.${m.name}`,
+        }));
+    }
+  }
+
   const mod = api?.modules?.[modPath];
   if (mod?.symbols?.length) {
     if (isFunctionStdlibModule(modPath)) {
@@ -1536,8 +1549,15 @@ function visibleImportedTypeNames(parsed, api) {
     const mod = api.modules[imp.path];
     if (!mod || isFunctionStdlibModule(imp.path)) continue;
     for (const s of mod.symbols ?? []) {
-      if (s.name === imp.path) continue;
-      names.add(s.name);
+      if (s.name === imp.path || s.name === mod.id) continue;
+      if (s.signature?.startsWith('static ')) continue;
+      if (getStdlibClassRecord(s.name)) {
+        names.add(s.name);
+        continue;
+      }
+      if (s.signature === s.name || (s.signature && !s.signature.includes('('))) {
+        names.add(s.name);
+      }
     }
   }
   return names;
@@ -1605,23 +1625,65 @@ function moduleSymbols(api, modPath) {
   }));
 }
 
-function pushModuleDotCompletions(items, members, modLabel) {
+function groupMembersByName(members) {
+  /** @type {Map<string, typeof members>} */
+  const groups = new Map();
   for (const m of members) {
-    const kind = m.kind === 'class'
-      ? vscode.CompletionItemKind.Class
-      : vscode.CompletionItemKind.Method;
-    const item = new vscode.CompletionItem(m.name, kind);
-    item.detail = m.detail ?? `${modLabel}.${m.name}`;
-    if (m.signature) {
-      item.documentation = m.signature;
-      if (m.kind === 'method' || m.kind === 'class') {
-        item.insertText = m.signature.startsWith('static ')
-          ? snippetFromSignature(m.name, m.signature.replace(/^static\s+/, 'fun '))
-          : snippetFromSignature(m.name, m.signature);
-      }
+    if (!groups.has(m.name)) groups.set(m.name, []);
+    groups.get(m.name).push(m);
+  }
+  return groups;
+}
+
+function pushSingleMemberCompletion(items, m, modLabel) {
+  const kind = m.kind === 'class'
+    ? vscode.CompletionItemKind.Class
+    : vscode.CompletionItemKind.Method;
+  const item = new vscode.CompletionItem(m.name, kind);
+  item.detail = m.detail ?? `${modLabel}.${m.name}`;
+  if (m.signature) {
+    item.documentation = m.signature;
+    if (m.kind === 'method' || m.kind === 'class') {
+      item.insertText = m.signature.startsWith('static ')
+        ? snippetFromSignature(m.name, m.signature.replace(/^static\s+/, 'fun '))
+        : snippetFromSignature(m.name, m.signature);
     }
-    item.sortText = rankLabel(0, m.name);
-    items.push(item);
+  }
+  item.sortText = rankLabel(0, m.name);
+  if ((m.kind === 'method' || m.kind === 'class') && m.signature?.includes('(')) {
+    attachParameterHintsCommand(item);
+  }
+  items.push(item);
+}
+
+function pushGroupedMemberCompletion(items, name, overloads, modLabel) {
+  const primary = overloads[0];
+  const kind = primary.kind === 'class'
+    ? vscode.CompletionItemKind.Class
+    : vscode.CompletionItemKind.Method;
+  const item = new vscode.CompletionItem(`${name}()`, kind);
+  item.detail = `${modLabel}.${name} · ${overloads.length} overloads`;
+  const md = new vscode.MarkdownString(
+    'Choose overload after `(` — use ← → in the signature popup.',
+  );
+  for (const m of overloads) {
+    if (m.signature) md.appendCodeblock(m.signature, 'far');
+  }
+  item.documentation = md;
+  item.insertText = new vscode.SnippetString(`${name}($0)`);
+  item.filterText = name;
+  item.sortText = rankLabel(0, name);
+  attachParameterHintsCommand(item);
+  items.push(item);
+}
+
+function pushModuleDotCompletions(items, members, modLabel) {
+  for (const [name, overloads] of groupMembersByName(members)) {
+    if (overloads.length === 1) {
+      pushSingleMemberCompletion(items, overloads[0], modLabel);
+    } else {
+      pushGroupedMemberCompletion(items, name, overloads, modLabel);
+    }
   }
 }
 
@@ -1817,21 +1879,44 @@ function provideCompletions(doc, position, api, options) {
     // instance / class members (w.deposit, dvec2.distance, Wallet.new...)
     const typeForMembers = resolveInstanceTypeName(lastPart, parsed, position.line + 1, api);
     if (typeForMembers) {
-      for (const m of getTypeMembers(parsed, typeForMembers, api)) {
-        if (memberPrefix && !m.name.startsWith(memberPrefix)) continue;
-        const kind = m.kind === 'field' || m.kind === 'property'
-          ? vscode.CompletionItemKind.Field
-          : vscode.CompletionItemKind.Method;
-        const item = new vscode.CompletionItem(m.name, kind);
-        item.detail = `${typeForMembers}.${m.name} (${m.kind})`;
-        if (m.signature) item.documentation = m.doc ? `${m.signature}\n\n${m.doc}` : m.signature;
-        if (m.kind === 'method' || m.kind === 'constructor') {
-          item.insertText = m.signature
-            ? snippetFromSignature(m.name, m.signature)
-            : new vscode.SnippetString(`${m.name}($0)`);
+      const memberGroups = groupMembersByName(
+        getTypeMembers(parsed, typeForMembers, api).filter(
+          (m) => !memberPrefix || m.name.startsWith(memberPrefix),
+        ),
+      );
+      for (const [name, overloads] of memberGroups) {
+        if (overloads.length === 1) {
+          const m = overloads[0];
+          const kind = m.kind === 'field' || m.kind === 'property'
+            ? vscode.CompletionItemKind.Field
+            : vscode.CompletionItemKind.Method;
+          const item = new vscode.CompletionItem(m.name, kind);
+          item.detail = `${typeForMembers}.${m.name} (${m.kind})`;
+          if (m.signature) item.documentation = m.doc ? `${m.signature}\n\n${m.doc}` : m.signature;
+          if (m.kind === 'method' || m.kind === 'constructor') {
+            item.insertText = m.signature
+              ? snippetFromSignature(m.name, m.signature)
+              : new vscode.SnippetString(`${m.name}($0)`);
+            if (m.signature?.includes('(')) attachParameterHintsCommand(item);
+          }
+          item.sortText = rankLabel(0, m.name);
+          items.push(item);
+        } else {
+          const item = new vscode.CompletionItem(`${name}()`, vscode.CompletionItemKind.Method);
+          item.detail = `${typeForMembers}.${name} · ${overloads.length} overloads`;
+          const md = new vscode.MarkdownString(
+            'Choose overload after `(` — use ← → in the signature popup.',
+          );
+          for (const m of overloads) {
+            if (m.signature) md.appendCodeblock(m.signature, 'far');
+          }
+          item.documentation = md;
+          item.insertText = new vscode.SnippetString(`${name}($0)`);
+          item.filterText = name;
+          item.sortText = rankLabel(0, name);
+          attachParameterHintsCommand(item);
+          items.push(item);
         }
-        item.sortText = rankLabel(0, m.name);
-        items.push(item);
       }
       if (items.length) return new vscode.CompletionList(items, false);
     }
@@ -1956,7 +2041,7 @@ function provideCompletions(doc, position, api, options) {
 
     // Stdlib — lower priority; needs import on accept
     if (autoStdlib) {
-      const includeStdlib = !prefix || prefix.length >= stdlibMinPrefix;
+      const includeStdlib = prefix.length >= stdlibMinPrefix;
       if (includeStdlib) {
         for (const s of allStdlibCallables(api)) {
           if (consoleNames.has(s.name)) continue;
@@ -2034,6 +2119,123 @@ function provideCompletions(doc, position, api, options) {
 }
 
 /**
+ * @param {{ signature?: string, detail?: string, doc?: string, name?: string }[]} overloads
+ * @param {string} defaultName
+ */
+function makeSignatureInformations(overloads, defaultName) {
+  return overloads.map((b) => {
+    const raw = b.signature ?? '';
+    const sigLabel = raw
+      .replace(/^static\s+/, 'fun ')
+      .replace(/^fun\s+/, 'fun ')
+      .replace(/^def\s+/, 'fun ');
+    const display = sigLabel.includes('(') ? sigLabel : `${defaultName}()`;
+    const info = new vscode.SignatureInformation(display, b.detail ?? b.doc ?? defaultName);
+    info.parameters = parseParamsFromSignature(raw)
+      .map((p) => new vscode.ParameterInformation(p));
+    return info;
+  });
+}
+
+/**
+ * @param {{ signature?: string }[]} overloads
+ * @param {number} argc
+ */
+function pickActiveSignatureIndex(overloads, argc) {
+  if (overloads.length <= 1) return 0;
+  const idx = overloads.findIndex((b) => {
+    const params = parseParamsFromSignature(b.signature ?? '');
+    return argc <= params.length;
+  });
+  return idx >= 0 ? idx : overloads.length - 1;
+}
+
+/**
+ * Collect every overload signature for a call expression.
+ * @param {string} callName
+ * @param {ReturnType<typeof parseDocument>} parsed
+ * @param {object|null} api
+ */
+function collectCallOverloads(callName, parsed, api) {
+  const bare = callName.split('.').pop() ?? callName;
+  /** @type {{ signature: string, detail?: string, doc?: string }[]} */
+  const overloads = [];
+
+  if (!callName.includes('.')) {
+    const local = parsed.symbols.find((s) => s.name === bare && s.kind === 'function' && s.signature);
+    if (local?.signature) {
+      return { overloads: [{ signature: local.signature, detail: bare }], label: bare };
+    }
+  }
+
+  if (callName.includes('.')) {
+    const parts = callName.split('.');
+    const fname = parts.pop();
+    const modPath = resolveModulePath(parts.join('.'), parsed, api)
+      ?? resolveModulePath(parts[0], parsed, api);
+    if (modPath && fname) {
+      const methods = moduleFlatMethods(api, modPath).filter((s) => s.name === fname);
+      if (methods.length) {
+        for (const s of methods) {
+          overloads.push({ signature: s.signature, detail: s.detail ?? `${modPath}.${fname}` });
+        }
+        return { overloads, label: methods[0].detail ?? callName };
+      }
+
+      const mod = api?.modules?.[modPath];
+      const statics = mod?.symbols?.filter(
+        (s) => s.name === fname && s.signature?.startsWith('static '),
+      ) ?? [];
+      if (statics.length) {
+        for (const s of statics) {
+          overloads.push({ signature: s.signature, detail: s.detail ?? `${modPath}.${fname}` });
+        }
+        return { overloads, label: statics[0].detail ?? callName };
+      }
+
+      const sym = mod?.symbols?.find((s) => s.name === fname);
+      const rec = sym ? getStdlibClassRecord(fname) : null;
+      if (rec?.constructor?.signature) {
+        overloads.push({
+          signature: rec.constructor.signature,
+          detail: `${modPath}.${fname}`,
+          doc: rec.constructor.doc,
+        });
+        return { overloads, label: `${modPath}.${fname}` };
+      }
+    }
+  }
+
+  const ioNames = consoleBuiltinNames();
+  if (ioNames.has(bare)) {
+    const ios = getConsoleBuiltins().filter((b) => b.name === bare && b.signature);
+    if (ios.length) return { overloads: ios, label: bare };
+  }
+
+  const globals = getGlobalBuiltins(api).filter(
+    (b) => b.name === bare && b.signature && !ioNames.has(b.name),
+  );
+  if (globals.length) return { overloads: globals, label: bare };
+
+  const stdVisible = visibleStdlibSymbols(parsed, api);
+  const imported = stdVisible.get(bare);
+  if (imported?.signature) {
+    overloads.push({ signature: imported.signature, detail: imported.detail ?? bare });
+  }
+
+  if (api?.modules) {
+    for (const s of allStdlibCallables(api)) {
+      if (s.name !== bare || !s.signature) continue;
+      const key = `${s.modulePath}::${s.signature}`;
+      if (overloads.some((o) => `${s.modulePath}::${o.signature}` === key)) continue;
+      overloads.push({ signature: s.signature, detail: s.detail ?? bare });
+    }
+  }
+
+  return { overloads, label: callName };
+}
+
+/**
  * @param {vscode.TextDocument} doc
  * @param {vscode.Position} position
  * @param {object|null} api
@@ -2043,97 +2245,39 @@ function provideSignatureHelp(doc, position, api) {
   const offset = doc.offsetAt(position);
   const before = text.slice(0, offset);
 
-  // Find active call: foo(...|
   const callMatch = before.match(/([\w.]+)\s*\([^()]*$/);
   if (!callMatch) return null;
 
   const callName = callMatch[1];
   const parsed = parseDocument(text, api);
+  let { overloads, label } = collectCallOverloads(callName, parsed, api);
 
-  let signature = null;
-  let label = callName;
-
-  // Local function
-  const local = parsed.symbols.find((s) => s.name === callName.split('.').pop());
-  if (local?.signature) {
-    signature = local.signature;
-  }
-
-  // std.module.func, module alias (m.sqrt), or obj.method
-  if (!signature && callName.includes('.')) {
+  if (!overloads.length && callName.includes('.')) {
     const parts = callName.split('.');
     const fname = parts.pop();
-    const modPath = resolveModulePath(parts.join('.'), parsed, api)
-      ?? resolveModulePath(parts[0], parsed, api);
-    if (modPath) {
-      const sym = moduleFlatMethods(api, modPath).find((s) => s.name === fname)
-        ?? api?.modules?.[modPath]?.symbols?.find((s) => s.name === fname);
-      if (sym?.signature) {
-        signature = sym.signature;
-        label = sym.detail ?? callName;
-      }
-    }
-    if (!signature) {
-      const typeName = resolveInstanceTypeName(parts[parts.length - 1], parsed, position.line + 1, api);
-      if (typeName && fname) {
-        const member = getTypeMembers(parsed, typeName, api).find((m) => m.name === fname);
-        if (member?.signature) {
-          signature = member.signature;
-          label = `${typeName}.${fname}`;
-        }
+    const typeName = resolveInstanceTypeName(parts[parts.length - 1], parsed, position.line + 1, api);
+    if (typeName && fname) {
+      const members = getTypeMembers(parsed, typeName, api).filter((m) => m.name === fname && m.signature);
+      if (members.length) {
+        overloads = members.map((m) => ({
+          signature: m.signature,
+          detail: `${typeName}.${fname}`,
+          doc: m.doc,
+        }));
+        label = `${typeName}.${fname}`;
       }
     }
   }
 
-  // Imported / global builtins (incl. IO overloads inside parentheses)
-  if (!signature) {
-    const bare = callName.split('.').pop();
-    const ioNames = consoleBuiltinNames();
-    const overloads = ioNames.has(bare)
-      ? getConsoleBuiltins().filter((b) => b.name === bare && b.signature)
-      : getGlobalBuiltins(api).filter((b) => b.name === bare && b.signature && !ioNames.has(b.name));
-    if (overloads.length) {
-      const inner = before.slice(before.lastIndexOf('(') + 1);
-      const argc = inner.trim() === '' ? 0 : inner.split(',').length;
-      const sigs = overloads.map((b) => {
-        const sigLabel = b.signature.replace(/^fun\s+/, '').replace(/^def\s+/, 'fun ');
-        const sig = new vscode.SignatureInformation(sigLabel, b.detail ?? bare);
-        sig.parameters = parseParamsFromSignature(b.signature)
-          .map((p) => new vscode.ParameterInformation(p));
-        return sig;
-      });
-      let active = 0;
-      if (sigs.length > 1) {
-        active = sigs.findIndex((_, i) => {
-          const params = parseParamsFromSignature(overloads[i].signature);
-          return argc <= params.length;
-        });
-        if (active < 0) active = sigs.length - 1;
-      }
-      return new vscode.SignatureHelp(sigs, active);
-    }
+  if (!overloads.length) return null;
 
-    const stdVisible = visibleStdlibSymbols(parsed, api);
-    const sym = stdVisible.get(bare);
-    if (sym?.signature) signature = sym.signature;
-
-    if (!signature && api?.modules) {
-      for (const s of allStdlibCallables(api)) {
-        if (s.name === bare && s.signature) {
-          signature = s.signature;
-          label = s.detail ?? bare;
-          break;
-        }
-      }
-    }
-  }
-
-  if (!signature) return null;
-
-  const params = parseParamsFromSignature(signature);
-  const sig = new vscode.SignatureInformation(signature, label);
-  sig.parameters = params.map((p) => new vscode.ParameterInformation(p));
-  return new vscode.SignatureHelp([sig], 0);
+  const inner = before.slice(before.lastIndexOf('(') + 1);
+  const argc = inner.trim() === '' ? 0 : inner.split(',').length;
+  const sigs = makeSignatureInformations(overloads, callName.split('.').pop() ?? callName);
+  const active = pickActiveSignatureIndex(overloads, argc);
+  const help = new vscode.SignatureHelp(sigs, active);
+  help.activeParameter = Math.max(0, argc - 1);
+  return help;
 }
 
 function parseParamsFromSignature(sig) {

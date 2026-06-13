@@ -257,6 +257,8 @@ fun main() {
 const dvecParsed = intel.parseDocument(dvecSrc);
 console.log('\n=== vectors.distance ===');
 console.log('variables:', dvecParsed.variables.map((v) => `${v.name}:${v.type ?? '?'}`).join(', '));
+assert(!intel.visibleImportedTypeNames(dvecParsed, api).has('distance'), 'distance is not a type name');
+assert(intel.visibleImportedTypeNames(dvecParsed, api).has('dvec2'), 'dvec2 is a type after import vectors');
 assert(varType(dvecParsed, 'a') === 'dvec2', 'a:dvec2');
 assert(varType(dvecParsed, 'd') === 'f64', 'd:f64 for distance example');
 
@@ -286,8 +288,8 @@ const foreachParsed = intel.parseDocument(`fun main() {
   }
   return 0
 }`);
-assert(foreachParsed.variables.some((v) => v.name === 'ages' && v.type === 'i64[]'), 'array literal typed i64[]');
-assert(varType(foreachParsed, 'age') === 'i64', 'for-in loop variable typed from collection element');
+assert(foreachParsed.variables.some((v) => v.name === 'ages' && v.type === 'i32[]'), 'array literal typed i32[]');
+assert(varType(foreachParsed, 'age') === 'i32', 'for-in loop variable typed from collection element');
 
 assert(intel.inferCollectionElemType('i64[]') === 'i64', 'infer elem from i64[]');
 assert(intel.isCollectionTypeName('i64[]'), 'i64[] is collection type');
@@ -320,6 +322,24 @@ const whileLabels = completionLabels(`fun main() {
   while
 }`, 1, 7);
 assert(whileLabels.some((l) => l.includes('while (cond)')), 'while shows loop snippet');
+
+const vecMinDotDoc = makeMockDoc(['import vectors', '', 'fun main() {', '  vectors.', '  return 0', '}']);
+const vecMinDotList = intel.provideCompletions(vecMinDotDoc, new Position(3, 10), api);
+const vecMinItem = vecMinDotList.items.find((i) => {
+  const label = typeof i.label === 'string' ? i.label : i.label?.label ?? '';
+  return label === 'min()';
+});
+assert(vecMinItem, 'vectors. offers grouped min()');
+assert(vecMinItem.detail?.includes('overloads'), 'vectors.min detail shows overload count');
+
+const vecMinSigDoc = makeMockDoc(['import vectors', '', 'fun main() {', '  vectors.min(', '  return 0', '}']);
+const vecMinSig = intel.provideSignatureHelp(vecMinSigDoc, new Position(3, 14), api);
+assert((vecMinSig?.signatures?.length ?? 0) > 1, 'vectors.min( shows all overloads in signature help');
+
+const mathSigDoc = makeMockDoc(['import math as m', '', 'fun main() {', '  m.sqrt(', '  return 0', '}']);
+const mathSig = intel.provideSignatureHelp(mathSigDoc, new Position(3, 9), api);
+assert(mathSig?.signatures?.length === 1, 'm.sqrt( shows signature help');
+assert(mathSig.signatures[0].label.includes('sqrt'), 'sqrt signature label');
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);
