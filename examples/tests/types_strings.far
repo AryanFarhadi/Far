@@ -1,0 +1,18 @@
+# Strings with typed len and concat
+fun main() {
+  s = "hello"
+  t = "world"
+  print(len(s))
+  print(len(t))
+  print(s + "!")
+  print(s + t)
+  n = 5
+  print(len("12345"))
+  print(n + len(s))
+  if (len(s) == 5) {
+    print(1)
+  } else {
+    print(0)
+  }
+  return 0
+}

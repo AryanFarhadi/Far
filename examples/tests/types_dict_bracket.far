@@ -1,0 +1,10 @@
+fun main() {
+  d = { "aryan": 25 }
+  if (d["aryan"] != 25) { return 1 }
+  d["aryan"] = 23
+  if (d["aryan"] != 23) { return 2 }
+  d["bob"] = 30
+  if (d["bob"] != 30) { return 3 }
+  if (len(d) != 2) { return 4 }
+  return 0
+}

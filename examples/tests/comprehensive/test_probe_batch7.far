@@ -1,0 +1,80 @@
+# Probe batch 7 — deeper edge cases for string collections, float, nested mutate, pattern or
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(id: i64, r: i64) -> i64 { if (r != 0) { print(id); return id } return 0 }
+fun feq(a: f64, b: f64) -> i64 { if (a != b) { return 1 } return 0 }
+fun t01_list_str_concat_get() -> i64 {
+  lst: List<string> = List<string>()
+  k = "hel" + "lo"
+  lst.push(k)
+  if (lst.get(0) != "hello") { return 1 }
+  return 0
+}
+fun t02_queue_str_peek() -> i64 {
+  q: Queue<string> = Queue<string>()
+  q.enqueue("peek")
+  if (q.peek() != "peek") { return 1 }
+  if (q.dequeue() != "peek") { return 2 }
+  return eq(len(q), 0)
+}
+fun t03_dict_ss_overwrite() -> i64 {
+  d: Dict<string, string> = Dict<string, string>()
+  d.set("k", "v1")
+  d.set("k", "v2")
+  return eq(len(d), 1)
+}
+fun t04_float_div() -> i64 { return feq(7.0 / 2.0, 3.5) }
+fun t05_float_cmp_zero() -> i64 {
+  if (0.0 == 0.0) { return 0 }
+  return 1
+}
+struct Inner { n: i64 }
+struct Wrap { inner: Inner }
+fun t06_nested_mutate() -> i64 {
+  w = Wrap(Inner(1))
+  w.inner.n = 99
+  return eq(w.inner.n, 99)
+}
+fun t07_match_wildcard() -> i64 {
+  x = 99
+  v = 0
+  match x {
+    0 => v = 1
+    n => v = n
+  }
+  return eq(v, 99)
+}
+fun t08_llist_clear_via_pop() -> i64 {
+  ll: LinkedList<i64> = LinkedList<i64>()
+  ll.push_back(1)
+  ll.push_back(2)
+  ll.pop_front()
+  ll.pop_front()
+  return eq(len(ll), 0)
+}
+fun t09_set_str_readd() -> i64 {
+  s: Set<string> = Set<string>()
+  s.add("x")
+  s.remove("x")
+  s.add("x")
+  if (!s.contains("x")) { return 1 }
+  return eq(len(s), 1)
+}
+fun t10_range_empty() -> i64 {
+  rng = Range(5, 5, 1)
+  return eq(len(rng), 0)
+}
+fun main() {
+  r = 0
+  r = run(1, t01_list_str_concat_get()); if (r != 0) { return r }
+  r = run(2, t02_queue_str_peek()); if (r != 0) { return r }
+  r = run(3, t03_dict_ss_overwrite()); if (r != 0) { return r }
+  r = run(4, t04_float_div()); if (r != 0) { return r }
+  r = run(5, t05_float_cmp_zero()); if (r != 0) { return r }
+  r = run(6, t06_nested_mutate()); if (r != 0) { return r }
+  r = run(7, t07_match_wildcard()); if (r != 0) { return r }
+  r = run(8, t08_llist_clear_via_pop()); if (r != 0) { return r }
+  r = run(9, t09_set_str_readd()); if (r != 0) { return r }
+  r = run(10, t10_range_empty()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

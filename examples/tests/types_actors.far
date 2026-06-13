@@ -1,0 +1,31 @@
+# Actor model: spawn, ask, tell, stop
+actor Counter {
+  fun on_msg(msg: i64) -> i64 {
+    return msg + 1
+  }
+}
+fun eq(a: i64, b: i64) -> i64 {
+  if (a != b) { return 1 }
+  return 0
+}
+fun run(n: i64, r: i64) -> i64 {
+  if (r != 0) { print(n); return n }
+  return 0
+}
+fun t01_ask() -> i64 {
+  c = Counter()
+  return eq(c.ask(41), 42)
+}
+fun t02_tell_stop() -> i64 {
+  c = Counter()
+  c.tell(1)
+  c.stop()
+  return 0
+}
+fun main() {
+  r = 0
+  r = run(1, t01_ask()); if (r != 0) { return r }
+  r = run(2, t02_tell_stop()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

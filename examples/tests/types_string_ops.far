@@ -1,0 +1,42 @@
+# Strings: concat, len, interpolation, char, casts
+fun eq(a: i64, b: i64) -> i64 {
+  if (a != b) { return 1 }
+  return 0
+}
+fun run(n: i64, r: i64) -> i64 {
+  if (r != 0) { print(n); return n }
+  return 0
+}
+fun t01_concat_len() -> i64 {
+  s = "far" + "lang"
+  return eq(len(s), 7)
+}
+fun t02_interpolation() -> i64 {
+  n = 42
+  s = $"value={n}"
+  return eq(len(s), 8)
+}
+fun t03_char() -> i64 {
+  return eq(i64(char(65)), 65)
+}
+fun t04_parse_int() -> i64 {
+  return eq(int("123"), 123)
+}
+fun t05_neg_interp() -> i64 {
+  s = $"neg {~-5}"
+  return eq(len(s), 5)
+}
+fun t06_empty() -> i64 {
+  return eq(len(""), 0)
+}
+fun main() {
+  r = 0
+  r = run(1, t01_concat_len()); if (r != 0) { return r }
+  r = run(2, t02_interpolation()); if (r != 0) { return r }
+  r = run(3, t03_char()); if (r != 0) { return r }
+  r = run(4, t04_parse_int()); if (r != 0) { return r }
+  r = run(5, t05_neg_interp()); if (r != 0) { return r }
+  r = run(6, t06_empty()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

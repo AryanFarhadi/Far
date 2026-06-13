@@ -1,0 +1,20 @@
+# Arrays with typed elements and indexing
+fun main() {
+  a = [1, 2, 3, 4, 5]
+  print(len(a))
+  print(a[0])
+  print(a[4])
+  b = [u8(10), u8(20), u8(30)]
+  print(len(b))
+  print(b[1])
+  c = [i32(1), i32(2), i64(3)]
+  print(c[2])
+  i = 0
+  sum = 0
+  while (i < len(a)) {
+    sum = sum + a[i]
+    i = i + 1
+  }
+  print(sum)
+  return 0
+}

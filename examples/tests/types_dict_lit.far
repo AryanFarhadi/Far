@@ -1,0 +1,16 @@
+fun main() {
+  d = { "aryan": 25, "bob": 30 }
+  if (d["aryan"] != 25) { return 1 }
+  if (d["bob"] != 30) { return 2 }
+  d["aryan"] = 23
+  if (d["aryan"] != 23) { return 3 }
+  d["carol"] = 40
+  if (d["carol"] != 40) { return 4 }
+  if (len(d) != 3) { return 5 }
+  if (!d.contains_key("aryan")) { return 6 }
+  if (d.contains_key("missing")) { return 7 }
+
+  empty: Dict<string, i64> = {}
+  if (len(empty) != 0) { return 8 }
+  return 0
+}

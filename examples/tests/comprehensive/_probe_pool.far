@@ -1,0 +1,9 @@
+fun main() {
+  pool = Pool<i64>(2)
+  o1 = pool.acquire()
+  unsafe { *o1 = 99 }
+  pool.release(o1)
+  o2 = pool.acquire()
+  print(*o2)
+  return 0
+}

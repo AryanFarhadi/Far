@@ -1,0 +1,113 @@
+# Vector / point / rect type tests
+import points
+import rects
+import vectors
+fun vec2_ops() -> i32 {
+  a = dvec2(3.0, 4.0)
+  b = dvec2(1.0, 2.0)
+  c = a + b
+  if (c.x != 4.0) {
+    return 1
+  }
+  if (c.y != 6.0) {
+    return 2
+  }
+  if (vectors.dot(a, b) != 11.0) {
+    return 3
+  }
+  if (vectors.length(a) != 5.0) {
+    return 4
+  }
+  s = a * 2.0
+  if (s.x != 6.0) {
+    return 5
+  }
+  n = vectors.normalize(a)
+  if (vectors.length(n) < 0.99) {
+    return 6
+  }
+  return 0
+}
+fun vec3_ops() -> i32 {
+  x = dvec3(1.0, 0.0, 0.0)
+  y = dvec3(0.0, 1.0, 0.0)
+  z = vectors.cross(x, y)
+  if (z.z != 1.0) {
+    return 10
+  }
+  return 0
+}
+fun vec4_ops() -> i32 {
+  v = dvec4(1.0, 2.0, 3.0, 4.0)
+  if (v.w != 4.0) {
+    return 20
+  }
+  if (vectors.dot(v, dvec4(1.0, 1.0, 1.0, 1.0)) != 10.0) {
+    return 21
+  }
+  return 0
+}
+fun fvec_ops() -> i32 {
+  v = fvec2(3.0, 4.0)
+  if (vectors.length(v) < 4.9) {
+    return 30
+  }
+  return 0
+}
+fun point_rect_ops() -> i32 {
+  p = dpoint(5.0, 5.0)
+  q = dpoint(0.0, 0.0)
+  if (points.distance2(p, q) != 50.0) {
+    return 40
+  }
+  r = drect(0.0, 0.0, 10.0, 10.0)
+  if (rects.width(r) != 10.0) {
+    return 41
+  }
+  if (rects.height(r) != 10.0) {
+    return 42
+  }
+  if (!rects.contains(r, dpoint(5.0, 5.0))) {
+    return 43
+  }
+  if (rects.contains(r, dpoint(15.0, 5.0))) {
+    return 44
+  }
+  c = rects.center(r)
+  if (c.y != 5.0) {
+    return 45
+  }
+  return 0
+}
+fun main() {
+  r = vec2_ops()
+  if (r != 0) {
+    print(r)
+    return r
+  }
+  r = vec3_ops()
+  if (r != 0) {
+    print(r)
+    return r + 100
+  }
+  r = vec4_ops()
+  if (r != 0) {
+    print(r)
+    return r + 200
+  }
+  r = fvec_ops()
+  if (r != 0) {
+    print(r)
+    return r + 300
+  }
+  r = point_rect_ops()
+  if (r != 0) {
+    print(r)
+    return r + 400
+  }
+  a = dvec2(3.0, 4.0)
+  print(a + dvec2(1.0, 1.0))
+  print(vectors.length(a))
+  print(0)
+  return 0
+}

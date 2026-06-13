@@ -1,0 +1,68 @@
+# Comprehensive: integer/float arithmetic, assignment, increment
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(id: i64, r: i64) -> i64 { if (r != 0) { print(id); return id } return 0 }
+fun t01_add() -> i64 { return eq(0 + 0, 0) }
+fun t02_add_neg() -> i64 { return eq(-5 + 10, 5) }
+fun t03_sub() -> i64 { return eq(100 - 37, 63) }
+fun t04_mul() -> i64 { return eq(13 * 7, 91) }
+fun t05_div() -> i64 { return eq(84 / 4, 21) }
+fun t06_mod() -> i64 { return eq(29 % 6, 5) }
+fun t07_pow() -> i64 { return eq(3 ** 4, 81) }
+fun t08_pow_zero() -> i64 { return eq(99 ** 0, 1) }
+fun t09_floor_div_pos() -> i64 { return eq(17 // 5, 3) }
+fun t10_floor_div_neg() -> i64 { return eq(-17 // 5, -4) }
+fun t11_floor_div_neg2() -> i64 { return eq(17 // -5, -4) }
+fun t12_float_add() -> i64 { return eq(int(1.5 + 2.5), 4) }
+fun t13_float_mul() -> i64 { return eq(int(2.5 * 4.0), 10) }
+fun t14_mixed() -> i64 { return eq(3 + 4 * 2, 11) }
+fun t15_paren() -> i64 { return eq((3 + 4) * 2, 14) }
+fun t16_plus_eq() -> i64 { x = 10; x += 5; return eq(x, 15) }
+fun t17_minus_eq() -> i64 { x = 20; x -= 8; return eq(x, 12) }
+fun t18_mul_eq() -> i64 { x = 6; x *= 7; return eq(x, 42) }
+fun t19_div_eq() -> i64 { x = 100; x /= 4; return eq(x, 25) }
+fun t20_mod_eq() -> i64 { x = 29; x %= 6; return eq(x, 5) }
+fun t21_floor_div_eq() -> i64 { x = 17; x //= 5; return eq(x, 3) }
+fun t22_pow_eq() -> i64 { x = 2; x **= 8; return eq(x, 256) }
+fun t23_pre_inc() -> i64 { x = 9; x++; return eq(x, 10) }
+fun t24_post_dec() -> i64 { x = 9; x--; return eq(x, 8) }
+fun t25_chain() -> i64 { a = 1; b = 2; c = 3; return eq(a + b + c, 6) }
+fun t26_large() -> i64 { return eq(1000000 * 1000000 // 1000000, 1000000) }
+fun t27_unary_minus() -> i64 { return eq(-(-7), 7) }
+fun t28_bit_not_arith() -> i64 { return eq(~-1, 0) }
+fun t29_nested_assign() -> i64 { x = 1; x += 2; x *= 3; return eq(x, 9) }
+fun t30_div_remainder() -> i64 { return eq(100 % 7 + 100 // 7, 16) }
+fun main() {
+  r = 0
+  r = run(1, t01_add()); if (r != 0) { return r }
+  r = run(2, t02_add_neg()); if (r != 0) { return r }
+  r = run(3, t03_sub()); if (r != 0) { return r }
+  r = run(4, t04_mul()); if (r != 0) { return r }
+  r = run(5, t05_div()); if (r != 0) { return r }
+  r = run(6, t06_mod()); if (r != 0) { return r }
+  r = run(7, t07_pow()); if (r != 0) { return r }
+  r = run(8, t08_pow_zero()); if (r != 0) { return r }
+  r = run(9, t09_floor_div_pos()); if (r != 0) { return r }
+  r = run(10, t10_floor_div_neg()); if (r != 0) { return r }
+  r = run(11, t11_floor_div_neg2()); if (r != 0) { return r }
+  r = run(12, t12_float_add()); if (r != 0) { return r }
+  r = run(13, t13_float_mul()); if (r != 0) { return r }
+  r = run(14, t14_mixed()); if (r != 0) { return r }
+  r = run(15, t15_paren()); if (r != 0) { return r }
+  r = run(16, t16_plus_eq()); if (r != 0) { return r }
+  r = run(17, t17_minus_eq()); if (r != 0) { return r }
+  r = run(18, t18_mul_eq()); if (r != 0) { return r }
+  r = run(19, t19_div_eq()); if (r != 0) { return r }
+  r = run(20, t20_mod_eq()); if (r != 0) { return r }
+  r = run(21, t21_floor_div_eq()); if (r != 0) { return r }
+  r = run(22, t22_pow_eq()); if (r != 0) { return r }
+  r = run(23, t23_pre_inc()); if (r != 0) { return r }
+  r = run(24, t24_post_dec()); if (r != 0) { return r }
+  r = run(25, t25_chain()); if (r != 0) { return r }
+  r = run(26, t26_large()); if (r != 0) { return r }
+  r = run(27, t27_unary_minus()); if (r != 0) { return r }
+  r = run(28, t28_bit_not_arith()); if (r != 0) { return r }
+  r = run(29, t29_nested_assign()); if (r != 0) { return r }
+  r = run(30, t30_div_remainder()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

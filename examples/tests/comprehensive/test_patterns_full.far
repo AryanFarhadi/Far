@@ -1,0 +1,82 @@
+# Comprehensive: match, switch, destructuring, union-style patterns
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(id: i64, r: i64) -> i64 { if (r != 0) { print(id); return id } return 0 }
+enum Color { Red, Green, Blue }
+fun t01_match_int() -> i64 {
+  r = 0
+  match 7 {
+    7 => r = 70
+    _ => r = 0
+  }
+  return eq(r, 70)
+}
+fun t02_match_default() -> i64 {
+  r = 0
+  match 0 {
+    1 => r = 1
+    _ => r = 99
+  }
+  return eq(r, 99)
+}
+fun t03_switch_cases() -> i64 {
+  r = 0
+  switch 2 {
+    case 1: r = 10
+    case 2: r = 20
+    case 3: r = 30
+    default: r = 0
+  }
+  return eq(r, 20)
+}
+fun t04_switch_default() -> i64 {
+  r = 0
+  switch 99 {
+    case 1: r = 1
+    default: r = 55
+  }
+  return eq(r, 55)
+}
+fun t05_enum_match() -> i64 {
+  c = Color.Green
+  r = 0
+  match c {
+    Color.Red => r = 1
+    Color.Green => r = 2
+    Color.Blue => r = 3
+    _ => r = 0
+  }
+  return eq(r, 2)
+}
+fun t06_tuple_destructure() -> i64 {
+  t = (10, 20)
+  a = t.0
+  b = t.1
+  return eq(a + b, 30)
+}
+fun t07_nested_match() -> i64 {
+  r = 0
+  match 3 {
+    1 => r = 1
+    2 => r = 2
+    3 => {
+      match 1 {
+        1 => r = 31
+        _ => r = 0
+      }
+    }
+    _ => r = 0
+  }
+  return eq(r, 31)
+}
+fun main() {
+  r = 0
+  r = run(1, t01_match_int()); if (r != 0) { return r }
+  r = run(2, t02_match_default()); if (r != 0) { return r }
+  r = run(3, t03_switch_cases()); if (r != 0) { return r }
+  r = run(4, t04_switch_default()); if (r != 0) { return r }
+  r = run(5, t05_enum_match()); if (r != 0) { return r }
+  r = run(6, t06_tuple_destructure()); if (r != 0) { return r }
+  r = run(7, t07_nested_match()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

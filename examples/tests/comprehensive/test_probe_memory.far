@@ -1,0 +1,23 @@
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun t01_box_init_val() -> i64 {
+  b = Box<i64>(42)
+  return eq(*b.get(), 42)
+}
+fun t02_box_large_store() -> i64 {
+  b = Box<i64>(1)
+  bp = b.get()
+  unsafe { *bp = 999999 }
+  return eq(*bp, 999999)
+}
+fun t03_rc_init() -> i64 {
+  r = Rc<i64>(7)
+  return eq(*r.get(), 7)
+}
+fun main() {
+  r = 0
+  r = t01_box_init_val(); if (r != 0) { print(1); return r }
+  r = t02_box_large_store(); if (r != 0) { print(2); return r }
+  r = t03_rc_init(); if (r != 0) { print(3); return r }
+  print(0)
+  return 0
+}

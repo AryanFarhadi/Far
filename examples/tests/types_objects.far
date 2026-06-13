@@ -1,0 +1,74 @@
+# Object system: struct, class, record, interface, enum, flags, trait, mixin, extension, operators, properties, indexers, reflection, attributes
+import xml
+trait Printable {
+  fun tag(self) -> i64
+}
+interface Drawable {
+  fun draw(self) -> i64
+}
+@serializable
+struct Point with Printable implements Drawable {
+  x: i64
+  y: i64
+  fun tag(self) -> i64 {
+    return self.x + self.y
+  }
+  fun draw(self) -> i64 {
+    return self.x * self.y
+  }
+  operator +(other: Point) -> i64 {
+    return self.x + other.x + self.y + other.y
+  }
+}
+extension Point {
+  fun sum(self) -> i64 {
+    return self.x + self.y
+  }
+}
+record Pair(a: i64, b: i64)
+class Counter {
+  private count: i64
+  public prop value: i64 {
+    get { return count }
+    set(v) { count = v }
+  }
+  public fun inc() -> i64 {
+    count = count + 1
+    return count
+  }
+  public operator +(n: i64) -> i64 {
+    return count + n
+  }
+  public operator [](i: i64) -> i64 {
+    return count + i
+  }
+}
+enum Status { Idle, Running, Done }
+flags Perm { Read = 1, Write = 2, Execute = 4 }
+fun main() {
+  p = Point(3, 4)
+  print(p.x)
+  print(p.y)
+  print(p.tag())
+  print(p.draw())
+  print(p.sum())
+  print(p + Point(1, 1))
+  pr = Pair(10, 20)
+  print(pr.a)
+  print(pr.b)
+  c = Counter(5)
+  print(c.inc())
+  print(c.value)
+  c.value = 10
+  print(c.value)
+  print(c + 3)
+  print(c[2])
+  print(Status.Idle)
+  print(Status.Running)
+  print(Perm.Read)
+  print(Perm.Read | Perm.Write)
+  print(typeof(p))
+  print(reflect_kind(type_tag(p)))
+  print(reflect_fields(type_tag(p)))
+  return 0
+}

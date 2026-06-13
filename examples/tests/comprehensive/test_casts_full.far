@@ -1,0 +1,58 @@
+# Comprehensive: primitive casts, sizeof, type aliases, numeric conversions
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(id: i64, r: i64) -> i64 { if (r != 0) { print(id); return id } return 0 }
+fun t01_int_trunc() -> i64 { return eq(i64(int(3.9)), 3) }
+fun t02_int_neg() -> i64 { return eq(i64(int(-2.7)), -2) }
+fun t03_byte_wrap() -> i64 { return eq(i64(byte(300)), 44) }
+fun t04_short() -> i64 { return eq(i64(short(100) + int(23)), 123) }
+fun t05_long() -> i64 { return eq(i64(long(100) + int(23)), 123) }
+fun t06_ushort() -> i64 { return eq(i64(ushort(400) + uint(100)), 500) }
+fun t07_ulong() -> i64 { return eq(i64(ulong(999)), 999) }
+fun t08_sbyte() -> i64 { return eq(i64(sbyte(-1)), -1) }
+fun t09_float_cast() -> i64 { return eq(i64(int(float(3.7f))), 3) }
+fun t10_double_cast() -> i64 { return eq(i64(int(double(2.9))), 2) }
+fun t11_bool_true() -> i64 { return eq(i64(bool(1)), 1) }
+fun t12_bool_false() -> i64 { return eq(i64(bool(0)), 0) }
+fun t13_char() -> i64 { return eq(i64(char(90)), 90) }
+fun t14_i32_max() -> i64 { return eq(i64(i32.max), 2147483647) }
+fun t15_u32() -> i64 { return eq(i64(u32(4294967295)), 4294967295) }
+fun t16_u8_wrap() -> i64 { return eq(i64(u8(300)), 44) }
+fun t17_i8_wrap() -> i64 { return eq(i64(i8(-129)), 127) }
+fun t18_string_from_i64() -> i64 { return eq(int(string(42)), 42) }
+fun t19_string_from_neg() -> i64 { return eq(int(string(-99)), -99) }
+fun t20_parse_string() -> i64 { return eq(int("12345"), 12345) }
+fun t21_sizeof_i64() -> i64 { return eq(i64(sizeof(i64)), 8) }
+fun t22_sizeof_i32() -> i64 { return eq(i64(sizeof(i32)), 4) }
+fun t23_sizeof_f64() -> i64 { return eq(i64(sizeof(f64)), 8) }
+fun t24_sizeof_bool() -> i64 { return eq(i64(sizeof(bool)), 1) }
+fun t25_mixed_promote() -> i64 { return eq(i64(int(1 + 2.0)), 3) }
+fun main() {
+  r = 0
+  r = run(1, t01_int_trunc()); if (r != 0) { return r }
+  r = run(2, t02_int_neg()); if (r != 0) { return r }
+  r = run(3, t03_byte_wrap()); if (r != 0) { return r }
+  r = run(4, t04_short()); if (r != 0) { return r }
+  r = run(5, t05_long()); if (r != 0) { return r }
+  r = run(6, t06_ushort()); if (r != 0) { return r }
+  r = run(7, t07_ulong()); if (r != 0) { return r }
+  r = run(8, t08_sbyte()); if (r != 0) { return r }
+  r = run(9, t09_float_cast()); if (r != 0) { return r }
+  r = run(10, t10_double_cast()); if (r != 0) { return r }
+  r = run(11, t11_bool_true()); if (r != 0) { return r }
+  r = run(12, t12_bool_false()); if (r != 0) { return r }
+  r = run(13, t13_char()); if (r != 0) { return r }
+  r = run(14, t14_i32_max()); if (r != 0) { return r }
+  r = run(15, t15_u32()); if (r != 0) { return r }
+  r = run(16, t16_u8_wrap()); if (r != 0) { return r }
+  r = run(17, t17_i8_wrap()); if (r != 0) { return r }
+  r = run(18, t18_string_from_i64()); if (r != 0) { return r }
+  r = run(19, t19_string_from_neg()); if (r != 0) { return r }
+  r = run(20, t20_parse_string()); if (r != 0) { return r }
+  r = run(21, t21_sizeof_i64()); if (r != 0) { return r }
+  r = run(22, t22_sizeof_i32()); if (r != 0) { return r }
+  r = run(23, t23_sizeof_f64()); if (r != 0) { return r }
+  r = run(24, t24_sizeof_bool()); if (r != 0) { return r }
+  r = run(25, t25_mixed_promote()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

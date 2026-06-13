@@ -1,0 +1,19 @@
+# Regular / vs floor //
+fun main() {
+  print(10 / 3)
+  print(10 // 3)
+  print(-10 / 3)
+  print(-10 // 3)
+  print(7 // 3)
+  print(7 / 3)
+  print(0 // 5)
+  print(100 // 7)
+  print(i32(10.0 / 3.0))
+  print(i32(f64(10) / f64(3)))
+  a = 20
+  b = 6
+  print(a / b)
+  print(a // b)
+  print(a % b)
+  return 0
+}

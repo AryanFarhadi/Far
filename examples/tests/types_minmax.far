@@ -1,0 +1,27 @@
+# All type min/max constants — expect compile + run, no crash
+fun main() {
+  print(i8.min)
+  print(i8.max)
+  print(byte.min)
+  print(byte.max)
+  print(i16.min)
+  print(i16.max)
+  print(u16.min)
+  print(u16.max)
+  print(i32.min)
+  print(i32.max)
+  print(u32.min)
+  print(u32.max)
+  print(i64.min)
+  print(i64.max)
+  print(u64.min)
+  print(u64.max)
+  print(bool.min)
+  print(bool.max)
+  print(char.min)
+  print(char.max)
+  # float/double min/max are huge; just verify they compile
+  print(i32(f32.max))
+  print(i32(f64.max))
+  return 0
+}

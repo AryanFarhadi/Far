@@ -1,0 +1,6 @@
+[
+  { "name": "print", "signature": "fun print(value) -> void", "detail": "built-in", "doc": "Print a value to stdout. Always available — no import." },
+  { "name": "input", "signature": "fun input() -> string", "detail": "built-in", "doc": "Read a line from stdin. Always available — no import." },
+  { "name": "input", "signature": "fun input(msg: string) -> string", "detail": "built-in", "doc": "Read a line with prompt. Always available — no import." },
+  { "name": "len", "signature": "fun len(x) -> i64", "detail": "built-in", "doc": "Length of string or collection." }
+]

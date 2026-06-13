@@ -1,0 +1,59 @@
+# Concurrency: threads, thread pool, tasks, async/await, channels, mutex, semaphore,
+# atomic types, lock-free queue, parallel loops, actor model
+import perf
+fun add_one(x) {
+  return x + 1
+}
+fun pfor_worker(i) {
+  return i
+}
+actor Echo {
+  fun on_msg(msg) -> i64 {
+    return msg
+  }
+}
+fun main() {
+  # Threads — spawn / join
+  h = spawn add_one(41)
+  print(threads.join(h))
+  # Task wrapper + await
+  t = task add_one(9)
+  print(t.await())
+  # Thread pool
+  pool = ThreadPool(2)
+  w = spawn add_one(100)
+  print(threads.join(w))
+  pool.shutdown()
+  # Channel
+  ch = Channel<i64>(4)
+  ch.send(7)
+  print(ch.recv())
+  ch.close()
+  # Mutex
+  mu = Mutex()
+  mu.lock()
+  mu.unlock()
+  # Semaphore
+  sem = Semaphore(1)
+  sem.wait()
+  sem.signal()
+  # Atomic
+  at = Atomic<i64>(0)
+  at.store(5)
+  print(at.load())
+  print(at.fetch_add(3))
+  # Lock-free queue
+  q = LockFreeQueue<i64>(8)
+  q.push(11)
+  print(q.pop())
+  # Parallel loop
+  parallel for i in 0..4 {
+    pfor_worker(i)
+  }
+  # Actor model
+  e = Echo()
+  print(e.ask(42))
+  e.tell(1)
+  e.stop()
+  return 0
+}

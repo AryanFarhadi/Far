@@ -1,0 +1,17 @@
+# Modules: package layout under examples/modules/ (import wiring in progress)
+# Verifies module source files parse and local defs compile.
+package examples.tests
+module types_modules
+fun local_add(a: i64, b: i64) -> i64 {
+  return a + b
+}
+fun eq(a: i64, b: i64) -> i64 {
+  if (a != b) { return 1 }
+  return 0
+}
+fun main() {
+  if (eq(local_add(10, 5), 15) != 0) { return 1 }
+  if (eq(local_add(1, 2), 3) != 0) { return 2 }
+  print(0)
+  return 0
+}

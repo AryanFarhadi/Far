@@ -1,0 +1,12 @@
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(id: i64, r: i64) -> i64 { if (r != 0) { print(id); return id } return 0 }
+fun t07_str_plus_eq() -> i64 {
+  s = "a"
+  s += "b"
+  if (s != "ab") { return 1 }
+  return 0
+}
+fun main() {
+  print(run(7, t07_str_plus_eq()))
+  return 0
+}

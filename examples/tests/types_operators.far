@@ -1,0 +1,61 @@
+# Operators: arithmetic, assign, compare, logic, bitwise, null, range, pipeline, membership
+fun dbl(x: i64) -> i64 { return x * 2 }
+fun main() {
+  a = 10
+  b = 3
+  print(a + b)
+  print(a - b)
+  print(a * b)
+  print(a / b)
+  print(a % b)
+  print(a ** 2)
+  print(a // b)
+  a += 5
+  a -= 2
+  a *= 2
+  a //= 2
+  print(a)
+  i = 0
+  i++
+  print(i)
+  i--
+  print(i)
+  print(a == 19)
+  print(a != 0)
+  print(a < 100)
+  print(a > 0)
+  print(a <= 19)
+  print(a >= 19)
+  print(a === 19)
+  print(a !== 0)
+  print(true && bool(1))
+  print(false || bool(1))
+  print(!false)
+  print(5 & 3)
+  print(5 | 2)
+  print(5 ^ 1)
+  print(~0)
+  print(8 << 2)
+  print(8 >> 1)
+  x = 0
+  y = x ?? 42
+  print(y)
+  z = 0
+  z ??= 99
+  print(z)
+  r = 5 > 3 ? 100 : 200
+  print(r)
+  arr = [1, 2, 3]
+  print(2 in arr)
+  print(9 not in arr)
+  total = 0
+  for n in 0..5 {
+    total = total + n
+  }
+  print(total)
+  print(1 |> dbl)
+  print(1 |> dbl |> dbl)
+  print(typeof(42))
+  print(sizeof(i64))
+  return 0
+}

@@ -1,0 +1,123 @@
+# Probe batch 4 — LinkedList, Range, memory, string +=, nested struct
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(id: i64, r: i64) -> i64 { if (r != 0) { print(id); return id } return 0 }
+# --- LinkedList ---
+fun t01_llist_fifo() -> i64 {
+  ll: LinkedList<i64> = LinkedList<i64>()
+  ll.push_back(1)
+  ll.push_back(2)
+  ll.push_back(3)
+  if (ll.pop_front() != 1) { return 1 }
+  if (ll.pop_front() != 2) { return 2 }
+  return eq(ll.pop_front(), 3)
+}
+fun t02_llist_lifo_back() -> i64 {
+  ll: LinkedList<i64> = LinkedList<i64>()
+  ll.push_back(10)
+  ll.push_back(20)
+  if (ll.pop_back() != 20) { return 1 }
+  return eq(ll.pop_back(), 10)
+}
+fun t03_llist_len() -> i64 {
+  ll: LinkedList<i64> = LinkedList<i64>()
+  ll.push_front(1)
+  ll.push_back(2)
+  return eq(len(ll), 2)
+}
+# --- Range ---
+fun t04_range_len_step() -> i64 {
+  rng = Range(0, 6, 2)
+  return eq(len(rng), 3)
+}
+fun t05_range_contains() -> i64 {
+  rng = Range(0, 6, 2)
+  if (!rng.contains(4)) { return 1 }
+  if (rng.contains(3)) { return 2 }
+  return 0
+}
+fun t06_range_for_sum() -> i64 {
+  sum = 0
+  for i in 0..3 {
+    sum = sum + i
+  }
+  return eq(sum, 3)
+}
+# --- string += ---
+fun t07_str_plus_eq() -> i64 {
+  s = "a"
+  s += "b"
+  if (s != "ab") { return 1 }
+  return 0
+}
+# --- memory ---
+fun t08_box_deref() -> i64 {
+  b = Box<i64>(8)
+  bp = b.get()
+  unsafe { *bp = 77 }
+  return eq(*bp, 77)
+}
+fun t09_rc_clone() -> i64 {
+  r = Rc<i64>(8)
+  rp = r.get()
+  unsafe { *rp = 5 }
+  r2 = r.clone()
+  return eq(*r2.get(), 5)
+}
+fun t10_arena_reset() -> i64 {
+  a = Arena(256)
+  p1 = a.alloc(8)
+  unsafe { *p1 = 11 }
+  a.reset()
+  p2 = a.alloc(8)
+  unsafe { *p2 = 22 }
+  return eq(*p2, 22)
+}
+fun t11_pool_reuse() -> i64 {
+  pool = Pool<i64>(2)
+  o1 = pool.acquire()
+  unsafe { *o1 = 99 }
+  pool.release(o1)
+  o2 = pool.acquire()
+  return eq(*o2, 99)
+}
+# --- nested struct ---
+struct Inner { v: i64 }
+struct Outer { inner: Inner }
+fun t12_nested_field() -> i64 {
+  o = Outer(Inner(42))
+  return eq(o.inner.v, 42)
+}
+# --- queue/stack peek ---
+fun t13_queue_peek() -> i64 {
+  q: Queue<i64> = Queue<i64>()
+  q.enqueue(5)
+  q.enqueue(6)
+  if (q.peek() != 5) { return 1 }
+  return eq(q.dequeue(), 5)
+}
+fun t14_stack_peek() -> i64 {
+  st: Stack<i64> = Stack<i64>()
+  st.push(7)
+  st.push(8)
+  if (st.peek() != 8) { return 1 }
+  return eq(st.pop(), 8)
+}
+fun main() {
+  r = 0
+  r = run(1, t01_llist_fifo()); if (r != 0) { return r }
+  r = run(2, t02_llist_lifo_back()); if (r != 0) { return r }
+  r = run(3, t03_llist_len()); if (r != 0) { return r }
+  r = run(4, t04_range_len_step()); if (r != 0) { return r }
+  r = run(5, t05_range_contains()); if (r != 0) { return r }
+  r = run(6, t06_range_for_sum()); if (r != 0) { return r }
+  r = run(7, t07_str_plus_eq()); if (r != 0) { return r }
+  r = run(8, t08_box_deref()); if (r != 0) { return r }
+  r = run(9, t09_rc_clone()); if (r != 0) { return r }
+  r = run(10, t10_arena_reset()); if (r != 0) { return r }
+  r = run(11, t11_pool_reuse()); if (r != 0) { return r }
+  r = run(12, t12_nested_field()); if (r != 0) { return r }
+  r = run(13, t13_queue_peek()); if (r != 0) { return r }
+  r = run(14, t14_stack_peek()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

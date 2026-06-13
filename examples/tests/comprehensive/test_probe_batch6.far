@@ -1,0 +1,100 @@
+# Probe batch 6 — Mutex/Channel, List<string>, float edge, comptime, actors, nested struct
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(id: i64, r: i64) -> i64 { if (r != 0) { print(id); return id } return 0 }
+fun feq(a: f64, b: f64) -> i64 { if (a != b) { return 1 } return 0 }
+constexpr WIDTH = 4
+constexpr fun dbl(x: i64) -> i64 { return x * 2 }
+# --- Mutex ---
+fun t01_mutex_roundtrip() -> i64 {
+  mu = Mutex()
+  mu.lock()
+  mu.unlock()
+  return 0
+}
+# --- Channel send/recv ---
+fun t02_channel_fifo() -> i64 {
+  ch = Channel<i64>(4)
+  ch.send(10)
+  ch.send(20)
+  if (ch.recv() != 10) { return 1 }
+  return eq(ch.recv(), 20)
+}
+# --- List<string> ---
+fun t03_list_string() -> i64 {
+  lst: List<string> = List<string>()
+  lst.push("a")
+  lst.push("b")
+  if (lst.get(0) != "a") { return 1 }
+  return eq(len(lst), 2)
+}
+# --- float edge ---
+fun t04_float_div() -> i64 { return feq(7.0 / 2.0, 3.5) }
+fun t05_float_cmp() -> i64 {
+  if (1.5 < 2.0) { return 0 }
+  return 1
+}
+# --- comptime ---
+fun t06_comptime_const() -> i64 {
+  return eq(comptime dbl(WIDTH), 8)
+}
+# --- nested struct (3 levels) ---
+struct L3 { v: i64 }
+struct L2 { inner: L3 }
+struct L1 { inner: L2 }
+fun t07_nested3() -> i64 {
+  o = L1(L2(L3(99)))
+  return eq(o.inner.inner.v, 99)
+}
+# --- LinkedList push_front ---
+fun t08_llist_push_front() -> i64 {
+  ll: LinkedList<i64> = LinkedList<i64>()
+  ll.push_front(2)
+  ll.push_front(1)
+  if (ll.pop_front() != 1) { return 1 }
+  return eq(ll.pop_front(), 2)
+}
+# --- Range step values ---
+fun t09_range_step_len() -> i64 {
+  rng = Range(0, 10, 2)
+  return eq(len(rng), 5)
+}
+# --- Box + Rc ---
+fun t10_rc_shared() -> i64 {
+  r = Rc<i64>(4)
+  p = r.get()
+  unsafe { *p = 12 }
+  r2 = r.clone()
+  return eq(*r2.get(), 12)
+}
+# --- Atomic ---
+fun t11_atomic_fetch() -> i64 {
+  at = Atomic<i64>(1)
+  return eq(at.fetch_add(4), 1)
+}
+# --- actors ---
+actor Echo {
+  fun on_msg(msg: i64) -> i64 {
+    return msg + 1
+  }
+}
+fun t12_actor_ask() -> i64 {
+  e = Echo()
+  return eq(e.ask(6), 7)
+}
+fun main() {
+  r = 0
+  r = run(1, t01_mutex_roundtrip()); if (r != 0) { return r }
+  r = run(2, t02_channel_fifo()); if (r != 0) { return r }
+  r = run(3, t03_list_string()); if (r != 0) { return r }
+  r = run(4, t04_float_div()); if (r != 0) { return r }
+  r = run(5, t05_float_cmp()); if (r != 0) { return r }
+  r = run(6, t06_comptime_const()); if (r != 0) { return r }
+  r = run(7, t07_nested3()); if (r != 0) { return r }
+  r = run(8, t08_llist_push_front()); if (r != 0) { return r }
+  r = run(9, t09_range_step_len()); if (r != 0) { return r }
+  r = run(10, t10_rc_shared()); if (r != 0) { return r }
+  r = run(11, t11_atomic_fetch()); if (r != 0) { return r }
+  r = run(12, t12_actor_ask()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

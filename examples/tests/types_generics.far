@@ -1,0 +1,56 @@
+# Generics: generic types and functions (working subset)
+struct Pair<T, U> {
+  a: T
+  b: U
+}
+struct Cell<T> {
+  value: T
+}
+fun pair_first<T, U>(p: Pair<T, U>) -> T {
+  return p.a
+}
+fun pair_second<T, U>(p: Pair<T, U>) -> U {
+  return p.b
+}
+fun id<T>(x: T) -> T {
+  return x
+}
+fun cell_get_i64(c: Cell<i64>) -> i64 {
+  return c.value
+}
+fun eq(a: i64, b: i64) -> i64 {
+  if (a != b) { return 1 }
+  return 0
+}
+fun run(n: i64, r: i64) -> i64 {
+  if (r != 0) { print(n); return n }
+  return 0
+}
+fun t01_explicit_type_args() -> i64 {
+  p = Pair<i64, i64>(10, 20)
+  return eq(pair_first(p), 10)
+}
+fun t02_inferred_pair() -> i64 {
+  p = Pair(1, 2)
+  return eq(pair_first(p) + pair_second(p), 3)
+}
+fun t03_id_monomorph() -> i64 {
+  return eq(id(5), 5)
+}
+fun t04_id_explicit() -> i64 {
+  return eq(id<i64>(99), 99)
+}
+fun t05_cell_concrete() -> i64 {
+  c = Cell<i64>(77)
+  return eq(cell_get_i64(c), 77)
+}
+fun main() {
+  r = 0
+  r = run(1, t01_explicit_type_args()); if (r != 0) { return r }
+  r = run(2, t02_inferred_pair()); if (r != 0) { return r }
+  r = run(3, t03_id_monomorph()); if (r != 0) { return r }
+  r = run(4, t04_id_explicit()); if (r != 0) { return r }
+  r = run(5, t05_cell_concrete()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

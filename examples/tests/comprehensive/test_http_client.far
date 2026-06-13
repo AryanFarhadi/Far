@@ -1,0 +1,66 @@
+# OOP HTTP client (not procedural requests-style calls)
+import network
+import io
+import perf
+fun HTTP_PORT() -> i64 { return 37660 }
+fun http_server_once(port: i64) -> i64 {
+  srv = tcp.listen_on(port)
+  if (srv < 0) { return 1 }
+  conn = tcp.accept_client(srv)
+  if (conn < 0) {
+    tcp.close_conn(srv)
+    return 2
+  }
+  req = tcp.read(conn, 8192)
+  if (len(req) < 4) {
+    tcp.close_conn(conn)
+    tcp.close_conn(srv)
+    return 3
+  }
+  body = "ok"
+  resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n" + body
+  tcp.write(conn, resp)
+  tcp.close_conn(conn)
+  tcp.close_conn(srv)
+  return 0
+}
+fun t01_client_get() -> i64 {
+  port = HTTP_PORT()
+  h = spawn http_server_once(port)
+  base = "http://127.0.0.1:" + string(port)
+  cli = HttpClient(base)
+  body = cli.get("/")
+  threads.join(h)
+  if (body != "ok") { return 1 }
+  return 0
+}
+fun t02_client_post() -> i64 {
+  port = HTTP_PORT() + 1
+  h = spawn http_server_once(port)
+  base = "http://127.0.0.1:" + string(port)
+  cli = HttpClient(base)
+  body = cli.post("/api", "payload")
+  threads.join(h)
+  if (body != "ok") { return 2 }
+  return 0
+}
+fun t03_import_module() -> i64 {
+  port = HTTP_PORT() + 2
+  h = spawn http_server_once(port)
+  base = "http://127.0.0.1:" + string(port)
+  c = HttpClient(base)
+  body = c.get("/health")
+  threads.join(h)
+  if (body != "ok") { return 3 }
+  return 0
+}
+fun main() {
+  r = t01_client_get()
+  if (r != 0) { print(r); return r }
+  r = t02_client_post()
+  if (r != 0) { print(r); return r }
+  r = t03_import_module()
+  if (r != 0) { print(r); return r }
+  print(0)
+  return 0
+}

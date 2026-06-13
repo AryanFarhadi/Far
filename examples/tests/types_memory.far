@@ -1,0 +1,66 @@
+# Memory management: stack, heap, RAII, move, borrow, references, smart pointers, arena, pool, unsafe
+fun main() {
+  # Stack allocation
+  p = stackalloc<i64>(4)
+  unsafe {
+    *p = 42
+  }
+  print(*p)
+  # Heap allocation (manual, unsafe)
+  raw = alloc(32)
+  unsafe {
+    free(raw)
+  }
+  # Box<T> — unique ownership + defer (RAII)
+  b = Box<i64>(8)
+  bp = b.get()
+  unsafe {
+    *bp = 99
+  }
+  print(*bp)
+  defer drop(b)
+  # Rc<T> — reference counted + auto-drop at scope end — reference counted shared ownership (auto-drop at scope end)
+  r = Rc<i64>(8)
+  rp = r.get()
+  unsafe {
+    *rp = 7
+  }
+  r2 = r.clone()
+  print(*r.get())
+  print(*r2.get())
+  # Move semantics — transfer box payload
+  b2 = Box<i64>(8)
+  bp2 = b2.get()
+  unsafe {
+    *bp2 = 3
+  }
+  moved = move(b2)
+  unsafe {
+    *moved = 3
+    print(*moved)
+    free(moved)
+  }
+  # Borrowing + references
+  x = 10
+  br = borrow(x)
+  print(*br)
+  addr = &x
+  print(*addr)
+  # Arena allocator
+  a = Arena(512)
+  block = a.alloc(64)
+  unsafe {
+    *block = 55
+  }
+  print(*block)
+  a.reset()
+  # Object pool
+  pool = Pool<i64>(4)
+  obj = pool.acquire()
+  unsafe {
+    *obj = 88
+  }
+  print(*obj)
+  pool.release(obj)
+  return 0
+}

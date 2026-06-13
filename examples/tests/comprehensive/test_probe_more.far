@@ -1,0 +1,127 @@
+# Probe batch 2 — hunt for compiler/runtime bugs
+import crypto
+import json
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(id: i64, r: i64) -> i64 { if (r != 0) { print(id); return id } return 0 }
+# --- strings ---
+fun t01_str_strict_eq() -> i64 {
+  a = "hi" + "!"
+  if (a === "hi!") { return 0 }
+  return 1
+}
+fun t02_str_in_if() -> i64 {
+  s = "yes"
+  if (s == "yes") { return 0 }
+  return 1
+}
+fun t03_stringify_eq() -> i64 {
+  if (string(99) == "99") { return 0 }
+  return 1
+}
+# --- dict/set edge ---
+fun t04_dict_overwrite() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d.set(1, 10)
+  d.set(1, 20)
+  return eq(d.get(1), 20)
+}
+fun t05_dict_remove_readd() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d.set(5, 1)
+  d.remove(5)
+  d.set(5, 2)
+  return eq(d.get(5), 2)
+}
+fun t06_set_remove_readd() -> i64 {
+  s: Set<i64> = Set<i64>()
+  s.add(7)
+  s.remove(7)
+  s.add(7)
+  if (!s.contains(7)) { return 1 }
+  return eq(len(s), 1)
+}
+# --- list ---
+fun t07_list_get_set() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(10)
+  lst.push(20)
+  lst.set(0, 99)
+  return eq(lst.get(0), 99)
+}
+fun t08_list_slice() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  lst.push(2)
+  lst.push(3)
+  sl = lst.slice(1, 3)
+  return eq(len(sl), 2)
+}
+fun t08b_list_insert_remove() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  lst.push(3)
+  lst.insert(1, 2)
+  if (lst.get(1) != 2) { return 1 }
+  lst.remove(0)
+  return eq(len(lst), 2)
+}
+# --- numeric edge ---
+fun t09_neg_zero_div() -> i64 { return eq(-10 // 3, -4) }
+fun t10_large_pow() -> i64 { return eq(2 ** 20, 1048576) }
+fun t11_float_eq() -> i64 {
+  if (3.0 == 3.0) { return 0 }
+  return 1
+}
+# --- vectors ---
+fun t12_dvec2_sub() -> i64 {
+  a = dvec2(5.0, 5.0) - dvec2(2.0, 1.0)
+  if (a.x != 3.0) { return 1 }
+  return 0
+}
+fun t13_ivec2_mul_scalar() -> i64 {
+  v = ivec2(2, 3) * 3
+  return eq(v.x, 6)
+}
+# --- option/result ---
+fun t14_result_err() -> i64 {
+  r = Err(42)
+  return eq(r.unwrap_or(0), 0)
+}
+fun t15_option_is_some() -> i64 {
+  x = Some(5)
+  return eq(x.unwrap(), 5)
+}
+# --- crypto/stdlib ---
+fun t16_xor_content() -> i64 {
+  enc = crypto.xor_encrypt("data", "key")
+  dec = crypto.xor_decrypt(enc, "key")
+  if (dec == "data") { return 0 }
+  return 1
+}
+fun t17_json_content() -> i64 {
+  if (json.stringify_i64(42) == "42") { return 0 }
+  return 1
+}
+fun main() {
+  r = 0
+  r = run(1, t01_str_strict_eq()); if (r != 0) { return r }
+  r = run(2, t02_str_in_if()); if (r != 0) { return r }
+  r = run(3, t03_stringify_eq()); if (r != 0) { return r }
+  r = run(4, t04_dict_overwrite()); if (r != 0) { return r }
+  r = run(5, t05_dict_remove_readd()); if (r != 0) { return r }
+  r = run(6, t06_set_remove_readd()); if (r != 0) { return r }
+  r = run(7, t07_list_get_set()); if (r != 0) { return r }
+  r = run(8, t08_list_slice()); if (r != 0) { return r }
+  r = run(81, t08b_list_insert_remove()); if (r != 0) { return r }
+  r = run(9, t09_neg_zero_div()); if (r != 0) { return r }
+  r = run(10, t10_large_pow()); if (r != 0) { return r }
+  r = run(11, t11_float_eq()); if (r != 0) { return r }
+  r = run(12, t12_dvec2_sub()); if (r != 0) { return r }
+  r = run(13, t13_ivec2_mul_scalar()); if (r != 0) { return r }
+  r = run(14, t14_result_err()); if (r != 0) { return r }
+  r = run(15, t15_option_is_some()); if (r != 0) { return r }
+  r = run(16, t16_xor_content()); if (r != 0) { return r }
+  r = run(17, t17_json_content()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

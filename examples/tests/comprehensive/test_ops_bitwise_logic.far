@@ -1,0 +1,58 @@
+# Comprehensive: bitwise, logical, comparison operators
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(id: i64, r: i64) -> i64 { if (r != 0) { print(id); return id } return 0 }
+fun t01_and() -> i64 { return eq(5 & 3, 1) }
+fun t02_or() -> i64 { return eq(5 | 2, 7) }
+fun t03_xor() -> i64 { return eq(5 ^ 1, 4) }
+fun t04_not() -> i64 { return eq(~-1, 0) }
+fun t05_shl() -> i64 { return eq(1 << 10, 1024) }
+fun t06_shr() -> i64 { return eq(1024 >> 10, 1) }
+fun t07_and_eq() -> i64 { x = 15; x &= 7; return eq(x, 7) }
+fun t08_or_eq() -> i64 { x = 8; x |= 3; return eq(x, 11) }
+fun t09_xor_eq() -> i64 { x = 12; x ^= 5; return eq(x, 9) }
+fun t10_eq() -> i64 { return eq(i64(5 == 5), 1) }
+fun t11_ne() -> i64 { return eq(i64(5 != 3), 1) }
+fun t12_lt() -> i64 { return eq(i64(3 < 5), 1) }
+fun t13_gt() -> i64 { return eq(i64(5 > 3), 1) }
+fun t14_le() -> i64 { return eq(i64(5 <= 5), 1) }
+fun t15_ge() -> i64 { return eq(i64(5 >= 4), 1) }
+fun t16_strict_eq() -> i64 { return eq(i64(7 === 7), 1) }
+fun t17_strict_ne() -> i64 { return eq(i64(7 !== 8), 1) }
+fun t18_and_logic() -> i64 { return eq(i64(true && true), 1) }
+fun t19_and_false() -> i64 { return eq(i64(true && false), 0) }
+fun t20_or_logic() -> i64 { return eq(i64(false || true), 1) }
+fun t21_not_logic() -> i64 { return eq(i64(!false), 1) }
+fun t22_not_true() -> i64 { return eq(i64(!true), 0) }
+fun t23_chain_cmp() -> i64 { return eq(i64(1 < 2 && 2 < 3), 1) }
+fun t24_float_cmp() -> i64 { return eq(i64(1.5 < 2.5), 1) }
+fun t25_zero_cmp() -> i64 { return eq(i64(0 == 0), 1) }
+fun main() {
+  r = 0
+  r = run(1, t01_and()); if (r != 0) { return r }
+  r = run(2, t02_or()); if (r != 0) { return r }
+  r = run(3, t03_xor()); if (r != 0) { return r }
+  r = run(4, t04_not()); if (r != 0) { return r }
+  r = run(5, t05_shl()); if (r != 0) { return r }
+  r = run(6, t06_shr()); if (r != 0) { return r }
+  r = run(7, t07_and_eq()); if (r != 0) { return r }
+  r = run(8, t08_or_eq()); if (r != 0) { return r }
+  r = run(9, t09_xor_eq()); if (r != 0) { return r }
+  r = run(10, t10_eq()); if (r != 0) { return r }
+  r = run(11, t11_ne()); if (r != 0) { return r }
+  r = run(12, t12_lt()); if (r != 0) { return r }
+  r = run(13, t13_gt()); if (r != 0) { return r }
+  r = run(14, t14_le()); if (r != 0) { return r }
+  r = run(15, t15_ge()); if (r != 0) { return r }
+  r = run(16, t16_strict_eq()); if (r != 0) { return r }
+  r = run(17, t17_strict_ne()); if (r != 0) { return r }
+  r = run(18, t18_and_logic()); if (r != 0) { return r }
+  r = run(19, t19_and_false()); if (r != 0) { return r }
+  r = run(20, t20_or_logic()); if (r != 0) { return r }
+  r = run(21, t21_not_logic()); if (r != 0) { return r }
+  r = run(22, t22_not_true()); if (r != 0) { return r }
+  r = run(23, t23_chain_cmp()); if (r != 0) { return r }
+  r = run(24, t24_float_cmp()); if (r != 0) { return r }
+  r = run(25, t25_zero_cmp()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

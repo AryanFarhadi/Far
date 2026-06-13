@@ -1,0 +1,63 @@
+# Function features: defaults, named args, overloads, lambdas, HOF, async, generators, generics, closures
+fun greet(name: string, msg = "hello") {
+  print(msg)
+  return len(name)
+}
+fun add_i(a: i64, b: i64) -> i64 {
+  return a + b
+}
+fun add_f(a: f64, b: f64) -> f64 {
+  return a + b
+}
+fun sum_all(...nums) {
+  total = 0
+  for i in 0..len(nums) {
+    total = total + nums[i]
+  }
+  return total
+}
+fun apply(f: fn(i64) -> i64, x: i64) -> i64 {
+  return f(x)
+}
+fun identity<T>(x: T) -> T {
+  return x
+}
+fun make_adder(n: i64) -> fn(i64) -> i64 {
+  return |x| x + n
+}
+fun maybe_add(a: i64, b?: i64) -> i64 {
+  return a + b
+}
+async fun compute() {
+  return 42
+}
+coroutine fun counter() {
+  yield 1
+  yield 2
+  yield 3
+}
+fun main() {
+  print(greet("Far"))
+  print(greet(name = "Bob", msg = "hi"))
+  print(add_i(1, 2))
+  print(add_i(b = 5, a = 10))
+  d = add_f(1.5, 2.5)
+  print(d)
+  print(sum_all(1, 2, 3, 4))
+  double = |x| x * 2
+  print(double(21))
+  inc = fn(n) { return n + 1 }
+  print(apply(inc, 5))
+  print(identity(99))
+  print(identity<i64>(100))
+  add3 = make_adder(3)
+  print(add3(7))
+  print(maybe_add(10, 0))
+  print(maybe_add(10, 5))
+  h = compute()
+  r = await h
+  print(r)
+  g = counter()
+  print(g)
+  return 0
+}

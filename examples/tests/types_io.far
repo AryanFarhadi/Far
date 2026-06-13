@@ -1,0 +1,39 @@
+# Console I/O: input, output, terminal via std.console and std.io.*
+import fs
+import io
+fun test_output() -> i64 {
+  if (console.write("a") != 0) { return 1 }
+  if (console.writeln("b") != 0) { return 2 }
+  if (console.flush_out() != 0) { return 3 }
+  if (console.write("c") != 0) { return 4 }
+  if (console.writeln("d") != 0) { return 5 }
+  if (console.flush_err() != 0) { return 6 }
+  return 0
+}
+fun test_terminal() -> i64 {
+  tty = console.is_tty()
+  if (tty != 0) {
+    if (tty != 1) { return 10 }
+  }
+  c = console.columns()
+  if (c < 40) { return 11 }
+  if (console.clear() != 0) { return 12 }
+  if (terminal.clear_screen() != 0) { return 13 }
+  if (console.beep() != 0) { return 14 }
+  return 0
+}
+fun test_input_nonblocking() -> i64 {
+  if (console.has_input() != 0) {
+    if (console.has_input() != 1) { return 20 }
+  }
+  return 0
+}
+fun main() -> i64 {
+  r = test_output()
+  if (r != 0) { return r }
+  r = test_terminal()
+  if (r != 0) { return r }
+  r = test_input_nonblocking()
+  if (r != 0) { return r }
+  return 0
+}

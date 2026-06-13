@@ -1,0 +1,120 @@
+# Comprehensive: if/else, while, for, match, switch, break/continue
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(id: i64, r: i64) -> i64 { if (r != 0) { print(id); return id } return 0 }
+fun t01_if_true() -> i64 {
+  r = 0
+  if (1) { r = 1 } else { r = 2 }
+  return eq(r, 1)
+}
+fun t02_if_false() -> i64 {
+  r = 0
+  if (0) { r = 1 } else { r = 2 }
+  return eq(r, 2)
+}
+fun t03_if_else_if() -> i64 {
+  r = 0
+  if (0) { r = 1 }
+  else if (1) { r = 2 }
+  else { r = 3 }
+  return eq(r, 2)
+}
+fun t04_nested_if() -> i64 {
+  r = 0
+  if (1) { if (1) { r = 5 } }
+  return eq(r, 5)
+}
+fun t05_while() -> i64 {
+  i = 0
+  while (i < 5) { i = i + 1 }
+  return eq(i, 5)
+}
+fun t06_while_zero() -> i64 {
+  i = 0
+  while (0) { i = i + 1 }
+  return eq(i, 0)
+}
+fun t07_for_range() -> i64 {
+  total = 0
+  for i in 0..5 { total = total + i }
+  return eq(total, 10)
+}
+fun t08_for_nested() -> i64 {
+  n = 0
+  for i in 0..3 {
+    for j in 0..3 { n = n + 1 }
+  }
+  return eq(n, 9)
+}
+fun t09_match() -> i64 {
+  r = 0
+  match 2 {
+    1 => r = 1
+    2 => r = 2
+    _ => r = 9
+  }
+  return eq(r, 2)
+}
+fun t10_match_default() -> i64 {
+  r = 0
+  match 99 {
+    1 => r = 1
+    _ => r = 7
+  }
+  return eq(r, 7)
+}
+fun t11_switch() -> i64 {
+  r = 0
+  switch 3 {
+    case 3: r = 30
+    default: r = 0
+  }
+  return eq(r, 30)
+}
+fun t12_switch_default() -> i64 {
+  r = 0
+  switch 99 {
+    case 1: r = 1
+    default: r = 42
+  }
+  return eq(r, 42)
+}
+fun t13_break() -> i64 {
+  i = 0
+  while (1) {
+    i = i + 1
+    if (i == 3) { break }
+  }
+  return eq(i, 3)
+}
+fun t14_continue() -> i64 {
+  s = 0
+  for i in 0..10 {
+    if (i % 2 == 0) { continue }
+    s = s + i
+  }
+  return eq(s, 25)
+}
+fun t15_ternary() -> i64 {
+  x = 1 ? 10 : 20
+  return eq(x, 10)
+}
+fun main() {
+  r = 0
+  r = run(1, t01_if_true()); if (r != 0) { return r }
+  r = run(2, t02_if_false()); if (r != 0) { return r }
+  r = run(3, t03_if_else_if()); if (r != 0) { return r }
+  r = run(4, t04_nested_if()); if (r != 0) { return r }
+  r = run(5, t05_while()); if (r != 0) { return r }
+  r = run(6, t06_while_zero()); if (r != 0) { return r }
+  r = run(7, t07_for_range()); if (r != 0) { return r }
+  r = run(8, t08_for_nested()); if (r != 0) { return r }
+  r = run(9, t09_match()); if (r != 0) { return r }
+  r = run(10, t10_match_default()); if (r != 0) { return r }
+  r = run(11, t11_switch()); if (r != 0) { return r }
+  r = run(12, t12_switch_default()); if (r != 0) { return r }
+  r = run(13, t13_break()); if (r != 0) { return r }
+  r = run(14, t14_continue()); if (r != 0) { return r }
+  r = run(15, t15_ternary()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

@@ -1,0 +1,12 @@
+# Float/double min/max constants and casts
+fun main() {
+  print(i32(f32.max))
+  print(i32(f64.max))
+  print(i32(f32.min))
+  print(i32(f64.min))
+  print(f32(1.0))
+  print(f64(2.0))
+  print(f32.max > f32.min)
+  print(f64.max > f64.min)
+  return 0
+}

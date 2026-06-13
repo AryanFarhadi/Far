@@ -1,0 +1,27 @@
+fun eq(a: i64, b: i64) -> i64 {
+  if (a == b) { return 0 }
+  return 1
+}
+
+fun run(id: i64, r: i64) -> i64 {
+  if (r != 0) { print(id); return id }
+  return 0
+}
+
+fun t01_array_foreach() -> i64 {
+  total = 0
+  ages = [10, 20, 30, 40, 50]
+  for age in ages {
+    total = total + age
+  }
+  return eq(total, 150)
+}
+
+fun main() {
+  r = run(1, t01_array_foreach()); if (r != 0) { return r }
+  ages = [10, 20, 30]
+  for age in ages {
+    print(age)
+  }
+  return 0
+}

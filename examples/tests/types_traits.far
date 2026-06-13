@@ -1,0 +1,50 @@
+# Traits, interfaces, implements, extensions
+import xml
+trait Tagged {
+  fun tag() -> i64
+}
+interface Scorable {
+  fun score() -> i64
+}
+struct Item with Tagged implements Scorable {
+  v: i64
+  fun tag() -> i64 {
+    return v + 1
+  }
+  fun score() -> i64 {
+    return v * 10
+  }
+}
+extension Item {
+  fun doubled(self) -> i64 {
+    return self.v * 2
+  }
+}
+fun eq(a: i64, b: i64) -> i64 {
+  if (a != b) { return 1 }
+  return 0
+}
+fun run(n: i64, r: i64) -> i64 {
+  if (r != 0) { print(n); return n }
+  return 0
+}
+fun t01_trait_method() -> i64 {
+  it = Item(5)
+  return eq(it.tag(), 6)
+}
+fun t02_interface_method() -> i64 {
+  it = Item(4)
+  return eq(it.score(), 40)
+}
+fun t03_extension() -> i64 {
+  it = Item(7)
+  return eq(it.doubled(), 14)
+}
+fun main() {
+  r = 0
+  r = run(1, t01_trait_method()); if (r != 0) { return r }
+  r = run(2, t02_interface_method()); if (r != 0) { return r }
+  r = run(3, t03_extension()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

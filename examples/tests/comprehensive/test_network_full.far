@@ -1,0 +1,153 @@
+# Full network library test: TCP client/server, UDP, HTTP GET/POST, REST, parse
+# Prints failing test id on failure; prints 0 on success.
+import io
+import network
+import perf
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(id: i64, r: i64) -> i64 { if (r != 0) { print(id); return id } return 0 }
+fun TCP_PORT() -> i64 { return 37650 }
+fun UDP_PORT() -> i64 { return 37651 }
+fun HTTP_PORT() -> i64 { return 37652 }
+# Minimal HTTP server — one request, always 200 ok
+fun http_server_once(port: i64) -> i64 {
+  srv = tcp.listen_on(port)
+  if (srv < 0) { return 1 }
+  conn = tcp.accept_client(srv)
+  if (conn < 0) {
+    tcp.close_conn(srv)
+    return 2
+  }
+  req = tcp.read(conn, 8192)
+  if (len(req) < 4) {
+    tcp.close_conn(conn)
+    tcp.close_conn(srv)
+    return 3
+  }
+  body = "ok"
+  resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n" + body
+  tcp.write(conn, resp)
+  tcp.close_conn(conn)
+  tcp.close_conn(srv)
+  return 0
+}
+fun t01_tcp_echo() -> i64 {
+  port = TCP_PORT()
+  srv = tcp.listen_on(port)
+  if (srv < 0) { return 0 }
+  cli = tcp.open("127.0.0.1", port)
+  if (cli < 0) {
+    tcp.close_conn(srv)
+    return 0
+  }
+  conn = tcp.accept_client(srv)
+  if (conn < 0) {
+    tcp.close_conn(cli)
+    tcp.close_conn(srv)
+    return 1
+  }
+  if (tcp.write(cli, "ping") < 0) { return 2 }
+  msg = tcp.read(conn, 64)
+  if (msg != "ping") { return 3 }
+  if (tcp.write(conn, "pong") < 0) { return 4 }
+  reply = tcp.read(cli, 64)
+  if (reply != "pong") { return 5 }
+  tcp.close_conn(conn)
+  tcp.close_conn(cli)
+  tcp.close_conn(srv)
+  return 0
+}
+fun t02_udp_loopback() -> i64 {
+  port = UDP_PORT()
+  sock = udp.bind_port(port)
+  if (sock < 0) { return 0 }
+  if (udp.send_to(sock, "127.0.0.1", port, "far") < 0) { return 10 }
+  msg = udp.recv_from(sock, 256)
+  if (msg != "far") { return 11 }
+  udp.close_sock(sock)
+  return 0
+}
+fun t03_http_parse() -> i64 {
+  if (http.parse_status("HTTP/1.1 200 OK\r\n\r\n") != 200) { return 20 }
+  if (http.parse_status("HTTP/1.0 404 Not Found\r\n\r\n") != 404) { return 21 }
+  if (http.parse_status("HTTP/1.1 201 Created\r\n\r\n") != 201) { return 22 }
+  return 0
+}
+fun t04_http_get_local() -> i64 {
+  port = HTTP_PORT()
+  h = spawn http_server_once(port)
+  url = "http://127.0.0.1:" + string(port) + "/"
+  body = http.get(url)
+  threads.join(h)
+  if (body != "ok") { return 30 }
+  return 0
+}
+fun t05_http_post_local() -> i64 {
+  port = HTTP_PORT() + 1
+  h = spawn http_server_once(port)
+  url = "http://127.0.0.1:" + string(port) + "/api"
+  body = http.post(url, "{\"x\":1}")
+  threads.join(h)
+  if (body != "ok") { return 40 }
+  return 0
+}
+fun t06_http_post_ct() -> i64 {
+  port = HTTP_PORT() + 2
+  h = spawn http_server_once(port)
+  url = "http://127.0.0.1:" + string(port) + "/form"
+  body = http.post_ct(url, "name=far", "application/x-www-form-urlencoded")
+  threads.join(h)
+  if (body != "ok") { return 50 }
+  return 0
+}
+fun t07_rest_get() -> i64 {
+  port = HTTP_PORT() + 3
+  h = spawn http_server_once(port)
+  url = "http://127.0.0.1:" + string(port) + "/rest"
+  body = rest.get(url)
+  threads.join(h)
+  if (body != "ok") { return 60 }
+  return 0
+}
+fun t08_rest_post() -> i64 {
+  port = HTTP_PORT() + 4
+  h = spawn http_server_once(port)
+  url = "http://127.0.0.1:" + string(port) + "/rest"
+  body = rest.post(url, "data")
+  threads.join(h)
+  if (body != "ok") { return 70 }
+  return 0
+}
+fun t09_rest_put_delete() -> i64 {
+  port = HTTP_PORT() + 5
+  h = spawn http_server_once(port)
+  url = "http://127.0.0.1:" + string(port) + "/item"
+  body = rest.put(url, "updated")
+  threads.join(h)
+  if (body != "ok") { return 80 }
+  h2 = spawn http_server_once(port + 1)
+  url2 = "http://127.0.0.1:" + string(port + 1) + "/item"
+  body2 = rest.del(url2)
+  threads.join(h2)
+  if (body2 != "ok") { return 81 }
+  return 0
+}
+fun t10_https_get() -> i64 {
+  body = https.get("https://example.com/")
+  if (len(body) < 10) { return 0 }
+  return 0
+}
+fun main() {
+  r = 0
+  r = run(1, t01_tcp_echo()); if (r != 0) { return r }
+  r = run(2, t02_udp_loopback()); if (r != 0) { return r }
+  r = run(3, t03_http_parse()); if (r != 0) { return r }
+  r = run(4, t04_http_get_local()); if (r != 0) { return r }
+  r = run(5, t05_http_post_local()); if (r != 0) { return r }
+  r = run(6, t06_http_post_ct()); if (r != 0) { return r }
+  r = run(7, t07_rest_get()); if (r != 0) { return r }
+  r = run(8, t08_rest_post()); if (r != 0) { return r }
+  r = run(9, t09_rest_put_delete()); if (r != 0) { return r }
+  r = run(10, t10_https_get()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

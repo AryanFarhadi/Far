@@ -1,0 +1,28 @@
+# Built-in console I/O without imports (Python-style globals)
+import io
+import json
+fun test_print() -> i64 {
+  print(0)
+  return 0
+}
+fun test_write() -> i64 {
+  if (console.write("x") != 0) { return 2 }
+  if (console.writeln("y") != 0) { return 3 }
+  if (console.flush_out() != 0) { return 4 }
+  return 0
+}
+fun test_stringify() -> i64 {
+  if (len(json.stringify_i64(12345)) != 5) { return 5 }
+  if (int(json.stringify_i64(99)) != 99) { return 6 }
+  return 0
+}
+fun main() -> i64 {
+  r = test_print()
+  if (r != 0) { print(r); return r }
+  r = test_write()
+  if (r != 0) { print(r); return r }
+  r = test_stringify()
+  if (r != 0) { print(r); return r }
+  print(0)
+  return 0
+}

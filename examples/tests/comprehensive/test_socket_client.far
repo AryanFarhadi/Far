@@ -1,0 +1,82 @@
+# OOP TCP/UDP clients (Python socket library style)
+import io
+import network
+import perf
+fun TCP_PORT() -> i64 { return 37670 }
+fun UDP_PORT() -> i64 { return 37671 }
+fun tcp_echo_server(port: i64) -> i64 {
+  srv = tcp.listen_on(port)
+  if (srv < 0) { return 1 }
+  conn = tcp.accept_client(srv)
+  if (conn < 0) {
+    tcp.close_conn(srv)
+    return 2
+  }
+  msg = tcp.read(conn, 64)
+  if (msg != "ping") {
+    tcp.close_conn(conn)
+    tcp.close_conn(srv)
+    return 3
+  }
+  tcp.write(conn, "pong")
+  tcp.close_conn(conn)
+  tcp.close_conn(srv)
+  return 0
+}
+fun t01_tcp_connect_send_recv() -> i64 {
+  port = TCP_PORT()
+  h = spawn tcp_echo_server(port)
+  cli = TcpClient()
+  if (cli.connect("127.0.0.1", port) < 0) { return 1 }
+  if (cli.send("ping") < 0) { return 2 }
+  reply = cli.recv(64)
+  cli.close()
+  threads.join(h)
+  if (reply != "pong") { return 3 }
+  return 0
+}
+fun t02_tcp_open_helper() -> i64 {
+  port = TCP_PORT() + 1
+  h = spawn tcp_echo_server(port)
+  cli = client.tcp_open("127.0.0.1", port)
+  if (cli.sendall("ping") < 0) { return 11 }
+  reply = cli.recv(64)
+  cli.close()
+  threads.join(h)
+  if (reply != "pong") { return 12 }
+  return 0
+}
+fun t03_udp_sendto_recvfrom() -> i64 {
+  port = UDP_PORT()
+  srv = UdpClient()
+  if (srv.bind(port) < 0) { return 20 }
+  cli = UdpClient()
+  if (cli.sendto("127.0.0.1", port, "far") < 0) { return 21 }
+  msg = srv.recvfrom(256)
+  cli.close()
+  srv.close()
+  if (msg != "far") { return 22 }
+  return 0
+}
+fun t04_udp_client_loopback() -> i64 {
+  port = UDP_PORT() + 1
+  sock = UdpClient()
+  if (sock.bind(port) < 0) { return 30 }
+  if (sock.sendto("127.0.0.1", port, "udp") < 0) { return 31 }
+  msg = sock.recvfrom(256)
+  sock.close()
+  if (msg != "udp") { return 32 }
+  return 0
+}
+fun main() {
+  r = t01_tcp_connect_send_recv()
+  if (r != 0) { print(r); return r }
+  r = t02_tcp_open_helper()
+  if (r != 0) { print(r); return r }
+  r = t03_udp_sendto_recvfrom()
+  if (r != 0) { print(r); return r }
+  r = t04_udp_client_loopback()
+  if (r != 0) { print(r); return r }
+  print(0)
+  return 0
+}

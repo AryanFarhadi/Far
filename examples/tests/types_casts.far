@@ -1,0 +1,36 @@
+# Integer cast chain and truncation
+fun narrow_u8(x: i32) -> u8 {
+  return u8(x)
+}
+fun widen_i32(x: u8) -> i32 {
+  return i32(x)
+}
+fun to_i8(x: i32) -> i8 {
+  return i8(x)
+}
+fun main() {
+  print(narrow_u8(0))
+  print(narrow_u8(255))
+  print(narrow_u8(256))
+  print(narrow_u8(300))
+  print(narrow_u8(-1))
+  print(widen_i32(u8(42)))
+  print(to_i8(127))
+  print(to_i8(128))
+  print(to_i8(-128))
+  print(to_i8(-129))
+  print(i16(32767))
+  print(i16(-32768))
+  print(u16(65535))
+  print(u32(4294967295))
+  print(bool(0))
+  print(bool(1))
+  print(bool(99))
+  print(i32(true))
+  print(i32(false))
+  print(char(65))
+  print(char(0))
+  print(i32(char(255)))
+  print(u8(i32(i64(1000))))
+  return 0
+}

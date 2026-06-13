@@ -1,0 +1,80 @@
+# Probe batch 5 — generics edge, patterns, float, result ok/err val, list slice typed
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(id: i64, r: i64) -> i64 { if (r != 0) { print(id); return id } return 0 }
+fun feq(a: f64, b: f64) -> i64 { if (a != b) { return 1 } return 0 }
+# --- Result ok/err value extractors ---
+fun t01_result_ok_val() -> i64 {
+  r: Result<i64, i64> = Ok(77)
+  return eq(r.ok(), 77)
+}
+fun t02_result_err_val() -> i64 {
+  r: Result<i64, i64> = Err(88)
+  return eq(r.err(), 88)
+}
+# --- float edge ---
+fun t03_float_neg() -> i64 { return feq(-1.5, -1.5) }
+fun t04_neg_float() -> i64 { return feq(-0.0, 0.0) }
+# --- list slice returns slice with len ---
+fun t05_list_slice_content() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(10)
+  lst.push(20)
+  lst.push(30)
+  sl = lst.slice(0, 2)
+  return eq(len(sl), 2)
+}
+# --- dict keys after remove ---
+fun t06_dict_keys_after_remove() -> i64 {
+  d: Dict<string, i64> = Dict<string, i64>()
+  d.set("a", 1)
+  d.set("b", 2)
+  d.remove("a")
+  keys = d.keys()
+  return eq(len(keys), 1)
+}
+# --- set string remove ---
+fun t07_set_str_remove() -> i64 {
+  s: Set<string> = Set<string>()
+  s.add("x")
+  s.add("y")
+  s.remove("x")
+  if (s.contains("x")) { return 1 }
+  return eq(len(s), 1)
+}
+# --- queue len after dequeue ---
+fun t08_queue_len() -> i64 {
+  q: Queue<i64> = Queue<i64>()
+  q.enqueue(1)
+  q.enqueue(2)
+  q.dequeue()
+  return eq(len(q), 1)
+}
+# --- nested dict ---
+fun t09_dict_nested_int() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d.set(1, 100)
+  d.set(2, 200)
+  if (d.get(1) + d.get(2) != 300) { return 1 }
+  return 0
+}
+# --- bitwise compound ---
+fun t10_shl_eq() -> i64 {
+  x = 1
+  x <<= 4
+  return eq(x, 16)
+}
+fun main() {
+  r = 0
+  r = run(1, t01_result_ok_val()); if (r != 0) { return r }
+  r = run(2, t02_result_err_val()); if (r != 0) { return r }
+  r = run(3, t03_float_neg()); if (r != 0) { return r }
+  r = run(4, t04_neg_float()); if (r != 0) { return r }
+  r = run(5, t05_list_slice_content()); if (r != 0) { return r }
+  r = run(6, t06_dict_keys_after_remove()); if (r != 0) { return r }
+  r = run(7, t07_set_str_remove()); if (r != 0) { return r }
+  r = run(8, t08_queue_len()); if (r != 0) { return r }
+  r = run(9, t09_dict_nested_int()); if (r != 0) { return r }
+  r = run(10, t10_shl_eq()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

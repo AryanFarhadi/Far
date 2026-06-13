@@ -1,0 +1,5 @@
+fun main() {
+  r = Ok(77)
+  print(r.ok())
+  return 0
+}

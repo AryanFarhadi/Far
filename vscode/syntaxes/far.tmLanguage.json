@@ -1,0 +1,387 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Far",
+  "scopeName": "source.far",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#attributes" },
+    { "include": "#imports" },
+    { "include": "#declarations" },
+    { "include": "#keywords" },
+    { "include": "#aggregate-constructors" },
+    { "include": "#types" },
+    { "include": "#numbers" },
+    { "include": "#operators" },
+    { "include": "#slice-and-index" },
+    { "include": "#punctuation" },
+    { "include": "#member-access" },
+    { "include": "#function-calls" },
+    { "include": "#variables" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.far",
+          "match": "#.*$"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.interpolated.far",
+          "begin": "\\$\"",
+          "end": "\"",
+          "patterns": [
+            { "name": "constant.character.escape.far", "match": "\\\\." },
+            {
+              "name": "meta.embedded.expression.far",
+              "contentName": "meta.embedded.line.far",
+              "begin": "\\{",
+              "end": "\\}",
+              "patterns": [
+                { "include": "$self" }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.double.far",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            { "name": "constant.character.escape.far", "match": "\\\\." }
+          ]
+        },
+        {
+          "name": "string.quoted.single.far",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            { "name": "constant.character.escape.far", "match": "\\\\." }
+          ]
+        }
+      ]
+    },
+    "attributes": {
+      "patterns": [
+        {
+          "name": "meta.attribute.far",
+          "match": "@([a-zA-Z_]\\w*)",
+          "captures": {
+            "1": { "name": "entity.other.attribute-name.far" }
+          }
+        }
+      ]
+    },
+    "imports": {
+      "patterns": [
+        {
+          "name": "meta.import.far",
+          "begin": "\\b(import|export|package|module)\\b",
+          "beginCaptures": {
+            "1": { "name": "keyword.control.import.far" }
+          },
+          "end": "$",
+          "patterns": [
+            {
+              "name": "entity.name.namespace.far",
+              "match": "[a-zA-Z_][\\w.]*"
+            },
+            {
+              "begin": "\\{",
+              "end": "\\}",
+              "beginCaptures": {
+                "0": { "name": "punctuation.definition.block.begin.far" }
+              },
+              "endCaptures": {
+                "0": { "name": "punctuation.definition.block.end.far" }
+              },
+              "patterns": [
+                {
+                  "name": "variable.other.import.far",
+                  "match": "\\b[a-zA-Z_]\\w*\\b"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "declarations": {
+      "patterns": [
+        {
+          "match": "\\b(async|coroutine|generator)\\s+(fun)\\s+(\\w+)",
+          "captures": {
+            "1": { "name": "keyword.declaration.far" },
+            "2": { "name": "keyword.declaration.far" },
+            "3": { "name": "entity.name.function.far" }
+          }
+        },
+        {
+          "match": "\\b(fun|fn)\\s+(\\w+)",
+          "captures": {
+            "1": { "name": "keyword.declaration.far" },
+            "2": { "name": "entity.name.function.far" }
+          }
+        },
+        {
+          "match": "\\b(class|struct|enum|trait|interface|type|actor)\\s+(\\w+)",
+          "captures": {
+            "1": { "name": "keyword.declaration.far" },
+            "2": { "name": "entity.name.type.far" }
+          }
+        },
+        {
+          "match": "\\b(public|private|protected|internal|static|virtual|override|abstract|final|const|readonly|mut|extern|inline|noinline|link)\\s+(fun|prop|operator)\\s+(\\w+)",
+          "captures": {
+            "1": { "name": "storage.modifier.far" },
+            "2": { "name": "keyword.declaration.far" },
+            "3": { "name": "entity.name.function.far" }
+          }
+        },
+        {
+          "match": "\\b(prop|operator|get|set)\\b",
+          "name": "keyword.declaration.far"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.far",
+          "match": "\\b(if|else|elif|elseif|while|for|in|return|break|continue|match|switch|case|default|try|catch|finally|throw|defer|spawn|parallel|await|yield|goto|fallthrough|do|loop|when|where|as|is|new|delete|using|with|unsafe|asm|volatile|sizeof|alignof|typeof|comptime|macro|consteval|constexpr|extern|link|namespace|use|from|as|ref|move|box|unbox|dyn|impl|self|Self|super|this|nil|null|None|Some|Ok|Err|true|false)\\b"
+        },
+        {
+          "name": "keyword.declaration.far",
+          "match": "\\b(fun|fn|import|export|package|module|public|private|struct|class|enum|trait|type|let|var|const|global|static|async|coroutine|generator|extends|implements|interface|actor|union|alias|typedef|using|namespace)\\b"
+        },
+        {
+          "name": "storage.modifier.far",
+          "match": "\\b(public|private|protected|internal|static|virtual|override|abstract|final|readonly|mut|volatile|inline|noinline|extern|link|unsafe|const|ref|move)\\b"
+        },
+        {
+          "name": "constant.language.far",
+          "match": "\\b(true|false|null|nil|None|Self|self)\\b"
+        }
+      ]
+    },
+    "aggregate-constructors": {
+      "patterns": [
+        {
+          "name": "support.function.builtin.far",
+          "match": "\\b(dvec2|dvec3|dvec4|fvec2|fvec3|fvec4|vec2|vec3|vec4|ivec2|ivec3|ivec4|fpoint|dpoint|frect|drect|rect|mat2|mat3|mat4|dmat2|dmat3|dmat4|quat|dquat|color|color32|transform|bounds)\\s*(?=\\()"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "storage.type.far",
+          "match": "\\b(i8|i16|i32|i64|i128|u8|u16|u32|u64|u128|sbyte|short|int|long|longlong|int128|byte|ushort|uint|ulong|ulonglong|uint128|half|float|double|quad|float128|f16|f32|f64|f128|bool|char|string|str|void|arr|ptr|pointer|vec2|vec3|vec4|fvec2|fvec3|fvec4|dvec2|dvec3|dvec4|ivec2|ivec3|ivec4|fpoint|dpoint|frect|drect|rect|point|mat2|mat3|mat4|dmat2|dmat3|dmat4|quat|dquat|color|color32|transform|bounds|quaternion|Option|Result|fn|any|never|auto|dynamic)\\b"
+        },
+        {
+          "name": "entity.name.type.far",
+          "match": "\\b[A-Z][\\w]*\\b"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.far",
+          "match": "\\b0[xX][0-9a-fA-F]+(?:[uU]?[lL]{0,2})?\\b"
+        },
+        {
+          "name": "constant.numeric.binary.far",
+          "match": "\\b0[bB][01]+\\b"
+        },
+        {
+          "name": "constant.numeric.far",
+          "match": "\\b\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?(?:f|F|d|D|l|L|u|U)?\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.arrow.far",
+          "match": "->|=>"
+        },
+        {
+          "name": "keyword.operator.range.far",
+          "match": "\\.\\."
+        },
+        {
+          "name": "keyword.operator.assignment.far",
+          "match": "\\+=|-=|\\*=|/=|%=|&=|\\|=|\\^=|<<=|>>="
+        },
+        {
+          "name": "keyword.operator.comparison.far",
+          "match": "==|!=|<=|>=|<=>"
+        },
+        {
+          "name": "keyword.operator.logical.far",
+          "match": "&&|\\|\\||!"
+        },
+        {
+          "name": "keyword.operator.bitwise.far",
+          "match": "<<|>>|&|\\||\\^|~"
+        },
+        {
+          "name": "keyword.operator.far",
+          "match": "\\+|\\-|\\*|/|%|=|:|\\?|<|>"
+        }
+      ]
+    },
+    "slice-and-index": {
+      "patterns": [
+        {
+          "name": "meta.slice.far",
+          "begin": "\\[(?=[^\\]]*:)",
+          "end": "\\]",
+          "beginCaptures": {
+            "0": { "name": "punctuation.section.slice.begin.far" }
+          },
+          "endCaptures": {
+            "0": { "name": "punctuation.section.slice.end.far" }
+          },
+          "patterns": [
+            {
+              "name": "keyword.operator.slice.far",
+              "match": ":"
+            },
+            {
+              "name": "constant.language.slice.far",
+              "match": "\\b(nil|null|None|end|len)\\b"
+            },
+            { "include": "#numbers" },
+            {
+              "name": "variable.other.slice.far",
+              "match": "\\b[a-zA-Z_]\\w*\\b"
+            },
+            { "include": "#operators" }
+          ]
+        },
+        {
+          "name": "meta.index.far",
+          "begin": "\\[",
+          "end": "\\]",
+          "beginCaptures": {
+            "0": { "name": "punctuation.section.index.begin.far" }
+          },
+          "endCaptures": {
+            "0": { "name": "punctuation.section.index.end.far" }
+          },
+          "patterns": [
+            { "include": "#comments" },
+            { "include": "#numbers" },
+            {
+              "name": "variable.other.index.far",
+              "match": "\\b[a-zA-Z_]\\w*\\b"
+            },
+            { "include": "#operators" }
+          ]
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.definition.block.far",
+          "match": "[{}]"
+        },
+        {
+          "name": "punctuation.definition.parameters.far",
+          "match": "[()]"
+        },
+        {
+          "name": "punctuation.separator.far",
+          "match": "[;,]"
+        },
+        {
+          "name": "punctuation.accessor.far",
+          "match": "\\."
+        },
+        {
+          "name": "punctuation.definition.generic.far",
+          "match": "<|>"
+        },
+        {
+          "name": "punctuation.definition.lambda.far",
+          "match": "\\|"
+        }
+      ]
+    },
+    "member-access": {
+      "patterns": [
+        {
+          "match": "(\\.)\\s*([a-zA-Z_]\\w*)\\s*(?=\\()",
+          "captures": {
+            "1": { "name": "punctuation.accessor.far" },
+            "2": { "name": "entity.name.function.member.far" }
+          }
+        },
+        {
+          "match": "(\\.)\\s*([a-zA-Z_]\\w*)\\b",
+          "captures": {
+            "1": { "name": "punctuation.accessor.far" },
+            "2": { "name": "variable.other.member.far" }
+          }
+        }
+      ]
+    },
+    "function-calls": {
+      "patterns": [
+        {
+          "name": "support.function.io.far",
+          "match": "\\b(print|input|input_prompt|read_line|read_line_prompt|read_char|read_i64|read_f64|has_input|confirm|write|writeln|write_text|write_line|write_err|write_errln|write_err_line|flush_out|flush_err|clear|clear_screen|is_tty|columns|beep)\\b"
+        },
+        {
+          "name": "support.function.io.far",
+          "match": "\\b(print|input|input_prompt|read_line|read_line_prompt|read_char|read_i64|read_f64|has_input|confirm|write|writeln|write_text|write_line|write_err|write_errln|write_err_line|flush_out|flush_err|clear|clear_screen|is_tty|columns|beep)\\s*(?=\\()"
+        },
+        {
+          "name": "support.function.builtin.far",
+          "match": "\\b(len|int|str|type|panic|assert|sizeof|typeof|push|pop|spawn|await|yield|malloc|free|sin|cos|sqrt|clamp|lerp)\\s*(?=\\()"
+        },
+        {
+          "match": "\\b(?!(if|else|while|for|return|match|switch|case|fun|fn|class|struct|enum|import|export|new|delete|typeof|sizeof|async|coroutine|generator|try|catch|throw|await|yield|spawn|parallel|defer|break|continue|default|public|private|protected|static|operator|prop|get|set|true|false|null|nil|self|Self|in|as|is|do|loop|when|where|using|with|unsafe|macro|comptime|consteval|constexpr|extern|link|package|module|trait|type|actor|union|alias|interface|extends|implements|let|var|const|global|readonly|mut|virtual|override|abstract|final|inline|noinline|ref|move|box|unbox|dyn|impl|super|None|Some|Ok|Err)\\b)([a-zA-Z_]\\w*)\\s*(?=\\()",
+          "captures": {
+            "2": { "name": "entity.name.function.call.far" }
+          }
+        }
+      ]
+    },
+    "variables": {
+      "patterns": [
+        {
+          "match": "\\b([a-zA-Z_]\\w*)\\s*(?==)",
+          "captures": {
+            "1": { "name": "variable.other.assignment.far" }
+          }
+        },
+        {
+          "match": "(?<=\\()\\s*([a-zA-Z_]\\w*)\\s*(?=:)",
+          "captures": {
+            "1": { "name": "variable.parameter.far" }
+          }
+        },
+        {
+          "match": "(?<=,\\s)([a-zA-Z_]\\w*)\\s*(?=:)",
+          "captures": {
+            "1": { "name": "variable.parameter.far" }
+          }
+        },
+        {
+          "match": "\\b(?!(if|else|while|for|return|match|switch|case|fun|fn|class|struct|enum|import|export|new|delete|typeof|sizeof|async|coroutine|generator|try|catch|throw|await|yield|spawn|parallel|defer|break|continue|default|public|private|protected|static|operator|prop|get|set|true|false|null|nil|self|Self|in|as|is|do|loop|when|where|using|with|unsafe|macro|comptime|consteval|constexpr|extern|link|package|module|trait|type|actor|union|alias|interface|extends|implements|let|var|const|global|readonly|mut|virtual|override|abstract|final|inline|noinline|ref|move|box|unbox|dyn|impl|super|None|Some|Ok|Err|i8|i16|i32|i64|i128|u8|u16|u32|u64|u128|f16|f32|f64|f128|bool|char|string|str|void|float|double|int|long|short|byte|half|quad|any|never|auto|dynamic|Option|Result|fn|arr|ptr|pointer|vec2|vec3|vec4|fvec2|fvec3|fvec4|dvec2|dvec3|dvec4|ivec2|ivec3|ivec4|fpoint|dpoint|frect|drect|rect|point|mat2|mat3|mat4|dmat2|dmat3|dmat4|quat|dquat|color|color32|transform|bounds|quaternion|print|input|input_prompt|read_line|read_line_prompt|read_char|read_i64|read_f64|has_input|confirm|write|writeln|write_text|write_line|write_err|write_errln|write_err_line|flush_out|flush_err|clear|clear_screen|is_tty|columns|beep|len|int|str|type|panic|assert|open|close|malloc|free)\\b)([a-zA-Z_]\\w*)\\b",
+          "captures": {
+            "2": { "name": "variable.other.readwrite.far" }
+          }
+        }
+      ]
+    }
+  }
+}

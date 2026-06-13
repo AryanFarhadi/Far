@@ -1,0 +1,135 @@
+# Comprehensive: dvec/fvec/ivec, point, rect, mat, quat — ops and methods
+import points
+import rects
+import vectors
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(id: i64, r: i64) -> i64 { if (r != 0) { print(id); return id } return 0 }
+fun t01_dvec2_add() -> i64 {
+  a = dvec2(3.0, 4.0)
+  b = dvec2(1.0, 2.0)
+  c = a + b
+  if (c.x != 4.0) { return 1 }
+  if (c.y != 6.0) { return 1 }
+  return 0
+}
+fun t02_dvec2_dot() -> i64 {
+  a = dvec2(3.0, 4.0)
+  b = dvec2(1.0, 2.0)
+  if (vectors.dot(a, b) != 11.0) { return 1 }
+  return 0
+}
+fun t03_dvec2_length() -> i64 {
+  a = dvec2(3.0, 4.0)
+  if (vectors.length(a) != 5.0) { return 1 }
+  return 0
+}
+fun t04_dvec2_scale() -> i64 {
+  a = dvec2(3.0, 4.0)
+  s = a * 2.0
+  if (s.x != 6.0) { return 1 }
+  return 0
+}
+fun t05_dvec2_mul_vec() -> i64 {
+  a = dvec2(2.0, 3.0)
+  b = dvec2(4.0, 5.0)
+  c = a * b
+  if (c.x != 8.0) { return 1 }
+  if (c.y != 15.0) { return 1 }
+  return 0
+}
+fun t06_dvec2_normalize() -> i64 {
+  a = dvec2(3.0, 4.0)
+  n = vectors.normalize(a)
+  if (vectors.length(n) < 0.99) { return 1 }
+  return 0
+}
+fun t07_dvec3_cross() -> i64 {
+  x = dvec3(1.0, 0.0, 0.0)
+  y = dvec3(0.0, 1.0, 0.0)
+  z = vectors.cross(x, y)
+  if (z.z != 1.0) { return 1 }
+  return 0
+}
+fun t08_dvec3_mul() -> i64 {
+  a = dvec3(10.0, 20.0, 30.0)
+  b = dvec3(40.0, 50.0, 60.0)
+  c = a * b
+  if (c.x != 400.0) { return 1 }
+  if (c.y != 1000.0) { return 1 }
+  if (c.z != 1800.0) { return 1 }
+  return 0
+}
+fun t09_dvec3_dot() -> i64 {
+  a = dvec3(1.0, 2.0, 3.0)
+  b = dvec3(4.0, 5.0, 6.0)
+  if (vectors.dot(a, b) != 32.0) { return 1 }
+  return 0
+}
+fun t10_dvec4_dot() -> i64 {
+  v = dvec4(1.0, 2.0, 3.0, 4.0)
+  if (vectors.dot(v, dvec4(1.0, 1.0, 1.0, 1.0)) != 10.0) { return 1 }
+  return 0
+}
+fun t11_ivec2_add() -> i64 {
+  a = ivec2(2, 3) + ivec2(1, 1)
+  return eq(i64(a.x + a.y), 7)
+}
+fun t12_ivec3_sub() -> i64 {
+  a = ivec3(10, 20, 30) - ivec3(1, 2, 3)
+  return eq(i64(a.y), 18)
+}
+fun t13_fvec2_len() -> i64 {
+  v = fvec2(3.0, 4.0)
+  if (vectors.length(v) < 4.9) { return 1 }
+  return 0
+}
+fun t14_fvec3_ctor() -> i64 {
+  v = fvec3(1.0, 2.0, 3.0)
+  return eq(int(v.y), 2)
+}
+fun t15_dpoint_dist() -> i64 {
+  p = dpoint(5.0, 5.0)
+  q = dpoint(0.0, 0.0)
+  if (points.distance2(p, q) != 50.0) { return 1 }
+  return 0
+}
+fun t16_drect_contains() -> i64 {
+  r = drect(0.0, 0.0, 10.0, 10.0)
+  if (!rects.contains(r, dpoint(5.0, 5.0))) { return 1 }
+  if (rects.contains(r, dpoint(15.0, 5.0))) { return 1 }
+  return 0
+}
+fun t17_drect_center() -> i64 {
+  r = drect(0.0, 0.0, 10.0, 10.0)
+  c = rects.center(r)
+  if (c.x != 5.0) { return 1 }
+  return 0
+}
+fun t18_program_pattern() -> i64 {
+  x: dvec2 = dvec2(23.0, 45.0)
+  if (vectors.length(x) < 49.0) { return 1 }
+  return 0
+}
+fun main() {
+  r = 0
+  r = run(1, t01_dvec2_add()); if (r != 0) { return r }
+  r = run(2, t02_dvec2_dot()); if (r != 0) { return r }
+  r = run(3, t03_dvec2_length()); if (r != 0) { return r }
+  r = run(4, t04_dvec2_scale()); if (r != 0) { return r }
+  r = run(5, t05_dvec2_mul_vec()); if (r != 0) { return r }
+  r = run(6, t06_dvec2_normalize()); if (r != 0) { return r }
+  r = run(7, t07_dvec3_cross()); if (r != 0) { return r }
+  r = run(8, t08_dvec3_mul()); if (r != 0) { return r }
+  r = run(9, t09_dvec3_dot()); if (r != 0) { return r }
+  r = run(10, t10_dvec4_dot()); if (r != 0) { return r }
+  r = run(11, t11_ivec2_add()); if (r != 0) { return r }
+  r = run(12, t12_ivec3_sub()); if (r != 0) { return r }
+  r = run(13, t13_fvec2_len()); if (r != 0) { return r }
+  r = run(14, t14_fvec3_ctor()); if (r != 0) { return r }
+  r = run(15, t15_dpoint_dist()); if (r != 0) { return r }
+  r = run(16, t16_drect_contains()); if (r != 0) { return r }
+  r = run(17, t17_drect_center()); if (r != 0) { return r }
+  r = run(18, t18_program_pattern()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

@@ -1,69 +1,38 @@
-# Prerequisites
-*.d
-
-# Compiled Object files
-*.slo
-*.lo
-*.o
-*.obj
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Linker files
-*.ilk
-
-# Debugger Files
-*.pdb
-
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-*.so.*
-
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
-
-# Executables
+# Compiler and program binaries
+/far
 *.exe
-*.out
-*.app
+*.dll
+*.o
+runtime/far_rt.*.o
+*.obj
+*.pdb
+*.ilk
+*.lib
+*.exp
 
-# Build directories
-build/
-Build/
-build-*/
+# LLVM / clang temp
+*.ll
+*.bc
 
-# CMake generated files
-CMakeFiles/
-CMakeCache.txt
-cmake_install.cmake
-Makefile
-install_manifest.txt
-compile_commands.json
+# Scratch / local test files
+tmp_*
+*_tmp.*
+test_*.exe
+examples/benchmark/bin/
+tokdump.exe
+vec_min_test.exe
+domains.txt
 
-# Temporary files
-*.tmp
-*.log
-*.bak
-*.swp
+# Node (vscode extension tooling)
+node_modules/
 
-# vcpkg
-vcpkg_installed/
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini
 
-# debug information files
-*.dwo
+# Editor local state (keep shared .vscode settings)
+.vscode/*.log
 
-# test output & cache
-Testing/
-.cache/
+# Packaged extension output
+vscode/*.vsix

@@ -1,0 +1,21 @@
+# Nested and chained casts
+fun chain(x: i32) -> u8 {
+  return u8(i16(i8(x)))
+}
+fun widen_narrow(x: u8) -> i32 {
+  return i32(i64(i32(i16(x))))
+}
+fun main() {
+  print(chain(100))
+  print(chain(-50))
+  print(chain(200))
+  print(widen_narrow(u8(42)))
+  print(widen_narrow(u8(0)))
+  print(widen_narrow(u8(255)))
+  print(i32(f64(f32(i32(17)))))
+  print(u8(i32(i64(i16(300)))))
+  print(bool(i32(true)))
+  print(i32(bool(0)))
+  print(i32(bool(42)))
+  return 0
+}

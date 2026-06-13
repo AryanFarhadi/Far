@@ -1,0 +1,50 @@
+# Option<T> and Result<T,E>
+fun eq(a: i64, b: i64) -> i64 {
+  if (a != b) { return 1 }
+  return 0
+}
+fun run(n: i64, r: i64) -> i64 {
+  if (r != 0) { print(n); return n }
+  return 0
+}
+fun divide(a: i64, b: i64) -> Result<i64, i64> {
+  if (b == 0) { return Err(1) }
+  return Ok(a / b)
+}
+fun t01_some() -> i64 {
+  s = Some(7)
+  if (!s.is_some()) { return 1 }
+  return eq(s.unwrap(), 7)
+}
+fun t02_none() -> i64 {
+  n = None()
+  if (!n.is_none()) { return 1 }
+  return eq(n.unwrap_or(99), 99)
+}
+fun t03_ok() -> i64 {
+  r = Ok(10)
+  if (!r.is_ok()) { return 1 }
+  return eq(r.unwrap(), 10)
+}
+fun t04_err() -> i64 {
+  e = Err(3)
+  if (!e.is_err()) { return 1 }
+  return eq(e.unwrap_or(-1), -1)
+}
+fun t05_divide_ok() -> i64 {
+  return eq(divide(20, 4).unwrap(), 5)
+}
+fun t06_divide_err() -> i64 {
+  return eq(divide(20, 0).unwrap_or(-1), -1)
+}
+fun main() {
+  r = 0
+  r = run(1, t01_some()); if (r != 0) { return r }
+  r = run(2, t02_none()); if (r != 0) { return r }
+  r = run(3, t03_ok()); if (r != 0) { return r }
+  r = run(4, t04_err()); if (r != 0) { return r }
+  r = run(5, t05_divide_ok()); if (r != 0) { return r }
+  r = run(6, t06_divide_err()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

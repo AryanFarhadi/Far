@@ -1,0 +1,75 @@
+# Performance: native, LLVM, SIMD, vectorize, threads, incremental, startup, lowmem, predictable
+import bench
+import csv
+import perf
+fun test_native_llvm() -> i64 {
+  t = native.target_triple()
+  if (len(t) < 5) { return 1 }
+  if (native.compiled_native() != 1) { return 2 }
+  v = llvm.version()
+  if (len(v) < 4) { return 3 }
+  if (llvm.opt_level() != 2) { return 4 }
+  return 0
+}
+fun test_simd_vectorize() -> i64 {
+  w = simd.width()
+  if (w < 2) { return 10 }
+  if (simd.add4(1, 2, 3, 4) != 10) { return 11 }
+  if (vectorize.enabled() != 1) { return 12 }
+  if (vectorize.hint(8) != 8) { return 13 }
+  if (vectorize.dot4(2, 2, 2, 2) != 8) { return 14 }
+  return 0
+}
+fun test_threads() -> i64 {
+  c = threads.count()
+  if (c < 1) { return 20 }
+  if (threads.current_id() <= 0) { return 21 }
+  return 0
+}
+fun test_incremental() -> i64 {
+  path = "examples/tests/types_performance.far"
+  g0 = incremental.generation()
+  g1 = incremental.bump()
+  if (g1 <= g0) { return 30 }
+  mt = incremental.stamp(path)
+  if (mt <= 0) { return 0 }
+  if (incremental.stale(path, mt) != 0) { return 31 }
+  return 0
+}
+fun test_startup_lowmem() -> i64 {
+  if (startup.ready() != 1) { return 40 }
+  t0 = bench.start()
+  b = startup.boot_ms()
+  if (b <= 0) { return 41 }
+  e = bench.elapsed_ms(t0)
+  if (e < 0) { return 42 }
+  h = lowmem.heap_size_kb()
+  if (h <= 0) { return 43 }
+  p = lowmem.peak_size_kb()
+  if (p < h) { return 44 }
+  return 0
+}
+fun test_predictable() -> i64 {
+  t0 = predictable.mark()
+  e = predictable.since_mark_ms(t0)
+  if (e < 0) { return 50 }
+  if (predictable.jitter_between(10, 13) != 3) { return 51 }
+  if (predictable.deterministic(7, 7) != 1) { return 52 }
+  if (predictable.deterministic(7, 8) != 0) { return 53 }
+  return 0
+}
+fun main() -> i64 {
+  r = test_native_llvm()
+  if (r != 0) { return r }
+  r = test_simd_vectorize()
+  if (r != 0) { return r }
+  r = test_threads()
+  if (r != 0) { return r }
+  r = test_incremental()
+  if (r != 0) { return r }
+  r = test_startup_lowmem()
+  if (r != 0) { return r }
+  r = test_predictable()
+  if (r != 0) { return r }
+  return 0
+}

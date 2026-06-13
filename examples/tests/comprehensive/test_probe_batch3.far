@@ -1,0 +1,62 @@
+# Probe batch 3 — dict string values, queue/stack edge, compound ops
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(id: i64, r: i64) -> i64 { if (r != 0) { print(id); return id } return 0 }
+fun t01_dict_str_val() -> i64 {
+  d: Dict<i64, string> = Dict<i64, string>()
+  d.set(1, "one")
+  d.set(2, "two")
+  if (d.get(1) != "one") { return 1 }
+  if (d.get(2) != "two") { return 1 }
+  return 0
+}
+fun t02_dict_str_key_val() -> i64 {
+  d: Dict<string, string> = Dict<string, string>()
+  d.set("a", "alpha")
+  if (d.get("a") != "alpha") { return 1 }
+  return 0
+}
+fun t03_queue_fifo() -> i64 {
+  q: Queue<i64> = Queue<i64>()
+  q.enqueue(1)
+  q.enqueue(2)
+  q.enqueue(3)
+  if (q.dequeue() != 1) { return 1 }
+  if (q.dequeue() != 2) { return 1 }
+  return eq(q.dequeue(), 3)
+}
+fun t04_stack_lifo() -> i64 {
+  st: Stack<i64> = Stack<i64>()
+  st.push(10)
+  st.push(20)
+  if (st.pop() != 20) { return 1 }
+  return eq(st.pop(), 10)
+}
+fun t05_str_plus_eq() -> i64 {
+  s = "a"
+  s = s + "b"
+  if (s != "ab") { return 1 }
+  return 0
+}
+fun t06_slice_index() -> i64 {
+  a = [10, 20, 30]
+  sl = a.slice(0, 2)
+  return eq(i64(sl[1]), 20)
+}
+fun t07_dict_keys_content() -> i64 {
+  d: Dict<string, i64> = Dict<string, i64>()
+  d.set("x", 1)
+  keys = d.keys()
+  return eq(len(keys), 1)
+}
+fun main() {
+  r = 0
+  r = run(1, t01_dict_str_val()); if (r != 0) { return r }
+  r = run(2, t02_dict_str_key_val()); if (r != 0) { return r }
+  r = run(3, t03_queue_fifo()); if (r != 0) { return r }
+  r = run(4, t04_stack_lifo()); if (r != 0) { return r }
+  r = run(5, t05_str_plus_eq()); if (r != 0) { return r }
+  r = run(6, t06_slice_index()); if (r != 0) { return r }
+  r = run(7, t07_dict_keys_content()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

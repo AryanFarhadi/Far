@@ -1,0 +1,29 @@
+# Compile-time: constexpr, consteval, macros, comptime, codegen, reflection
+struct Box {
+  w: i64
+  h: i64
+}
+constexpr WIDTH = 10
+constexpr fun sq(x: i64) -> i64 {
+  return x * x
+}
+consteval fun bump(x: i64) -> i64 {
+  return x + 1
+}
+macro double_it!(x) = $(x) + $(x)
+codegen fun gen_fields() -> i64 {
+  return reflect_fields(type_tag(Box)) + WIDTH
+}
+comptime {
+  constexpr TABLE_SIZE = comptime sq(3)
+}
+fun main() {
+  print(comptime sq(6))
+  print(comptime bump(9))
+  print(comptime double_it!(7))
+  print(reflect_name(typeof(Box)))
+  print(comptime reflect_compile_value(sq(4)))
+  print(gen_fields())
+  print(comptime TABLE_SIZE)
+  return 0
+}

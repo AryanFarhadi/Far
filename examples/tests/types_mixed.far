@@ -1,0 +1,21 @@
+# Mixed int/float promotion in expressions
+fun avg2(a: i32, b: i32) -> f64 {
+  return (f64(a) + f64(b)) / f64(2)
+}
+fun main() {
+  print(1 + 2.0)
+  print(2.0 + 3)
+  print(10 - 2.5)
+  print(3.0 * 4)
+  print(7.0 / 2.0)
+  print(i32(avg2(5, 7)))
+  print(i32(avg2(4, 5)))
+  a = 1
+  b = 2.5
+  print(a + b)
+  print(b - a)
+  if (f64(1) < f64(2)) {
+    print(99)
+  }
+  return 0
+}

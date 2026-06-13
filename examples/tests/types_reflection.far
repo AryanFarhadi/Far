@@ -1,0 +1,42 @@
+# typeof, reflect_kind, reflect_fields on user types
+struct Rect {
+  w: i64
+  h: i64
+}
+enum Kind { A, B }
+fun eq(a: i64, b: i64) -> i64 {
+  if (a != b) { return 1 }
+  return 0
+}
+fun run(n: i64, r: i64) -> i64 {
+  if (r != 0) { print(n); return n }
+  return 0
+}
+fun t01_struct_access() -> i64 {
+  b = Rect(3, 4)
+  return eq(b.w + b.h, 7)
+}
+fun t02_typeof_user() -> i64 {
+  b = Rect(1, 2)
+  if (typeof(b) != "Rect") { return 1 }
+  t = type_tag(b)
+  if (t <= 0) { return 2 }
+  return 0
+}
+fun t03_reflect_fields() -> i64 {
+  f = reflect_fields(type_tag(Rect))
+  if (f < 1) { return 1 }
+  return 0
+}
+fun t04_enum_value() -> i64 {
+  return eq(i64(Kind.B), 1)
+}
+fun main() {
+  r = 0
+  r = run(1, t01_struct_access()); if (r != 0) { return r }
+  r = run(2, t02_typeof_user()); if (r != 0) { return r }
+  r = run(3, t03_reflect_fields()); if (r != 0) { return r }
+  r = run(4, t04_enum_value()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

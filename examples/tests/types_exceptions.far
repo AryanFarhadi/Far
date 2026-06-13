@@ -1,0 +1,30 @@
+# assert and simple control paths (try/catch covered in types_errors.far)
+fun eq(a: i64, b: i64) -> i64 {
+  if (a != b) { return 1 }
+  return 0
+}
+fun run(n: i64, r: i64) -> i64 {
+  if (r != 0) { print(n); return n }
+  return 0
+}
+fun t01_assert() -> i64 {
+  assert(2 + 2 == 4)
+  return 0
+}
+fun t02_bool_guard() -> i64 {
+  if (!(3 < 5)) { return 1 }
+  return 0
+}
+fun t03_option_guard() -> i64 {
+  s = Some(1)
+  if (!s.is_some()) { return 1 }
+  return eq(s.unwrap(), 1)
+}
+fun main() {
+  r = 0
+  r = run(1, t01_assert()); if (r != 0) { return r }
+  r = run(2, t02_bool_guard()); if (r != 0) { return r }
+  r = run(3, t03_option_guard()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

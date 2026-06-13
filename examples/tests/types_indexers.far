@@ -1,0 +1,33 @@
+# Indexer operators on classes
+class Vec {
+  private data: i64 = 0
+  public Vec(v: i64) {
+    data = v
+  }
+  public operator [](i: i64) -> i64 {
+    return data + i
+  }
+}
+fun eq(a: i64, b: i64) -> i64 {
+  if (a != b) { return 1 }
+  return 0
+}
+fun run(n: i64, r: i64) -> i64 {
+  if (r != 0) { print(n); return n }
+  return 0
+}
+fun t01_index_get() -> i64 {
+  v = Vec(10)
+  return eq(v[5], 15)
+}
+fun t02_index_chain() -> i64 {
+  v = Vec(1)
+  return eq(v[2] + v[3], 7)
+}
+fun main() {
+  r = 0
+  r = run(1, t01_index_get()); if (r != 0) { return r }
+  r = run(2, t02_index_chain()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

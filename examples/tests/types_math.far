@@ -1,0 +1,133 @@
+# Math types: vec/mat/quat/color/transform/rect/bounds
+import bounds
+import colors
+import matrices
+import quaternions
+import rects
+import vectors
+fun vec_alias() -> i32 {
+  v = vec2(3.0, 4.0)
+  if (vectors.length(v) < 4.9) {
+    return 1
+  }
+  return 0
+}
+fun ivec_ops() -> i32 {
+  a = ivec2(3, 4)
+  b = ivec2(1, 2)
+  c = a + b
+  if (c.x != 4) {
+    return 10
+  }
+  if (vectors.dot(a, b) != 11) {
+    return 11
+  }
+  z = vectors.cross(ivec3(1, 0, 0), ivec3(0, 1, 0))
+  if (z.z != 1) {
+    return 12
+  }
+  return 0
+}
+fun mat_ops() -> i32 {
+  m = mat2(1.0, 0.0, 0.0, 2.0)
+  if (matrices.determinant(m) != 2.0) {
+    return 20
+  }
+  v = matrices.mul(m, vec2(1.0, 1.0))
+  if (v.y != 2.0) {
+    return 21
+  }
+  t = matrices.transpose(m)
+  if (t.m01 != 0.0) {
+    return 22
+  }
+  return 0
+}
+fun quat_ops() -> i32 {
+  q = quat(0.0, 0.0, 0.0, 1.0)
+  if (quaternions.length(q) < 0.99) {
+    return 30
+  }
+  p = quat(0.0, 0.0, 0.0, 1.0)
+  r = quaternions.mul(q, p)
+  if (r.w < 0.99) {
+    return 31
+  }
+  return 0
+}
+fun color_ops() -> i32 {
+  c = color(1.0, 0.5, 0.25, 1.0)
+  if (c.g != 0.5) {
+    return 40
+  }
+  c32 = color32(255, 128, 64, 255)
+  cf = colors.to_color(c32)
+  if (cf.r < 0.99) {
+    return 41
+  }
+  return 0
+}
+fun rect_bounds_ops() -> i32 {
+  r = rect(0.0, 0.0, 10.0, 10.0)
+  if (!rects.contains(r, vec2(5.0, 5.0))) {
+    return 50
+  }
+  b = bounds(0.0, 0.0, 0.0, 10.0, 10.0, 10.0)
+  if (!bounds.contains(b, vec3(5.0, 5.0, 5.0))) {
+    return 51
+  }
+  s = bounds.size(b)
+  if (s.x != 10.0) {
+    return 52
+  }
+  return 0
+}
+fun transform_fields() -> i32 {
+  t = transform(1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0)
+  if (t.px != 1.0) {
+    return 60
+  }
+  if (t.qw != 1.0) {
+    return 61
+  }
+  return 0
+}
+fun main() {
+  r = vec_alias()
+  if (r != 0) {
+    print(r)
+    return r
+  }
+  r = ivec_ops()
+  if (r != 0) {
+    print(r)
+    return r + 100
+  }
+  r = mat_ops()
+  if (r != 0) {
+    print(r)
+    return r + 200
+  }
+  r = quat_ops()
+  if (r != 0) {
+    print(r)
+    return r + 300
+  }
+  r = color_ops()
+  if (r != 0) {
+    print(r)
+    return r + 400
+  }
+  r = rect_bounds_ops()
+  if (r != 0) {
+    print(r)
+    return r + 500
+  }
+  r = transform_fields()
+  if (r != 0) {
+    print(r)
+    return r + 600
+  }
+  print(0)
+  return 0
+}

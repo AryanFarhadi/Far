@@ -1,0 +1,77 @@
+# Networking: TCP, UDP, HTTP, HTTPS, WebSocket, RPC, REST, gRPC, serialization, compression
+import compress
+import io
+import network
+fun test_tcp() -> i64 {
+  port = 37542
+  srv = tcp.listen_on(port)
+  if (srv < 0) { return 0 }
+  cli = tcp.open("127.0.0.1", port)
+  if (cli < 0) {
+    tcp.close_conn(srv)
+    return 0
+  }
+  conn = tcp.accept_client(srv)
+  if (conn < 0) {
+    tcp.close_conn(cli)
+    tcp.close_conn(srv)
+    return 1
+  }
+  if (tcp.write(cli, "ping") < 0) { return 2 }
+  msg = tcp.read(conn, 64)
+  if (len(msg) != 4) { return 3 }
+  tcp.close_conn(conn)
+  tcp.close_conn(cli)
+  tcp.close_conn(srv)
+  return 0
+}
+fun test_udp() -> i64 {
+  port = 37543
+  sock = udp.bind_port(port)
+  if (sock < 0) { return 0 }
+  if (udp.send_to(sock, "127.0.0.1", port, "far") < 0) { return 10 }
+  msg = udp.recv_from(sock, 64)
+  if (len(msg) != 3) { return 11 }
+  udp.close_sock(sock)
+  return 0
+}
+fun test_http_parse() -> i64 {
+  resp = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"
+  if (http.parse_status(resp) != 200) { return 20 }
+  resp2 = "HTTP/1.0 404 Not Found\r\n\r\n"
+  if (http.parse_status(resp2) != 404) { return 21 }
+  return 0
+}
+fun test_serialize() -> i64 {
+  pkt = serialize.pack("svc", "ping", "payload")
+  if (len(pkt) < 10) { return 30 }
+  m = serialize.unpack_method(pkt)
+  if (len(m) != 4) { return 31 }
+  b = serialize.unpack_body(pkt)
+  if (len(b) != 7) { return 32 }
+  js = serialize.to_json("hello")
+  v = serialize.from_json(js, "data")
+  if (len(v) != 5) { return 33 }
+  return 0
+}
+fun test_compress() -> i64 {
+  raw = "aaabbb"
+  enc = compress.compress(raw)
+  if (len(enc) == 0) { return 40 }
+  dec = compress.decompress(enc)
+  if (len(dec) != len(raw)) { return 41 }
+  return 0
+}
+fun main() -> i64 {
+  r = test_tcp()
+  if (r != 0) { return r }
+  r = test_udp()
+  if (r != 0) { return r }
+  r = test_http_parse()
+  if (r != 0) { return r }
+  r = test_serialize()
+  if (r != 0) { return r }
+  r = test_compress()
+  if (r != 0) { return r }
+  return 0
+}

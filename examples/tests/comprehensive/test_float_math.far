@@ -1,0 +1,40 @@
+# Comprehensive: float/double math, mixed numeric promotion, trig
+import math
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(id: i64, r: i64) -> i64 { if (r != 0) { print(id); return id } return 0 }
+fun feq(a: f64, b: f64) -> i64 { if (a != b) { return 1 } return 0 }
+fun t01_add() -> i64 { return eq(i64(int(3.0 + 4.0)), 7) }
+fun t02_div() -> i64 { return eq(i64(int(10.0 / 4.0)), 2) }
+fun t03_mixed() -> i64 { return eq(i64(int(1 + 2.0)), 3) }
+fun t04_neg() -> i64 { return eq(i64(int(-3.5)), -3) }
+fun t05_mul_chain() -> i64 { return eq(i64(int(2.0 * 3.0 * 4.0)), 24) }
+fun t06_sin_zero() -> i64 { return feq(math.sin(0.0), 0.0) }
+fun t07_cos_zero() -> i64 { return feq(math.cos(0.0), 1.0) }
+fun t08_sqrt() -> i64 { return feq(math.sqrt(16.0), 4.0) }
+fun t09_pow_f() -> i64 { return feq(math.pow(2.0, 10.0), 1024.0) }
+fun t10_abs_f() -> i64 { return feq(math.fabs(-3.5), 3.5) }
+fun t11_float_lit() -> i64 { return eq(i64(int(float(3.7f))), 3) }
+fun t12_double_lit() -> i64 { return eq(i64(int(double(9.1))), 9) }
+fun t13_f32_chain() -> i64 { return eq(i64(int(f64(f32(2.5f)))), 2) }
+fun t14_floor() -> i64 { return feq(math.floor(3.7), 3.0) }
+fun t15_ceil() -> i64 { return feq(math.ceil(3.2), 4.0) }
+fun main() {
+  r = 0
+  r = run(1, t01_add()); if (r != 0) { return r }
+  r = run(2, t02_div()); if (r != 0) { return r }
+  r = run(3, t03_mixed()); if (r != 0) { return r }
+  r = run(4, t04_neg()); if (r != 0) { return r }
+  r = run(5, t05_mul_chain()); if (r != 0) { return r }
+  r = run(6, t06_sin_zero()); if (r != 0) { return r }
+  r = run(7, t07_cos_zero()); if (r != 0) { return r }
+  r = run(8, t08_sqrt()); if (r != 0) { return r }
+  r = run(9, t09_pow_f()); if (r != 0) { return r }
+  r = run(10, t10_abs_f()); if (r != 0) { return r }
+  r = run(11, t11_float_lit()); if (r != 0) { return r }
+  r = run(12, t12_double_lit()); if (r != 0) { return r }
+  r = run(13, t13_f32_chain()); if (r != 0) { return r }
+  r = run(14, t14_floor()); if (r != 0) { return r }
+  r = run(15, t15_ceil()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

@@ -1,0 +1,33 @@
+# Typed function params, returns, and call compatibility
+fun add_i32(a: i32, b: i32) -> i32 {
+  return a + b
+}
+fun mix_types(x: u8, y: i32, z: i64) -> i64 {
+  return i64(x) + i64(y) + z
+}
+fun ret_f64(n: i32) -> f64 {
+  return f64(n) / f64(2)
+}
+fun identity_i64(x: i64) -> i64 {
+  return x
+}
+fun bool_not(b: bool) -> bool {
+  if (b) {
+    return false
+  }
+  return true
+}
+fun main() {
+  print(add_i32(100, 23))
+  print(add_i32(i32(1), i32(2)))
+  print(mix_types(u8(10), 20, 30))
+  print(mix_types(5, 15, 25))
+  print(i32(ret_f64(9)))
+  print(i32(ret_f64(10)))
+  print(identity_i64(999))
+  print(identity_i64(i64(42)))
+  print(bool_not(true))
+  print(bool_not(false))
+  print(add_i32(u8(40), u8(2)))
+  return 0
+}

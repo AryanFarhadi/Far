@@ -1,0 +1,20 @@
+# Unsigned types and mixed signed/unsigned paths
+fun add_u32(a: u32, b: u32) -> u32 {
+  return u32(i32(a) + i32(b))
+}
+fun main() {
+  print(u32(0))
+  print(u32(4294967295))
+  print(u32.min)
+  print(u32.max)
+  print(u64(0))
+  print(u64.max)
+  print(i32(u64(100)))
+  print(add_u32(u32(10), u32(20)))
+  print(add_u32(u32(4294967290), u32(10)))
+  print(u16(65535))
+  print(u8(u16(300)))
+  print(u32(i32(100)))
+  print(i64(u32(200)))
+  return 0
+}

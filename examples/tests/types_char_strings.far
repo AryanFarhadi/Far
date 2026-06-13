@@ -1,0 +1,23 @@
+# Char literals, casts, and interpolated strings
+fun main() {
+  c = 'A'
+  print(c)
+  print(i32(c))
+  print(char(66))
+  print(char(i32('C')))
+  print('!')
+  print(char(48 + 9))
+  x = 3
+  y = 4
+  sum = x + y
+  print($"{x} + {y} = {sum}")
+  name = "far"
+  print($"hello {name}!")
+  print($"pi ~ {f64(22) / f64(7)}")
+  print($"neg {~-5}")
+  msg = 'X' + " marks the spot"
+  print(msg)
+  print(char.min)
+  print(char.max)
+  return 0
+}

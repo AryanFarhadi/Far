@@ -1,0 +1,116 @@
+# Modern features: inference, nullable, pattern, immutable, readonly,
+# hot reload, live coding, package/deps, LSP, debugger, profiler,
+# formatter, linter, docs, REPL, shell
+import bench
+import csv
+import dev
+import perf
+struct Widget {
+  id: i64
+}
+fun test_inference() -> i64 {
+  w = Widget(1)
+  f = inference.fields(type_tag(w))
+  if (f != 1) { return 1 }
+  k = inference.kind(type_tag(w))
+  lbl = inference.label(k)
+  if (len(lbl) < 4) { return 2 }
+  return 0
+}
+fun test_nullable() -> i64 {
+  o = nullable.of_value(42)
+  if (nullable.has_value(o) != 1) { return 10 }
+  if (nullable.get_or(o, 0) != 42) { return 11 }
+  n = nullable.empty()
+  if (nullable.has_value(n) != 0) { return 12 }
+  if (nullable.map_or_default(o, 99, 0) != 99) { return 13 }
+  return 0
+}
+fun test_pattern() -> i64 {
+  if (pattern.eq(3, 3) != 1) { return 20 }
+  if (pattern.wildcard() != -1) { return 21 }
+  if (pattern.in_range(5, 1, 10) != 1) { return 22 }
+  return 0
+}
+fun test_immutable() -> i64 {
+  s = immutable.seal(7)
+  if (immutable.is_sealed(s) != 1) { return 30 }
+  if (immutable.value(s) != 7) { return 31 }
+  return 0
+}
+fun test_readonly() -> i64 {
+  r = readonly.wrap(12)
+  if (readonly.is_readonly(r) != 1) { return 40 }
+  if (readonly.get(r) != 12) { return 41 }
+  return 0
+}
+fun test_hot_live() -> i64 {
+  path = "examples/tests/types_modern.far"
+  mt = hotreload.mtime(path)
+  if (mt <= 0) { return 0 }
+  if (hotreload.stale(path, mt) != 0) { return 50 }
+  g0 = live.generation()
+  g1 = live.bump()
+  if (g1 <= g0) { return 51 }
+  if (live.tick(g0) != 1) { return 52 }
+  return 0
+}
+fun test_pkg_deps() -> i64 {
+  manifest = pkg.read_manifest("examples/tests/far_modern_pkg.txt")
+  if (len(manifest) < 5) { return 60 }
+  n = pkg.name(manifest)
+  if (len(n) != 4) { return 61 }
+  v = pkg.version(manifest)
+  if (len(v) != 5) { return 62 }
+  c = csv.count(manifest)
+  if (c != 2) { return 63 }
+  d0 = deps.at(manifest, 0)
+  if (len(d0) < 3) { return 64 }
+  if (deps.satisfies("std.math", manifest) != 1) { return 65 }
+  return 0
+}
+fun test_tooling() -> i64 {
+  h = lsp.hover("main")
+  if (len(h) < 5) { return 70 }
+  if (lsp.symbol_kind("main") != 3) { return 71 }
+  if (debug.set_break(1) != 1) { return 72 }
+  if (debug.has_break(1) != 1) { return 73 }
+  if (debug.step() <= 0) { return 74 }
+  t0 = bench.start()
+  e = bench.elapsed_ms(t0)
+  if (e < 0) { return 75 }
+  if (profile.mem_kb() <= 0) { return 76 }
+  t = format.trim("  far  ")
+  if (len(t) != 3) { return 77 }
+  ind = format.indent("x", 2)
+  if (len(ind) != 3) { return 78 }
+  if (lint.valid_ident("foo_bar") != 1) { return 79 }
+  if (lint.valid_ident("1bad") != 0) { return 80 }
+  issues = lint.count_issues("ok\n\tbad")
+  if (issues != 1) { return 81 }
+  if (repl.eval_expr("42") != 42) { return 82 }
+  repl.history_add("1+1")
+  if (repl.history_count() <= 0) { return 83 }
+  p = shell.prompt("far")
+  if (len(p) < 3) { return 84 }
+  return 0
+}
+fun main() -> i64 {
+  r = test_inference()
+  if (r != 0) { return r }
+  r = test_nullable()
+  if (r != 0) { return r }
+  r = test_pattern()
+  if (r != 0) { return r }
+  r = test_immutable()
+  if (r != 0) { return r }
+  r = test_readonly()
+  if (r != 0) { return r }
+  r = test_hot_live()
+  if (r != 0) { return r }
+  r = test_pkg_deps()
+  if (r != 0) { return r }
+  r = test_tooling()
+  if (r != 0) { return r }
+  return 0
+}

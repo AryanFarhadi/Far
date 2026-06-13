@@ -1,0 +1,53 @@
+# Enums and flags enums
+fun eq(a: i64, b: i64) -> i64 {
+  if (a != b) { return 1 }
+  return 0
+}
+fun run(n: i64, r: i64) -> i64 {
+  if (r != 0) { print(n); return n }
+  return 0
+}
+enum Color { Red, Green, Blue }
+flags Perm { Read = 1, Write = 2, Execute = 4, All = 7 }
+fun t01_enum_values() -> i64 {
+  return eq(i64(Color.Red) + i64(Color.Green) + i64(Color.Blue), 3)
+}
+fun t02_enum_compare() -> i64 {
+  if (Color.Green == Color.Red) { return 1 }
+  if (Color.Blue != Color.Blue) { return 2 }
+  return 0
+}
+fun t03_flags_or() -> i64 {
+  p = Perm.Read | Perm.Write
+  return eq(i64(p), 3)
+}
+fun t04_flags_and() -> i64 {
+  p = Perm.All & Perm.Write
+  return eq(i64(p), 2)
+}
+fun t05_flags_xor() -> i64 {
+  p = Perm.Read ^ Perm.Write
+  return eq(i64(p), 3)
+}
+fun t06_match_enum() -> i64 {
+  s = Color.Green
+  r = 0
+  match s {
+    Color.Red => r = 1
+    Color.Green => r = 2
+    Color.Blue => r = 3
+    _ => r = 9
+  }
+  return eq(r, 2)
+}
+fun main() {
+  r = 0
+  r = run(1, t01_enum_values()); if (r != 0) { return r }
+  r = run(2, t02_enum_compare()); if (r != 0) { return r }
+  r = run(3, t03_flags_or()); if (r != 0) { return r }
+  r = run(4, t04_flags_and()); if (r != 0) { return r }
+  r = run(5, t05_flags_xor()); if (r != 0) { return r }
+  r = run(6, t06_match_enum()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

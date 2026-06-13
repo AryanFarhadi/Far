@@ -1,0 +1,32 @@
+# Python-style imports: import mod, from mod import x, from mod import *
+import hash
+import json
+import math
+import test
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(id: i64, r: i64) -> i64 { if (r != 0) { print(id); return id } return 0 }
+fun t01_import_module() -> i64 {
+  return eq(i64(math.clamp(15, 0, 10)), 10)
+}
+fun t02_from_import() -> i64 {
+  h = hash.fnv("far")
+  if (h == 0) { return 1 }
+  return 0
+}
+fun t03_from_import_as() -> i64 {
+  s = json.stringify_i64(42)
+  if (len(s) == 0) { return 1 }
+  return 0
+}
+fun t04_from_star() -> i64 {
+  return test.assert_eq_i64(2, 2)
+}
+fun main() {
+  r = 0
+  r = run(1, t01_import_module()); if (r != 0) { return r }
+  r = run(2, t02_from_import()); if (r != 0) { return r }
+  r = run(3, t03_from_import_as()); if (r != 0) { return r }
+  r = run(4, t04_from_star()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

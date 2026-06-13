@@ -1,0 +1,29 @@
+# Float literals, casts, and arithmetic
+fun add_f(a: f64, b: f64) -> f64 {
+  return a + b
+}
+fun mul_i_to_d(x: i32, y: i32) -> f64 {
+  return f64(x) * f64(y)
+}
+fun main() {
+  print(3.14)
+  print(.5)
+  print(0.0)
+  print(1.0)
+  print(10.0 / 4.0)
+  print(3.0 / 2.0)
+  print(3 / 2.0)
+  print(f32(3))
+  print(f64(7))
+  print(i32(3.7))
+  print(i32(3.2))
+  print(add_f(1.5, 2.5))
+  print(mul_i_to_d(6, 7))
+  print(f64(3) / f64(2))
+  print(i32(f64(3) / f64(2)))
+  print(i32(f64(10) / f64(3)))
+  x = 2.5
+  print(x + 1.5)
+  print(x * 2.0)
+  return 0
+}

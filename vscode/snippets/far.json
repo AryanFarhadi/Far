@@ -1,0 +1,47 @@
+{
+  "Main function": {
+    "prefix": "main",
+    "body": [
+      "fun main() -> i64 {",
+      "  $0",
+      "  return 0",
+      "}"
+    ],
+    "description": "Main entry point"
+  },
+  "Function": {
+    "prefix": "fun",
+    "body": ["fun ${1:name}(${2:args}) -> ${3:i64} {", "  $0", "}"],
+    "description": "Function definition"
+  },
+  "Import core": {
+    "prefix": "import",
+    "body": ["import std.${1:math} { ${2:symbol} }"],
+    "description": "Import from language core"
+  },
+  "If": {
+    "prefix": "if",
+    "body": ["if (${1:cond}) {", "  $0", "}"],
+    "description": "If statement"
+  },
+  "Slice full": {
+    "prefix": "slice",
+    "body": ["${1:arr}[${2:start}:${3:end}]"],
+    "description": "Slice from start index to end index"
+  },
+  "Slice from start": {
+    "prefix": "slicehead",
+    "body": ["${1:arr}[:${2:end}]"],
+    "description": "Slice from beginning to end index"
+  },
+  "Slice to end": {
+    "prefix": "slicetail",
+    "body": ["${1:arr}[${2:start}:]"],
+    "description": "Slice from start index to end of list/array"
+  },
+  "Slice copy": {
+    "prefix": "sliceall",
+    "body": ["${1:arr}[:]"],
+    "description": "Slice entire list/array"
+  }
+}

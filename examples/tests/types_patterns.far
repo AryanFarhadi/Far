@@ -1,0 +1,57 @@
+# Pattern matching: match, switch, destructuring, union/enum/type matching
+enum Status { Idle, Running, Done }
+union Value {
+  I(i: i64)
+  B(b: i64)
+}
+struct Point {
+  x: i64
+  y: i64
+}
+record Pair(a: i64, b: i64)
+fun main() {
+  x = 2
+  match x {
+    0 => print(0)
+    1 => print(1)
+    n => print(n)
+  }
+  s = Status.Running
+  match s {
+    Status.Idle => print(10)
+    Status.Running => print(20)
+    Status.Done => print(30)
+    _ => print(99)
+  }
+  switch x {
+    case 2: print(200)
+    default: print(0)
+  }
+  p = Point(3, 4)
+  match p {
+    Point { x: a, y: b } => print(a + b)
+  }
+  pr = Pair(10, 20)
+  match pr {
+    Pair(a, b) => print(a + b)
+  }
+  t = (5, 6)
+  match t {
+    (a, b) => print(a * b)
+  }
+  v = Value.I(42)
+  match v {
+    Value.I(i) => print(i)
+    Value.B(b) => print(b)
+  }
+  v2 = Value.B(7)
+  match v2 {
+    Value.I(i) => print(0)
+    Value.B(b) => print(b)
+  }
+  match p {
+    Point => print(1)
+    _ => print(0)
+  }
+  return 0
+}

@@ -1,0 +1,221 @@
+# suite_language.far — 60 core language regression tests
+# Prints failing test id (1-60) on failure; prints 0 on success.
+import math
+import perf
+fun inc_one(x: i64) -> i64 {
+  return x + 1
+}
+fun eq(a: i64, b: i64) -> i64 {
+  if (a != b) { return 1 }
+  return 0
+}
+fun run(n: i64, r: i64) -> i64 {
+  if (r != 0) { print(n); return n }
+  return 0
+}
+fun t01() -> i64 { return eq(1 + 1, 2) }
+fun t02() -> i64 { return eq(10 - 3, 7) }
+fun t03() -> i64 { return eq(6 * 7, 42) }
+fun t04() -> i64 { return eq(20 / 4, 5) }
+fun t05() -> i64 { return eq(17 % 5, 2) }
+fun t06() -> i64 { return eq(2 ** 8, 256) }
+fun t07() -> i64 { return eq(7 // 2, 3) }
+fun t08() -> i64 { return eq(-7 // 2, -4) }
+fun t09() -> i64 { x = 1; x += 2; return eq(x, 3) }
+fun t10() -> i64 { x = 5; x--; return eq(x, 4) }
+fun t11() -> i64 { return eq(5 & 3, 1) }
+fun t12() -> i64 { return eq(5 | 2, 7) }
+fun t13() -> i64 { return eq(5 ^ 1, 4) }
+fun t14() -> i64 { return eq(3 << 2, 12) }
+fun t15() -> i64 { return eq(8 >> 1, 4) }
+fun t16() -> i64 { return eq(i64(true), 1) }
+fun t17() -> i64 { return eq(i64(false), 0) }
+fun t18() -> i64 { return eq(i64(1 && 1), 1) }
+fun t19() -> i64 { return eq(i64(0 || 1), 1) }
+fun t20() -> i64 { return eq(i64(!false), 1) }
+fun t21() -> i64 { return eq(i64(int(3.9)), 3) }
+fun t22() -> i64 { return eq(i64(byte(300)), 44) }
+fun t23() -> i64 { return eq(i64(short(100) + int(23)), 123) }
+fun t24() -> i64 { return eq(len("abc"), 3) }
+fun t25() -> i64 { return eq(len("a" + "b"), 2) }
+fun t26() -> i64 { return eq(int("42"), 42) }
+fun t27() -> i64 { return eq(i64(char(90)), 90) }
+fun t28() -> i64 {
+  s = $"n={7}"
+  if (len(s) < 3) { return 1 }
+  return 0
+}
+fun t29() -> i64 { return eq(i64(sizeof(i64)), 8) }
+fun t30() -> i64 { return eq(i64(sizeof(i32)), 4) }
+fun t31() -> i64 {
+  a = [1, 2, 3]
+  return eq(len(a), 3)
+}
+fun t32() -> i64 {
+  a = [10, 20, 30]
+  return eq(i64(a[1]), 20)
+}
+fun t33() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d.set(1, 42)
+  return eq(i64(d.get(1)), 42)
+}
+fun t34() -> i64 {
+  s: Set<i64> = Set<i64>()
+  s.add(7)
+  if (!s.contains(7)) { return 1 }
+  return 0
+}
+fun t35() -> i64 {
+  q: Queue<i64> = Queue<i64>()
+  q.enqueue(5)
+  return eq(i64(q.dequeue()), 5)
+}
+fun t36() -> i64 {
+  total = 0
+  for i in 0..5 { total = total + i }
+  return eq(total, 10)
+}
+fun t37() -> i64 {
+  i = 0
+  while (i < 3) { i = i + 1 }
+  return eq(i, 3)
+}
+fun t38() -> i64 {
+  r = 0
+  if (1) { r = 1 } else { r = 2 }
+  return eq(r, 1)
+}
+fun t39() -> i64 {
+  r = 0
+  match 2 {
+    1 => r = 1
+    2 => r = 2
+    _ => r = 9
+  }
+  return eq(r, 2)
+}
+fun t40() -> i64 {
+  r = 0
+  switch 3 {
+    case 3: r = 30
+    default: r = 0
+  }
+  return eq(r, 30)
+}
+fun t41() -> i64 { return eq(i64(Some(5).unwrap()), 5) }
+fun t42() -> i64 { return eq(i64(None().unwrap_or(9)), 9) }
+fun t43() -> i64 { return eq(i64(Ok(4).unwrap()), 4) }
+fun t44() -> i64 { return eq(i64(Err(1).unwrap_or(0)), 0) }
+struct P { x: i64 y: i64 }
+fun t45() -> i64 { p = P(2, 3); return eq(i64(p.x + p.y), 5) }
+class C {
+  public n: i64 = 0
+  public C(v: i64) { n = v }
+  public fun get() -> i64 { return n }
+}
+fun t46() -> i64 { c = C(11); return eq(c.get(), 11) }
+enum E { Zero, One }
+fun t47() -> i64 { return eq(i64(E.One), 1) }
+fun t48() -> i64 {
+  h = spawn inc_one(8)
+  return eq(threads.join(h), 9)
+}
+fun t49() -> i64 { return eq(i64(math.imin(9, 4)), 4) }
+fun t50() -> i64 { return eq(i64(math.imax(9, 4)), 9) }
+fun t51() -> i64 { return eq(i64(math.iabs(-6)), 6) }
+fun t52() -> i64 { return eq(i64(i32.max > 0), 1) }
+fun t53() -> i64 { return eq(i64(threads.count() >= 1), 1) }
+fun t54() -> i64 { return eq(i64(threads.cores() > 0), 1) }
+fun t55() -> i64 {
+  p = P(1, 1)
+  if (p.x != 1) { return 1 }
+  return 0
+}
+fun t56() -> i64 {
+  f = |x| x * 3
+  return eq(f(4), 12)
+}
+fun t57() -> i64 {
+  g = fn(n) { return n + 2 }
+  return eq(g(5), 7)
+}
+fun t58() -> i64 {
+  x = 0
+  x = 1
+  return eq(x, 1)
+}
+fun t59() -> i64 {
+  x = 10
+  p = &x
+  return eq(i64(*p), 10)
+}
+fun t60() -> i64 {
+  v = ivec2(3, 4)
+  return eq(i64(v.x) + i64(v.y), 7)
+}
+fun main() {
+  r = 0
+  r = run(1, t01()); if (r != 0) { return r }
+  r = run(2, t02()); if (r != 0) { return r }
+  r = run(3, t03()); if (r != 0) { return r }
+  r = run(4, t04()); if (r != 0) { return r }
+  r = run(5, t05()); if (r != 0) { return r }
+  r = run(6, t06()); if (r != 0) { return r }
+  r = run(7, t07()); if (r != 0) { return r }
+  r = run(8, t08()); if (r != 0) { return r }
+  r = run(9, t09()); if (r != 0) { return r }
+  r = run(10, t10()); if (r != 0) { return r }
+  r = run(11, t11()); if (r != 0) { return r }
+  r = run(12, t12()); if (r != 0) { return r }
+  r = run(13, t13()); if (r != 0) { return r }
+  r = run(14, t14()); if (r != 0) { return r }
+  r = run(15, t15()); if (r != 0) { return r }
+  r = run(16, t16()); if (r != 0) { return r }
+  r = run(17, t17()); if (r != 0) { return r }
+  r = run(18, t18()); if (r != 0) { return r }
+  r = run(19, t19()); if (r != 0) { return r }
+  r = run(20, t20()); if (r != 0) { return r }
+  r = run(21, t21()); if (r != 0) { return r }
+  r = run(22, t22()); if (r != 0) { return r }
+  r = run(23, t23()); if (r != 0) { return r }
+  r = run(24, t24()); if (r != 0) { return r }
+  r = run(25, t25()); if (r != 0) { return r }
+  r = run(26, t26()); if (r != 0) { return r }
+  r = run(27, t27()); if (r != 0) { return r }
+  r = run(28, t28()); if (r != 0) { return r }
+  r = run(29, t29()); if (r != 0) { return r }
+  r = run(30, t30()); if (r != 0) { return r }
+  r = run(31, t31()); if (r != 0) { return r }
+  r = run(32, t32()); if (r != 0) { return r }
+  r = run(33, t33()); if (r != 0) { return r }
+  r = run(34, t34()); if (r != 0) { return r }
+  r = run(35, t35()); if (r != 0) { return r }
+  r = run(36, t36()); if (r != 0) { return r }
+  r = run(37, t37()); if (r != 0) { return r }
+  r = run(38, t38()); if (r != 0) { return r }
+  r = run(39, t39()); if (r != 0) { return r }
+  r = run(40, t40()); if (r != 0) { return r }
+  r = run(41, t41()); if (r != 0) { return r }
+  r = run(42, t42()); if (r != 0) { return r }
+  r = run(43, t43()); if (r != 0) { return r }
+  r = run(44, t44()); if (r != 0) { return r }
+  r = run(45, t45()); if (r != 0) { return r }
+  r = run(46, t46()); if (r != 0) { return r }
+  r = run(47, t47()); if (r != 0) { return r }
+  r = run(48, t48()); if (r != 0) { return r }
+  r = run(49, t49()); if (r != 0) { return r }
+  r = run(50, t50()); if (r != 0) { return r }
+  r = run(51, t51()); if (r != 0) { return r }
+  r = run(52, t52()); if (r != 0) { return r }
+  r = run(53, t53()); if (r != 0) { return r }
+  r = run(54, t54()); if (r != 0) { return r }
+  r = run(55, t55()); if (r != 0) { return r }
+  r = run(56, t56()); if (r != 0) { return r }
+  r = run(57, t57()); if (r != 0) { return r }
+  r = run(58, t58()); if (r != 0) { return r }
+  r = run(59, t59()); if (r != 0) { return r }
+  r = run(60, t60()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

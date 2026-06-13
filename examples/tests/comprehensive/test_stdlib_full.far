@@ -1,0 +1,114 @@
+# Comprehensive: std.math, hash, json, csv, compress, regex, crypto, fs, time, date
+import compress
+import crypto
+import csv
+import date
+import fs
+import hash
+import json
+import math
+import random
+import regex
+import time
+import vectors
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(id: i64, r: i64) -> i64 { if (r != 0) { print(id); return id } return 0 }
+fun t01_clamp() -> i64 {
+  c = math.clamp(5.0, 0.0, 10.0)
+  if (c != 5.0) { return 1 }
+  return 0
+}
+fun t02_imin() -> i64 { return eq(math.imin(9, 4), 4) }
+fun t03_imax() -> i64 { return eq(math.imax(9, 4), 9) }
+fun t04_sin() -> i64 { if (math.sin(0.0) != 0.0) { return 1 } return 0 }
+fun t05_sqrt() -> i64 { if (math.sqrt(9.0) != 3.0) { return 1 } return 0 }
+fun t06_dot2() -> i64 {
+  a = vec2(3.0, 4.0)
+  b = vec2(1.0, 2.0)
+  if (vectors.dot(a, b) != 11.0) { return 1 }
+  return 0
+}
+fun t07_fnv() -> i64 {
+  h = hash.fnv("far")
+  if (h == 0) { return 1 }
+  return 0
+}
+fun t08_json() -> i64 {
+  s = json.stringify_i64(42)
+  if (len(s) < 2) { return 1 }
+  return 0
+}
+fun t09_csv_count() -> i64 { return eq(csv.count("a,b,c"), 3) }
+fun t10_csv_field() -> i64 {
+  f = csv.field("x,y,z", 1)
+  if (f != "y") { return 1 }
+  return 0
+}
+fun t11_rle() -> i64 {
+  enc = compress.rle_encode("aaabbc")
+  dec = compress.rle_decode(enc)
+  if (dec != "aaabbc") { return 1 }
+  return 0
+}
+fun t12_glob() -> i64 {
+  if (!regex.glob_match("*.far", "test.far")) { return 1 }
+  if (regex.glob_match("*.far", "test.txt")) { return 1 }
+  return 0
+}
+fun t13_xor() -> i64 {
+  enc = crypto.xor_encrypt("data", "key")
+  dec = crypto.xor_decrypt(enc, "key")
+  if (len(dec) != 4) { return 1 }
+  return 0
+}
+fun t14_fs() -> i64 {
+  path = "far_comprehensive_fs_tmp.txt"
+  if (fs.write_text(path, "far") != 0) { return 1 }
+  data = fs.read_text(path)
+  if (len(data) != 3) { return 1 }
+  return 0
+}
+fun t15_time() -> i64 {
+  ms = time.milliseconds()
+  if (ms <= 0) { return 1 }
+  return 0
+}
+fun t16_date() -> i64 {
+  ms = time.milliseconds()
+  y = date.year(ms)
+  m = date.month(ms)
+  d = date.day(ms)
+  if (y < 1970) { return 1 }
+  if (m < 1) { return 1 }
+  if (d < 1) { return 1 }
+  return 0
+}
+fun t17_random() -> i64 {
+  random.seed(42)
+  r = random.rand_between(1, 6)
+  if (r < 1) { return 1 }
+  if (r > 6) { return 1 }
+  return 0
+}
+fun main() {
+  r = 0
+  r = run(1, t01_clamp()); if (r != 0) { return r }
+  r = run(2, t02_imin()); if (r != 0) { return r }
+  r = run(3, t03_imax()); if (r != 0) { return r }
+  r = run(4, t04_sin()); if (r != 0) { return r }
+  r = run(5, t05_sqrt()); if (r != 0) { return r }
+  r = run(6, t06_dot2()); if (r != 0) { return r }
+  r = run(7, t07_fnv()); if (r != 0) { return r }
+  r = run(8, t08_json()); if (r != 0) { return r }
+  r = run(9, t09_csv_count()); if (r != 0) { return r }
+  r = run(10, t10_csv_field()); if (r != 0) { return r }
+  r = run(11, t11_rle()); if (r != 0) { return r }
+  r = run(12, t12_glob()); if (r != 0) { return r }
+  r = run(13, t13_xor()); if (r != 0) { return r }
+  r = run(14, t14_fs()); if (r != 0) { return r }
+  r = run(15, t15_time()); if (r != 0) { return r }
+  r = run(16, t16_date()); if (r != 0) { return r }
+  r = run(17, t17_random()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

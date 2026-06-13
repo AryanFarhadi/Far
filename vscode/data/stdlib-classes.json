@@ -1,0 +1,3353 @@
+{
+  "bench": {
+    "module": "bench",
+    "members": [
+      {
+        "name": "start",
+        "kind": "method",
+        "signature": "static start() -> i64"
+      },
+      {
+        "name": "elapsed_ms",
+        "kind": "method",
+        "signature": "static elapsed_ms(start_ticks: i64) -> i64"
+      },
+      {
+        "name": "measure",
+        "kind": "method",
+        "signature": "static measure(work: i64) -> i64"
+      }
+    ]
+  },
+  "cli": {
+    "module": "cli",
+    "members": [
+      {
+        "name": "argc",
+        "kind": "method",
+        "signature": "static argc() -> i64"
+      },
+      {
+        "name": "argv",
+        "kind": "method",
+        "signature": "static argv(i: i64) -> string"
+      },
+      {
+        "name": "has_flag",
+        "kind": "method",
+        "signature": "static has_flag(flag: string) -> i64"
+      },
+      {
+        "name": "flag_value",
+        "kind": "method",
+        "signature": "static flag_value(flag: string) -> string"
+      }
+    ]
+  },
+  "compress": {
+    "module": "network",
+    "members": [
+      {
+        "name": "compress",
+        "kind": "method",
+        "signature": "static compress(data: string) -> string"
+      },
+      {
+        "name": "decompress",
+        "kind": "method",
+        "signature": "static decompress(data: string) -> string"
+      }
+    ]
+  },
+  "crypto": {
+    "module": "security",
+    "members": [
+      {
+        "name": "digest",
+        "kind": "method",
+        "signature": "static digest(data: string) -> string"
+      },
+      {
+        "name": "encrypt",
+        "kind": "method",
+        "signature": "static encrypt(data: string, key: string) -> string"
+      },
+      {
+        "name": "secure_eq",
+        "kind": "method",
+        "signature": "static secure_eq(a: string, b: string) -> i64"
+      },
+      {
+        "name": "token",
+        "kind": "method",
+        "signature": "static token(nbytes: i64) -> string"
+      }
+    ]
+  },
+  "csv": {
+    "module": "csv",
+    "members": [
+      {
+        "name": "count",
+        "kind": "method",
+        "signature": "static count(line: string) -> i64"
+      },
+      {
+        "name": "field",
+        "kind": "method",
+        "signature": "static field(line: string, index: i64) -> string"
+      }
+    ]
+  },
+  "date": {
+    "module": "date",
+    "members": [
+      {
+        "name": "year",
+        "kind": "method",
+        "signature": "static year(ts: i64) -> i64"
+      },
+      {
+        "name": "month",
+        "kind": "method",
+        "signature": "static month(ts: i64) -> i64"
+      },
+      {
+        "name": "day",
+        "kind": "method",
+        "signature": "static day(ts: i64) -> i64"
+      },
+      {
+        "name": "hour",
+        "kind": "method",
+        "signature": "static hour(ts: i64) -> i64"
+      },
+      {
+        "name": "minute",
+        "kind": "method",
+        "signature": "static minute(ts: i64) -> i64"
+      },
+      {
+        "name": "second",
+        "kind": "method",
+        "signature": "static second(ts: i64) -> i64"
+      }
+    ]
+  },
+  "debug": {
+    "module": "dev",
+    "members": [
+      {
+        "name": "set_break",
+        "kind": "method",
+        "signature": "static set_break(id: i64) -> i64"
+      },
+      {
+        "name": "has_break",
+        "kind": "method",
+        "signature": "static has_break(id: i64) -> i64"
+      },
+      {
+        "name": "step",
+        "kind": "method",
+        "signature": "static step() -> i64"
+      }
+    ]
+  },
+  "deps": {
+    "module": "dev",
+    "members": [
+      {
+        "name": "count",
+        "kind": "method",
+        "signature": "static count(manifest: string) -> i64"
+      },
+      {
+        "name": "at",
+        "kind": "method",
+        "signature": "static at(manifest: string, index: i64) -> string"
+      },
+      {
+        "name": "satisfies",
+        "kind": "method",
+        "signature": "static satisfies(name: string, constraint: string) -> i64"
+      }
+    ]
+  },
+  "format": {
+    "module": "dev",
+    "members": [
+      {
+        "name": "trim",
+        "kind": "method",
+        "signature": "static trim(text: string) -> string"
+      },
+      {
+        "name": "indent",
+        "kind": "method",
+        "signature": "static indent(text: string, spaces: i64) -> string"
+      }
+    ]
+  },
+  "hotreload": {
+    "module": "dev",
+    "members": [
+      {
+        "name": "mtime",
+        "kind": "method",
+        "signature": "static mtime(path: string) -> i64"
+      },
+      {
+        "name": "stale",
+        "kind": "method",
+        "signature": "static stale(path: string, since_ms: i64) -> i64"
+      }
+    ]
+  },
+  "immutable": {
+    "module": "dev",
+    "members": [
+      {
+        "name": "seal",
+        "kind": "method",
+        "signature": "static seal(value: i64) -> i64"
+      },
+      {
+        "name": "value",
+        "kind": "method",
+        "signature": "static value(sealed: i64) -> i64"
+      },
+      {
+        "name": "is_sealed",
+        "kind": "method",
+        "signature": "static is_sealed(sealed: i64) -> i64"
+      }
+    ]
+  },
+  "inference": {
+    "module": "dev",
+    "members": [
+      {
+        "name": "kind",
+        "kind": "method",
+        "signature": "static kind(tag: i64) -> i64"
+      },
+      {
+        "name": "fields",
+        "kind": "method",
+        "signature": "static fields(tag: i64) -> i64"
+      },
+      {
+        "name": "label",
+        "kind": "method",
+        "signature": "static label(kind: i64) -> string"
+      }
+    ]
+  },
+  "lint": {
+    "module": "dev",
+    "members": [
+      {
+        "name": "valid_ident",
+        "kind": "method",
+        "signature": "static valid_ident(name: string) -> i64"
+      },
+      {
+        "name": "count_issues",
+        "kind": "method",
+        "signature": "static count_issues(source: string) -> i64"
+      }
+    ]
+  },
+  "live": {
+    "module": "dev",
+    "members": [
+      {
+        "name": "generation",
+        "kind": "method",
+        "signature": "static generation() -> i64"
+      },
+      {
+        "name": "bump",
+        "kind": "method",
+        "signature": "static bump() -> i64"
+      },
+      {
+        "name": "tick",
+        "kind": "method",
+        "signature": "static tick(gen: i64) -> i64"
+      }
+    ]
+  },
+  "lsp": {
+    "module": "dev",
+    "members": [
+      {
+        "name": "hover",
+        "kind": "method",
+        "signature": "static hover(symbol: string) -> string"
+      },
+      {
+        "name": "symbol_kind",
+        "kind": "method",
+        "signature": "static symbol_kind(symbol: string) -> i64"
+      }
+    ]
+  },
+  "nullable": {
+    "module": "dev",
+    "members": [
+      {
+        "name": "of_value",
+        "kind": "method",
+        "signature": "static of_value(value: i64) -> i64"
+      },
+      {
+        "name": "empty",
+        "kind": "method",
+        "signature": "static empty() -> i64"
+      },
+      {
+        "name": "has_value",
+        "kind": "method",
+        "signature": "static has_value(opt: i64) -> i64"
+      },
+      {
+        "name": "get_or",
+        "kind": "method",
+        "signature": "static get_or(opt: i64, alt: i64) -> i64"
+      },
+      {
+        "name": "map_or_default",
+        "kind": "method",
+        "signature": "static map_or_default(opt: i64, mapped: i64, fallback: i64) -> i64"
+      }
+    ]
+  },
+  "pattern": {
+    "module": "dev",
+    "members": [
+      {
+        "name": "eq",
+        "kind": "method",
+        "signature": "static eq(value: i64, literal: i64) -> i64"
+      },
+      {
+        "name": "wildcard",
+        "kind": "method",
+        "signature": "static wildcard() -> i64"
+      },
+      {
+        "name": "in_range",
+        "kind": "method",
+        "signature": "static in_range(value: i64, lo: i64, hi: i64) -> i64"
+      }
+    ]
+  },
+  "pkg": {
+    "module": "dev",
+    "members": [
+      {
+        "name": "read_manifest",
+        "kind": "method",
+        "signature": "static read_manifest(path: string) -> string"
+      },
+      {
+        "name": "name",
+        "kind": "method",
+        "signature": "static name(manifest: string) -> string"
+      },
+      {
+        "name": "version",
+        "kind": "method",
+        "signature": "static version(manifest: string) -> string"
+      }
+    ]
+  },
+  "profile": {
+    "module": "dev",
+    "members": [
+      {
+        "name": "start",
+        "kind": "method",
+        "signature": "static start() -> i64"
+      },
+      {
+        "name": "elapsed",
+        "kind": "method",
+        "signature": "static elapsed(start_ms: i64) -> i64"
+      },
+      {
+        "name": "mem_kb",
+        "kind": "method",
+        "signature": "static mem_kb() -> i64"
+      }
+    ]
+  },
+  "readonly": {
+    "module": "dev",
+    "members": [
+      {
+        "name": "wrap",
+        "kind": "method",
+        "signature": "static wrap(value: i64) -> i64"
+      },
+      {
+        "name": "get",
+        "kind": "method",
+        "signature": "static get(wrapped: i64) -> i64"
+      },
+      {
+        "name": "is_readonly",
+        "kind": "method",
+        "signature": "static is_readonly(wrapped: i64) -> i64"
+      }
+    ]
+  },
+  "repl": {
+    "module": "dev",
+    "members": [
+      {
+        "name": "eval_expr",
+        "kind": "method",
+        "signature": "static eval_expr(expr: string) -> i64"
+      },
+      {
+        "name": "history_add",
+        "kind": "method",
+        "signature": "static history_add(line: string) -> i64"
+      },
+      {
+        "name": "history_count",
+        "kind": "method",
+        "signature": "static history_count() -> i64"
+      }
+    ]
+  },
+  "shell": {
+    "module": "dev",
+    "members": [
+      {
+        "name": "prompt",
+        "kind": "method",
+        "signature": "static prompt(label: string) -> string"
+      },
+      {
+        "name": "read_line",
+        "kind": "method",
+        "signature": "static read_line(prompt: string) -> string"
+      }
+    ]
+  },
+  "env": {
+    "module": "env",
+    "members": [
+      {
+        "name": "env_get_var",
+        "kind": "method",
+        "signature": "static env_get_var(name: string) -> string"
+      },
+      {
+        "name": "env_set_var",
+        "kind": "method",
+        "signature": "static env_set_var(name: string, value: string) -> i64"
+      },
+      {
+        "name": "env_has_var",
+        "kind": "method",
+        "signature": "static env_has_var(name: string) -> i64"
+      }
+    ]
+  },
+  "fs": {
+    "module": "fs",
+    "members": [
+      {
+        "name": "read_text",
+        "kind": "method",
+        "signature": "static read_text(path: string) -> string"
+      },
+      {
+        "name": "write_text",
+        "kind": "method",
+        "signature": "static write_text(path: string, content: string) -> i64"
+      },
+      {
+        "name": "exists",
+        "kind": "method",
+        "signature": "static exists(path: string) -> i64"
+      },
+      {
+        "name": "is_file",
+        "kind": "method",
+        "signature": "static is_file(path: string) -> i64"
+      },
+      {
+        "name": "is_dir",
+        "kind": "method",
+        "signature": "static is_dir(path: string) -> i64"
+      },
+      {
+        "name": "mkdir",
+        "kind": "method",
+        "signature": "static mkdir(path: string) -> i64"
+      },
+      {
+        "name": "remove",
+        "kind": "method",
+        "signature": "static remove(path: string) -> i64"
+      }
+    ]
+  },
+  "hash": {
+    "module": "hash",
+    "members": [
+      {
+        "name": "fnv",
+        "kind": "method",
+        "signature": "static fnv(s: string) -> i64"
+      },
+      {
+        "name": "crc32",
+        "kind": "method",
+        "signature": "static crc32(s: string) -> i64"
+      },
+      {
+        "name": "md5_hex",
+        "kind": "method",
+        "signature": "static md5_hex(s: string) -> string"
+      }
+    ]
+  },
+  "i18n": {
+    "module": "i18n",
+    "members": [
+      {
+        "name": "translate",
+        "kind": "method",
+        "signature": "static translate(key: string, lang: string) -> string"
+      },
+      {
+        "name": "format_msg",
+        "kind": "method",
+        "signature": "static format_msg(key: string, lang: string) -> string"
+      }
+    ]
+  },
+  "console": {
+    "module": "io",
+    "members": [
+      {
+        "name": "input",
+        "kind": "method",
+        "signature": "static input() -> string"
+      },
+      {
+        "name": "input",
+        "kind": "method",
+        "signature": "static input(msg: string) -> string"
+      },
+      {
+        "name": "input_prompt",
+        "kind": "method",
+        "signature": "static input_prompt(msg: string) -> string"
+      },
+      {
+        "name": "read_line",
+        "kind": "method",
+        "signature": "static read_line() -> string"
+      },
+      {
+        "name": "read_line_prompt",
+        "kind": "method",
+        "signature": "static read_line_prompt(msg: string) -> string"
+      },
+      {
+        "name": "read_char",
+        "kind": "method",
+        "signature": "static read_char() -> i64"
+      },
+      {
+        "name": "read_i64",
+        "kind": "method",
+        "signature": "static read_i64() -> i64"
+      },
+      {
+        "name": "read_f64",
+        "kind": "method",
+        "signature": "static read_f64() -> f64"
+      },
+      {
+        "name": "has_input",
+        "kind": "method",
+        "signature": "static has_input() -> i64"
+      },
+      {
+        "name": "confirm",
+        "kind": "method",
+        "signature": "static confirm(msg: string) -> i64"
+      },
+      {
+        "name": "write",
+        "kind": "method",
+        "signature": "static write(text: string) -> i64"
+      },
+      {
+        "name": "writeln",
+        "kind": "method",
+        "signature": "static writeln(text: string) -> i64"
+      },
+      {
+        "name": "write_err",
+        "kind": "method",
+        "signature": "static write_err(text: string) -> i64"
+      },
+      {
+        "name": "write_errln",
+        "kind": "method",
+        "signature": "static write_errln(text: string) -> i64"
+      },
+      {
+        "name": "flush_out",
+        "kind": "method",
+        "signature": "static flush_out() -> i64"
+      },
+      {
+        "name": "flush_err",
+        "kind": "method",
+        "signature": "static flush_err() -> i64"
+      },
+      {
+        "name": "clear",
+        "kind": "method",
+        "signature": "static clear() -> i64"
+      },
+      {
+        "name": "is_tty",
+        "kind": "method",
+        "signature": "static is_tty() -> i64"
+      },
+      {
+        "name": "columns",
+        "kind": "method",
+        "signature": "static columns() -> i64"
+      },
+      {
+        "name": "beep",
+        "kind": "method",
+        "signature": "static beep() -> i64"
+      }
+    ]
+  },
+  "input": {
+    "module": "io",
+    "members": [
+      {
+        "name": "read_line",
+        "kind": "method",
+        "signature": "static read_line() -> string"
+      },
+      {
+        "name": "read_line_prompt",
+        "kind": "method",
+        "signature": "static read_line_prompt(msg: string) -> string"
+      },
+      {
+        "name": "read_char",
+        "kind": "method",
+        "signature": "static read_char() -> i64"
+      },
+      {
+        "name": "read_i64",
+        "kind": "method",
+        "signature": "static read_i64() -> i64"
+      },
+      {
+        "name": "read_f64",
+        "kind": "method",
+        "signature": "static read_f64() -> f64"
+      },
+      {
+        "name": "has_input",
+        "kind": "method",
+        "signature": "static has_input() -> i64"
+      },
+      {
+        "name": "confirm",
+        "kind": "method",
+        "signature": "static confirm(msg: string) -> i64"
+      },
+      {
+        "name": "input",
+        "kind": "method",
+        "signature": "static input() -> string"
+      },
+      {
+        "name": "input",
+        "kind": "method",
+        "signature": "static input(msg: string) -> string"
+      },
+      {
+        "name": "input_prompt",
+        "kind": "method",
+        "signature": "static input_prompt(msg: string) -> string"
+      }
+    ]
+  },
+  "output": {
+    "module": "io",
+    "members": [
+      {
+        "name": "write_text",
+        "kind": "method",
+        "signature": "static write_text(text: string) -> i64"
+      },
+      {
+        "name": "write_line",
+        "kind": "method",
+        "signature": "static write_line(text: string) -> i64"
+      },
+      {
+        "name": "write_err",
+        "kind": "method",
+        "signature": "static write_err(text: string) -> i64"
+      },
+      {
+        "name": "write_err_line",
+        "kind": "method",
+        "signature": "static write_err_line(text: string) -> i64"
+      },
+      {
+        "name": "flush_out",
+        "kind": "method",
+        "signature": "static flush_out() -> i64"
+      },
+      {
+        "name": "flush_err",
+        "kind": "method",
+        "signature": "static flush_err() -> i64"
+      }
+    ]
+  },
+  "terminal": {
+    "module": "io",
+    "members": [
+      {
+        "name": "clear_screen",
+        "kind": "method",
+        "signature": "static clear_screen() -> i64"
+      },
+      {
+        "name": "is_tty",
+        "kind": "method",
+        "signature": "static is_tty() -> i64"
+      },
+      {
+        "name": "columns",
+        "kind": "method",
+        "signature": "static columns() -> i64"
+      },
+      {
+        "name": "beep",
+        "kind": "method",
+        "signature": "static beep() -> i64"
+      }
+    ]
+  },
+  "json": {
+    "module": "json",
+    "members": [
+      {
+        "name": "escape",
+        "kind": "method",
+        "signature": "static escape(s: string) -> string"
+      },
+      {
+        "name": "stringify_i64",
+        "kind": "method",
+        "signature": "static stringify_i64(v: i64) -> string"
+      },
+      {
+        "name": "stringify_str",
+        "kind": "method",
+        "signature": "static stringify_str(s: string) -> string"
+      },
+      {
+        "name": "get_i64",
+        "kind": "method",
+        "signature": "static get_i64(doc: string, key: string) -> i64"
+      },
+      {
+        "name": "get_str",
+        "kind": "method",
+        "signature": "static get_str(doc: string, key: string) -> string"
+      }
+    ]
+  },
+  "log": {
+    "module": "log",
+    "members": [
+      {
+        "name": "info",
+        "kind": "method",
+        "signature": "static info(msg: string) -> i64"
+      },
+      {
+        "name": "warn",
+        "kind": "method",
+        "signature": "static warn(msg: string) -> i64"
+      },
+      {
+        "name": "error",
+        "kind": "method",
+        "signature": "static error(msg: string) -> i64"
+      },
+      {
+        "name": "debug",
+        "kind": "method",
+        "signature": "static debug(msg: string) -> i64"
+      }
+    ]
+  },
+  "math": {
+    "module": "math",
+    "members": [
+      {
+        "name": "sin",
+        "kind": "method",
+        "signature": "static sin(x: f64) -> f64"
+      },
+      {
+        "name": "cos",
+        "kind": "method",
+        "signature": "static cos(x: f64) -> f64"
+      },
+      {
+        "name": "tan",
+        "kind": "method",
+        "signature": "static tan(x: f64) -> f64"
+      },
+      {
+        "name": "asin",
+        "kind": "method",
+        "signature": "static asin(x: f64) -> f64"
+      },
+      {
+        "name": "acos",
+        "kind": "method",
+        "signature": "static acos(x: f64) -> f64"
+      },
+      {
+        "name": "atan",
+        "kind": "method",
+        "signature": "static atan(x: f64) -> f64"
+      },
+      {
+        "name": "atan2",
+        "kind": "method",
+        "signature": "static atan2(x: f64, y: f64) -> f64"
+      },
+      {
+        "name": "sinh",
+        "kind": "method",
+        "signature": "static sinh(x: f64) -> f64"
+      },
+      {
+        "name": "cosh",
+        "kind": "method",
+        "signature": "static cosh(x: f64) -> f64"
+      },
+      {
+        "name": "tanh",
+        "kind": "method",
+        "signature": "static tanh(x: f64) -> f64"
+      },
+      {
+        "name": "asinh",
+        "kind": "method",
+        "signature": "static asinh(x: f64) -> f64"
+      },
+      {
+        "name": "acosh",
+        "kind": "method",
+        "signature": "static acosh(x: f64) -> f64"
+      },
+      {
+        "name": "atanh",
+        "kind": "method",
+        "signature": "static atanh(x: f64) -> f64"
+      },
+      {
+        "name": "sqrt",
+        "kind": "method",
+        "signature": "static sqrt(x: f64) -> f64"
+      },
+      {
+        "name": "cbrt",
+        "kind": "method",
+        "signature": "static cbrt(x: f64) -> f64"
+      },
+      {
+        "name": "hypot",
+        "kind": "method",
+        "signature": "static hypot(x: f64, y: f64) -> f64"
+      },
+      {
+        "name": "pow",
+        "kind": "method",
+        "signature": "static pow(x: f64, y: f64) -> f64"
+      },
+      {
+        "name": "exp",
+        "kind": "method",
+        "signature": "static exp(x: f64) -> f64"
+      },
+      {
+        "name": "log",
+        "kind": "method",
+        "signature": "static log(x: f64) -> f64"
+      },
+      {
+        "name": "log10",
+        "kind": "method",
+        "signature": "static log10(x: f64) -> f64"
+      },
+      {
+        "name": "log2",
+        "kind": "method",
+        "signature": "static log2(x: f64) -> f64"
+      },
+      {
+        "name": "exp2",
+        "kind": "method",
+        "signature": "static exp2(x: f64) -> f64"
+      },
+      {
+        "name": "log1p",
+        "kind": "method",
+        "signature": "static log1p(x: f64) -> f64"
+      },
+      {
+        "name": "expm1",
+        "kind": "method",
+        "signature": "static expm1(x: f64) -> f64"
+      },
+      {
+        "name": "floor",
+        "kind": "method",
+        "signature": "static floor(x: f64) -> f64"
+      },
+      {
+        "name": "ceil",
+        "kind": "method",
+        "signature": "static ceil(x: f64) -> f64"
+      },
+      {
+        "name": "round",
+        "kind": "method",
+        "signature": "static round(x: f64) -> f64"
+      },
+      {
+        "name": "trunc",
+        "kind": "method",
+        "signature": "static trunc(x: f64) -> f64"
+      },
+      {
+        "name": "fabs",
+        "kind": "method",
+        "signature": "static fabs(x: f64) -> f64"
+      },
+      {
+        "name": "fmod",
+        "kind": "method",
+        "signature": "static fmod(x: f64, y: f64) -> f64"
+      },
+      {
+        "name": "copysign",
+        "kind": "method",
+        "signature": "static copysign(x: f64, y: f64) -> f64"
+      },
+      {
+        "name": "pi",
+        "kind": "method",
+        "signature": "static pi() -> f64"
+      },
+      {
+        "name": "e",
+        "kind": "method",
+        "signature": "static e() -> f64"
+      },
+      {
+        "name": "tau",
+        "kind": "method",
+        "signature": "static tau() -> f64"
+      },
+      {
+        "name": "phi",
+        "kind": "method",
+        "signature": "static phi() -> f64"
+      },
+      {
+        "name": "sqrt2",
+        "kind": "method",
+        "signature": "static sqrt2() -> f64"
+      },
+      {
+        "name": "sqrt3",
+        "kind": "method",
+        "signature": "static sqrt3() -> f64"
+      },
+      {
+        "name": "ln2",
+        "kind": "method",
+        "signature": "static ln2() -> f64"
+      },
+      {
+        "name": "ln10",
+        "kind": "method",
+        "signature": "static ln10() -> f64"
+      },
+      {
+        "name": "deg_per_rad",
+        "kind": "method",
+        "signature": "static deg_per_rad() -> f64"
+      },
+      {
+        "name": "rad_per_deg",
+        "kind": "method",
+        "signature": "static rad_per_deg() -> f64"
+      },
+      {
+        "name": "imin",
+        "kind": "method",
+        "signature": "static imin(x: i64, y: i64) -> i64"
+      },
+      {
+        "name": "imax",
+        "kind": "method",
+        "signature": "static imax(x: i64, y: i64) -> i64"
+      },
+      {
+        "name": "imin3",
+        "kind": "method",
+        "signature": "static imin3(x: i64, y: i64, z: i64) -> i64"
+      },
+      {
+        "name": "imax3",
+        "kind": "method",
+        "signature": "static imax3(x: i64, y: i64, z: i64) -> i64"
+      },
+      {
+        "name": "iabs",
+        "kind": "method",
+        "signature": "static iabs(x: i64) -> i64"
+      },
+      {
+        "name": "isign",
+        "kind": "method",
+        "signature": "static isign(x: i64) -> i64"
+      },
+      {
+        "name": "clamp_i",
+        "kind": "method",
+        "signature": "static clamp_i(x: i64, y: i64, z: i64) -> i64"
+      },
+      {
+        "name": "is_even",
+        "kind": "method",
+        "signature": "static is_even(x: i64) -> bool"
+      },
+      {
+        "name": "is_odd",
+        "kind": "method",
+        "signature": "static is_odd(x: i64) -> bool"
+      },
+      {
+        "name": "mod_pos",
+        "kind": "method",
+        "signature": "static mod_pos(x: i64, y: i64) -> i64"
+      },
+      {
+        "name": "gcd",
+        "kind": "method",
+        "signature": "static gcd(x: i64, y: i64) -> i64"
+      },
+      {
+        "name": "lcm",
+        "kind": "method",
+        "signature": "static lcm(x: i64, y: i64) -> i64"
+      },
+      {
+        "name": "factorial",
+        "kind": "method",
+        "signature": "static factorial(x: i64) -> i64"
+      },
+      {
+        "name": "binomial",
+        "kind": "method",
+        "signature": "static binomial(x: i64, y: i64) -> i64"
+      },
+      {
+        "name": "isqrt",
+        "kind": "method",
+        "signature": "static isqrt(x: i64) -> i64"
+      },
+      {
+        "name": "ipow",
+        "kind": "method",
+        "signature": "static ipow(x: i64, y: i64) -> i64"
+      },
+      {
+        "name": "sum_range",
+        "kind": "method",
+        "signature": "static sum_range(x: i64, y: i64) -> i64"
+      },
+      {
+        "name": "sum_range_inclusive",
+        "kind": "method",
+        "signature": "static sum_range_inclusive(x: i64, y: i64) -> i64"
+      },
+      {
+        "name": "product_range",
+        "kind": "method",
+        "signature": "static product_range(x: i64, y: i64) -> i64"
+      },
+      {
+        "name": "fib",
+        "kind": "method",
+        "signature": "static fib(x: i64) -> i64"
+      },
+      {
+        "name": "fib_iter",
+        "kind": "method",
+        "signature": "static fib_iter(x: i64) -> i64"
+      },
+      {
+        "name": "twice",
+        "kind": "method",
+        "signature": "static twice(x: i64) -> i64"
+      },
+      {
+        "name": "thrice",
+        "kind": "method",
+        "signature": "static thrice(x: i64) -> i64"
+      },
+      {
+        "name": "quad",
+        "kind": "method",
+        "signature": "static quad(x: i64) -> i64"
+      },
+      {
+        "name": "deg_to_rad",
+        "kind": "method",
+        "signature": "static deg_to_rad(x: f64) -> f64"
+      },
+      {
+        "name": "rad_to_deg",
+        "kind": "method",
+        "signature": "static rad_to_deg(x: f64) -> f64"
+      },
+      {
+        "name": "sin_deg",
+        "kind": "method",
+        "signature": "static sin_deg(x: f64) -> f64"
+      },
+      {
+        "name": "cos_deg",
+        "kind": "method",
+        "signature": "static cos_deg(x: f64) -> f64"
+      },
+      {
+        "name": "tan_deg",
+        "kind": "method",
+        "signature": "static tan_deg(x: f64) -> f64"
+      },
+      {
+        "name": "asin_deg",
+        "kind": "method",
+        "signature": "static asin_deg(x: f64) -> f64"
+      },
+      {
+        "name": "acos_deg",
+        "kind": "method",
+        "signature": "static acos_deg(x: f64) -> f64"
+      },
+      {
+        "name": "atan_deg",
+        "kind": "method",
+        "signature": "static atan_deg(x: f64) -> f64"
+      },
+      {
+        "name": "atan2_deg",
+        "kind": "method",
+        "signature": "static atan2_deg(x: f64, y: f64) -> f64"
+      },
+      {
+        "name": "normalize_rad",
+        "kind": "method",
+        "signature": "static normalize_rad(x: f64) -> f64"
+      },
+      {
+        "name": "normalize_deg",
+        "kind": "method",
+        "signature": "static normalize_deg(x: f64) -> f64"
+      },
+      {
+        "name": "sec",
+        "kind": "method",
+        "signature": "static sec(x: f64) -> f64"
+      },
+      {
+        "name": "csc",
+        "kind": "method",
+        "signature": "static csc(x: f64) -> f64"
+      },
+      {
+        "name": "cot",
+        "kind": "method",
+        "signature": "static cot(x: f64) -> f64"
+      },
+      {
+        "name": "haversine",
+        "kind": "method",
+        "signature": "static haversine(x: f64, y: f64, z: f64, w: f64) -> f64"
+      },
+      {
+        "name": "dmin",
+        "kind": "method",
+        "signature": "static dmin(x: f64, y: f64) -> f64"
+      },
+      {
+        "name": "dmax",
+        "kind": "method",
+        "signature": "static dmax(x: f64, y: f64) -> f64"
+      },
+      {
+        "name": "dmin3",
+        "kind": "method",
+        "signature": "static dmin3(x: f64, y: f64, z: f64) -> f64"
+      },
+      {
+        "name": "dmax3",
+        "kind": "method",
+        "signature": "static dmax3(x: f64, y: f64, z: f64) -> f64"
+      },
+      {
+        "name": "clamp_d",
+        "kind": "method",
+        "signature": "static clamp_d(x: f64, y: f64, z: f64) -> f64"
+      },
+      {
+        "name": "saturate",
+        "kind": "method",
+        "signature": "static saturate(x: f64) -> f64"
+      },
+      {
+        "name": "lerp",
+        "kind": "method",
+        "signature": "static lerp(x: f64, y: f64, z: f64) -> f64"
+      },
+      {
+        "name": "inv_lerp",
+        "kind": "method",
+        "signature": "static inv_lerp(x: f64, y: f64, z: f64) -> f64"
+      },
+      {
+        "name": "remap",
+        "kind": "method",
+        "signature": "static remap(x: f64, y: f64, z: f64, w: f64, v: f64) -> f64"
+      },
+      {
+        "name": "square",
+        "kind": "method",
+        "signature": "static square(x: f64) -> f64"
+      },
+      {
+        "name": "cube",
+        "kind": "method",
+        "signature": "static cube(x: f64) -> f64"
+      },
+      {
+        "name": "approx_eq",
+        "kind": "method",
+        "signature": "static approx_eq(x: f64, y: f64, z: f64) -> bool"
+      },
+      {
+        "name": "approx_zero",
+        "kind": "method",
+        "signature": "static approx_zero(x: f64, y: f64) -> bool"
+      },
+      {
+        "name": "dist2",
+        "kind": "method",
+        "signature": "static dist2(x: f64, y: f64, z: f64, w: f64) -> f64"
+      },
+      {
+        "name": "dist",
+        "kind": "method",
+        "signature": "static dist(x: f64, y: f64, z: f64, w: f64) -> f64"
+      },
+      {
+        "name": "sign_d",
+        "kind": "method",
+        "signature": "static sign_d(x: f64) -> f64"
+      },
+      {
+        "name": "round_i",
+        "kind": "method",
+        "signature": "static round_i(x: f64) -> i64"
+      },
+      {
+        "name": "floor_i",
+        "kind": "method",
+        "signature": "static floor_i(x: f64) -> i64"
+      },
+      {
+        "name": "ceil_i",
+        "kind": "method",
+        "signature": "static ceil_i(x: f64) -> i64"
+      },
+      {
+        "name": "log_n",
+        "kind": "method",
+        "signature": "static log_n(x: f64, y: f64) -> f64"
+      },
+      {
+        "name": "exp10",
+        "kind": "method",
+        "signature": "static exp10(x: f64) -> f64"
+      },
+      {
+        "name": "smoothstep",
+        "kind": "method",
+        "signature": "static smoothstep(x: f64, y: f64, z: f64) -> f64"
+      },
+      {
+        "name": "mean2",
+        "kind": "method",
+        "signature": "static mean2(x: f64, y: f64) -> f64"
+      },
+      {
+        "name": "mean3",
+        "kind": "method",
+        "signature": "static mean3(x: f64, y: f64, z: f64) -> f64"
+      },
+      {
+        "name": "variance2",
+        "kind": "method",
+        "signature": "static variance2(x: f64, y: f64) -> f64"
+      },
+      {
+        "name": "stddev2",
+        "kind": "method",
+        "signature": "static stddev2(x: f64, y: f64) -> f64"
+      },
+      {
+        "name": "arr_min",
+        "kind": "method",
+        "signature": "static arr_min(x: arr) -> i64"
+      },
+      {
+        "name": "arr_max",
+        "kind": "method",
+        "signature": "static arr_max(x: arr) -> i64"
+      },
+      {
+        "name": "arr_sum",
+        "kind": "method",
+        "signature": "static arr_sum(x: arr) -> i64"
+      },
+      {
+        "name": "arr_mean",
+        "kind": "method",
+        "signature": "static arr_mean(x: arr) -> i64"
+      },
+      {
+        "name": "arr_count",
+        "kind": "method",
+        "signature": "static arr_count(x: arr, y: i64) -> i64"
+      },
+      {
+        "name": "arr_index_of",
+        "kind": "method",
+        "signature": "static arr_index_of(x: arr, y: i64) -> i64"
+      },
+      {
+        "name": "vec2_lerp",
+        "kind": "method",
+        "signature": "static vec2_lerp(x: dvec2, y: dvec2, z: f64) -> dvec2"
+      },
+      {
+        "name": "vec2_reflect",
+        "kind": "method",
+        "signature": "static vec2_reflect(x: dvec2, y: dvec2) -> dvec2"
+      },
+      {
+        "name": "vec2_angle",
+        "kind": "method",
+        "signature": "static vec2_angle(x: dvec2) -> f64"
+      },
+      {
+        "name": "clamp",
+        "kind": "method",
+        "signature": "static clamp(x: f64, lo: f64, hi: f64) -> f64"
+      },
+      {
+        "name": "deg",
+        "kind": "method",
+        "signature": "static deg(v: f64) -> f64"
+      },
+      {
+        "name": "rad",
+        "kind": "method",
+        "signature": "static rad(v: f64) -> f64"
+      }
+    ]
+  },
+  "TcpClient": {
+    "module": "network",
+    "members": [
+      {
+        "name": "sock",
+        "kind": "field",
+        "signature": "sock: i64",
+        "type": "i64"
+      },
+      {
+        "name": "connect",
+        "kind": "method",
+        "signature": "fun connect(host: string, port: i64) -> i64"
+      },
+      {
+        "name": "send",
+        "kind": "method",
+        "signature": "fun send(data: string) -> i64"
+      },
+      {
+        "name": "sendall",
+        "kind": "method",
+        "signature": "fun sendall(data: string) -> i64"
+      },
+      {
+        "name": "recv",
+        "kind": "method",
+        "signature": "fun recv(max: i64) -> string"
+      },
+      {
+        "name": "close",
+        "kind": "method",
+        "signature": "fun close() -> i64"
+      },
+      {
+        "name": "is_open",
+        "kind": "method",
+        "signature": "fun is_open() -> i64"
+      }
+    ],
+    "constructor": {
+      "signature": "TcpClient()"
+    }
+  },
+  "UdpClient": {
+    "module": "network",
+    "members": [
+      {
+        "name": "sock",
+        "kind": "field",
+        "signature": "sock: i64",
+        "type": "i64"
+      },
+      {
+        "name": "bind",
+        "kind": "method",
+        "signature": "fun bind(port: i64) -> i64"
+      },
+      {
+        "name": "sendto",
+        "kind": "method",
+        "signature": "fun sendto(host: string, port: i64, data: string) -> i64"
+      },
+      {
+        "name": "recvfrom",
+        "kind": "method",
+        "signature": "fun recvfrom(max: i64) -> string"
+      },
+      {
+        "name": "close",
+        "kind": "method",
+        "signature": "fun close() -> i64"
+      }
+    ],
+    "constructor": {
+      "signature": "UdpClient()"
+    }
+  },
+  "client": {
+    "module": "network",
+    "members": [
+      {
+        "name": "tcp_open",
+        "kind": "method",
+        "signature": "static tcp_open(host: string, port: i64) -> TcpClient"
+      }
+    ]
+  },
+  "HttpClient": {
+    "module": "network",
+    "members": [
+      {
+        "name": "base",
+        "kind": "field",
+        "signature": "base: string",
+        "type": "string"
+      },
+      {
+        "name": "fetch",
+        "kind": "method",
+        "signature": "fun fetch() -> string"
+      },
+      {
+        "name": "get",
+        "kind": "method",
+        "signature": "fun get(path: string) -> string"
+      },
+      {
+        "name": "post",
+        "kind": "method",
+        "signature": "fun post(path: string, body: string) -> string"
+      },
+      {
+        "name": "post_form",
+        "kind": "method",
+        "signature": "fun post_form(path: string, body: string) -> string"
+      },
+      {
+        "name": "put",
+        "kind": "method",
+        "signature": "fun put(path: string, body: string) -> string"
+      },
+      {
+        "name": "del",
+        "kind": "method",
+        "signature": "fun del(path: string) -> string"
+      }
+    ],
+    "constructor": {
+      "signature": "HttpClient(base_url: string)"
+    }
+  },
+  "HttpsClient": {
+    "module": "network",
+    "members": [
+      {
+        "name": "base",
+        "kind": "field",
+        "signature": "base: string",
+        "type": "string"
+      },
+      {
+        "name": "get",
+        "kind": "method",
+        "signature": "fun get(path: string) -> string"
+      },
+      {
+        "name": "post",
+        "kind": "method",
+        "signature": "fun post(path: string, body: string) -> string"
+      }
+    ],
+    "constructor": {
+      "signature": "HttpsClient(base_url: string)"
+    }
+  },
+  "tcp": {
+    "module": "network",
+    "members": [
+      {
+        "name": "open",
+        "kind": "method",
+        "signature": "static open(host: string, port: i64) -> i64"
+      },
+      {
+        "name": "listen_on",
+        "kind": "method",
+        "signature": "static listen_on(port: i64) -> i64"
+      },
+      {
+        "name": "accept_client",
+        "kind": "method",
+        "signature": "static accept_client(sock: i64) -> i64"
+      },
+      {
+        "name": "write",
+        "kind": "method",
+        "signature": "static write(sock: i64, data: string) -> i64"
+      },
+      {
+        "name": "read",
+        "kind": "method",
+        "signature": "static read(sock: i64, max: i64) -> string"
+      },
+      {
+        "name": "close_conn",
+        "kind": "method",
+        "signature": "static close_conn(sock: i64) -> i64"
+      }
+    ]
+  },
+  "udp": {
+    "module": "network",
+    "members": [
+      {
+        "name": "bind_port",
+        "kind": "method",
+        "signature": "static bind_port(port: i64) -> i64"
+      },
+      {
+        "name": "send_to",
+        "kind": "method",
+        "signature": "static send_to(sock: i64, host: string, port: i64, data: string) -> i64"
+      },
+      {
+        "name": "recv_from",
+        "kind": "method",
+        "signature": "static recv_from(sock: i64, max: i64) -> string"
+      },
+      {
+        "name": "close_sock",
+        "kind": "method",
+        "signature": "static close_sock(sock: i64) -> i64"
+      }
+    ]
+  },
+  "http": {
+    "module": "network",
+    "members": [
+      {
+        "name": "get",
+        "kind": "method",
+        "signature": "static get(url: string) -> string"
+      },
+      {
+        "name": "post",
+        "kind": "method",
+        "signature": "static post(url: string, body: string) -> string"
+      },
+      {
+        "name": "post_ct",
+        "kind": "method",
+        "signature": "static post_ct(url: string, body: string, ctype: string) -> string"
+      },
+      {
+        "name": "parse_status",
+        "kind": "method",
+        "signature": "static parse_status(response: string) -> i64"
+      }
+    ]
+  },
+  "https": {
+    "module": "network",
+    "members": [
+      {
+        "name": "get",
+        "kind": "method",
+        "signature": "static get(url: string) -> string"
+      },
+      {
+        "name": "post",
+        "kind": "method",
+        "signature": "static post(url: string, body: string) -> string"
+      }
+    ]
+  },
+  "rest": {
+    "module": "network",
+    "members": [
+      {
+        "name": "get",
+        "kind": "method",
+        "signature": "static get(url: string) -> string"
+      },
+      {
+        "name": "post",
+        "kind": "method",
+        "signature": "static post(url: string, body: string) -> string"
+      },
+      {
+        "name": "put",
+        "kind": "method",
+        "signature": "static put(url: string, body: string) -> string"
+      },
+      {
+        "name": "del",
+        "kind": "method",
+        "signature": "static del(url: string) -> string"
+      }
+    ]
+  },
+  "rpc": {
+    "module": "network",
+    "members": [
+      {
+        "name": "call",
+        "kind": "method",
+        "signature": "static call(host: string, port: i64, method: string, params: string) -> string"
+      }
+    ]
+  },
+  "grpc": {
+    "module": "network",
+    "members": [
+      {
+        "name": "call",
+        "kind": "method",
+        "signature": "static call(host: string, port: i64, method: string, payload: string) -> string"
+      }
+    ]
+  },
+  "serialize": {
+    "module": "network",
+    "members": [
+      {
+        "name": "pack",
+        "kind": "method",
+        "signature": "static pack(service: string, method: string, body: string) -> string"
+      },
+      {
+        "name": "unpack_method",
+        "kind": "method",
+        "signature": "static unpack_method(packed: string) -> string"
+      },
+      {
+        "name": "unpack_body",
+        "kind": "method",
+        "signature": "static unpack_body(packed: string) -> string"
+      },
+      {
+        "name": "to_json",
+        "kind": "method",
+        "signature": "static to_json(data: string) -> string"
+      },
+      {
+        "name": "from_json",
+        "kind": "method",
+        "signature": "static from_json(json: string, key: string) -> string"
+      }
+    ]
+  },
+  "websocket": {
+    "module": "network",
+    "members": [
+      {
+        "name": "open",
+        "kind": "method",
+        "signature": "static open(host: string, port: i64, path: string) -> i64"
+      },
+      {
+        "name": "send_text",
+        "kind": "method",
+        "signature": "static send_text(sock: i64, text: string) -> i64"
+      },
+      {
+        "name": "recv_text",
+        "kind": "method",
+        "signature": "static recv_text(sock: i64) -> string"
+      },
+      {
+        "name": "close_sock",
+        "kind": "method",
+        "signature": "static close_sock(sock: i64) -> i64"
+      }
+    ]
+  },
+  "net": {
+    "module": "network",
+    "members": [
+      {
+        "name": "connect",
+        "kind": "method",
+        "signature": "static connect(host: string, port: i64) -> i64"
+      },
+      {
+        "name": "send",
+        "kind": "method",
+        "signature": "static send(sock: i64, data: string) -> i64"
+      },
+      {
+        "name": "recv",
+        "kind": "method",
+        "signature": "static recv(sock: i64, max: i64) -> string"
+      },
+      {
+        "name": "close",
+        "kind": "method",
+        "signature": "static close(sock: i64) -> i64"
+      }
+    ]
+  },
+  "incremental": {
+    "module": "perf",
+    "members": [
+      {
+        "name": "generation",
+        "kind": "method",
+        "signature": "static generation() -> i64"
+      },
+      {
+        "name": "bump",
+        "kind": "method",
+        "signature": "static bump() -> i64"
+      },
+      {
+        "name": "stamp",
+        "kind": "method",
+        "signature": "static stamp(path: string) -> i64"
+      },
+      {
+        "name": "stale",
+        "kind": "method",
+        "signature": "static stale(path: string, since_ms: i64) -> i64"
+      }
+    ]
+  },
+  "llvm": {
+    "module": "perf",
+    "members": [
+      {
+        "name": "version",
+        "kind": "method",
+        "signature": "static version() -> string"
+      },
+      {
+        "name": "opt_level",
+        "kind": "method",
+        "signature": "static opt_level() -> i64"
+      }
+    ]
+  },
+  "lowmem": {
+    "module": "perf",
+    "members": [
+      {
+        "name": "heap_size_kb",
+        "kind": "method",
+        "signature": "static heap_size_kb() -> i64"
+      },
+      {
+        "name": "peak_size_kb",
+        "kind": "method",
+        "signature": "static peak_size_kb() -> i64"
+      }
+    ]
+  },
+  "native": {
+    "module": "perf",
+    "members": [
+      {
+        "name": "target_triple",
+        "kind": "method",
+        "signature": "static target_triple() -> string"
+      },
+      {
+        "name": "compiled_native",
+        "kind": "method",
+        "signature": "static compiled_native() -> i64"
+      }
+    ]
+  },
+  "predictable": {
+    "module": "perf",
+    "members": [
+      {
+        "name": "mark",
+        "kind": "method",
+        "signature": "static mark() -> i64"
+      },
+      {
+        "name": "since_mark_ms",
+        "kind": "method",
+        "signature": "static since_mark_ms(start: i64) -> i64"
+      },
+      {
+        "name": "jitter_between",
+        "kind": "method",
+        "signature": "static jitter_between(a: i64, b: i64) -> i64"
+      },
+      {
+        "name": "deterministic",
+        "kind": "method",
+        "signature": "static deterministic(a: i64, b: i64) -> i64"
+      }
+    ]
+  },
+  "simd": {
+    "module": "perf",
+    "members": [
+      {
+        "name": "width",
+        "kind": "method",
+        "signature": "static width() -> i64"
+      },
+      {
+        "name": "add4",
+        "kind": "method",
+        "signature": "static add4(a: i64, b: i64, c: i64, d: i64) -> i64"
+      }
+    ]
+  },
+  "startup": {
+    "module": "perf",
+    "members": [
+      {
+        "name": "boot_ms",
+        "kind": "method",
+        "signature": "static boot_ms() -> i64"
+      },
+      {
+        "name": "ready",
+        "kind": "method",
+        "signature": "static ready() -> i64"
+      },
+      {
+        "name": "elapsed_ms",
+        "kind": "method",
+        "signature": "static elapsed_ms() -> i64"
+      }
+    ]
+  },
+  "threads": {
+    "module": "perf",
+    "members": [
+      {
+        "name": "count",
+        "kind": "method",
+        "signature": "static count() -> i64"
+      },
+      {
+        "name": "current_id",
+        "kind": "method",
+        "signature": "static current_id() -> i64"
+      },
+      {
+        "name": "join",
+        "kind": "method",
+        "signature": "static join(handle: i64) -> i64"
+      },
+      {
+        "name": "cores",
+        "kind": "method",
+        "signature": "static cores() -> i64"
+      }
+    ]
+  },
+  "vectorize": {
+    "module": "perf",
+    "members": [
+      {
+        "name": "enabled",
+        "kind": "method",
+        "signature": "static enabled() -> i64"
+      },
+      {
+        "name": "hint",
+        "kind": "method",
+        "signature": "static hint(width: i64) -> i64"
+      },
+      {
+        "name": "dot4",
+        "kind": "method",
+        "signature": "static dot4(a: i64, b: i64, c: i64, d: i64) -> i64"
+      }
+    ]
+  },
+  "proc": {
+    "module": "proc",
+    "members": [
+      {
+        "name": "pid",
+        "kind": "method",
+        "signature": "static pid() -> i64"
+      },
+      {
+        "name": "run",
+        "kind": "method",
+        "signature": "static run(cmd: string) -> i64"
+      }
+    ]
+  },
+  "random": {
+    "module": "random",
+    "members": [
+      {
+        "name": "seed",
+        "kind": "method",
+        "signature": "static seed(s: i64) -> i64"
+      },
+      {
+        "name": "next_i64",
+        "kind": "method",
+        "signature": "static next_i64() -> i64"
+      },
+      {
+        "name": "next_f64",
+        "kind": "method",
+        "signature": "static next_f64() -> f64"
+      },
+      {
+        "name": "rand_between",
+        "kind": "method",
+        "signature": "static rand_between(lo: i64, hi: i64) -> i64"
+      }
+    ]
+  },
+  "regex": {
+    "module": "regex",
+    "members": [
+      {
+        "name": "glob_match",
+        "kind": "method",
+        "signature": "static glob_match(pat: string, text: string) -> i64"
+      },
+      {
+        "name": "glob_find",
+        "kind": "method",
+        "signature": "static glob_find(pat: string, text: string) -> i64"
+      }
+    ]
+  },
+  "fft": {
+    "module": "science",
+    "members": [
+      {
+        "name": "forward",
+        "kind": "method",
+        "signature": "static forward(signal: arr) -> arr"
+      },
+      {
+        "name": "inverse",
+        "kind": "method",
+        "signature": "static inverse(spectrum: arr) -> arr"
+      }
+    ]
+  },
+  "ml": {
+    "module": "science",
+    "members": [
+      {
+        "name": "sigmoid",
+        "kind": "method",
+        "signature": "static sigmoid(x: f64) -> f64"
+      },
+      {
+        "name": "relu",
+        "kind": "method",
+        "signature": "static relu(x: f64) -> f64"
+      },
+      {
+        "name": "tanh_act",
+        "kind": "method",
+        "signature": "static tanh_act(x: f64) -> f64"
+      },
+      {
+        "name": "softmax_vec",
+        "kind": "method",
+        "signature": "static softmax_vec(v: arr) -> arr"
+      },
+      {
+        "name": "dot_vecs",
+        "kind": "method",
+        "signature": "static dot_vecs(a: arr, b: arr) -> f64"
+      }
+    ]
+  },
+  "numerical": {
+    "module": "science",
+    "members": [
+      {
+        "name": "integrate_trapz",
+        "kind": "method",
+        "signature": "static integrate_trapz(y: arr, h: f64) -> f64"
+      },
+      {
+        "name": "integrate_simpson",
+        "kind": "method",
+        "signature": "static integrate_simpson(y: arr, h: f64) -> f64"
+      },
+      {
+        "name": "finite_diff",
+        "kind": "method",
+        "signature": "static finite_diff(y: arr) -> arr"
+      },
+      {
+        "name": "scale_arr",
+        "kind": "method",
+        "signature": "static scale_arr(y: arr, t: f64) -> arr"
+      }
+    ]
+  },
+  "optimization": {
+    "module": "science",
+    "members": [
+      {
+        "name": "grad_step",
+        "kind": "method",
+        "signature": "static grad_step(x: f64, lr: f64, grad: f64) -> f64"
+      },
+      {
+        "name": "parabola_vertex",
+        "kind": "method",
+        "signature": "static parabola_vertex(a: f64, b: f64, c: f64) -> f64"
+      }
+    ]
+  },
+  "physics": {
+    "module": "science",
+    "members": [
+      {
+        "name": "kinetic",
+        "kind": "method",
+        "signature": "static kinetic(m: f64, v: f64) -> f64"
+      },
+      {
+        "name": "potential",
+        "kind": "method",
+        "signature": "static potential(m: f64, g: f64, h: f64) -> f64"
+      },
+      {
+        "name": "gravity",
+        "kind": "method",
+        "signature": "static gravity(m1: f64, m2: f64, r: f64) -> f64"
+      },
+      {
+        "name": "projectile_range",
+        "kind": "method",
+        "signature": "static projectile_range(v0: f64, angle: f64, g: f64) -> f64"
+      },
+      {
+        "name": "hooke",
+        "kind": "method",
+        "signature": "static hooke(k: f64, x: f64) -> f64"
+      }
+    ]
+  },
+  "statistics": {
+    "module": "science",
+    "members": [
+      {
+        "name": "mean",
+        "kind": "method",
+        "signature": "static mean(data: arr) -> f64"
+      },
+      {
+        "name": "variance",
+        "kind": "method",
+        "signature": "static variance(data: arr) -> f64"
+      },
+      {
+        "name": "stddev",
+        "kind": "method",
+        "signature": "static stddev(data: arr) -> f64"
+      },
+      {
+        "name": "median",
+        "kind": "method",
+        "signature": "static median(data: arr) -> f64"
+      },
+      {
+        "name": "correlation",
+        "kind": "method",
+        "signature": "static correlation(a: arr, b: arr) -> f64"
+      }
+    ]
+  },
+  "boundscheck": {
+    "module": "security",
+    "members": [
+      {
+        "name": "index_ok",
+        "kind": "method",
+        "signature": "static index_ok(index: i64, len: i64) -> i64"
+      },
+      {
+        "name": "slice_ok",
+        "kind": "method",
+        "signature": "static slice_ok(start: i64, len: i64, cap: i64) -> i64"
+      },
+      {
+        "name": "clamp_index",
+        "kind": "method",
+        "signature": "static clamp_index(index: i64, len: i64) -> i64"
+      }
+    ]
+  },
+  "concurrency": {
+    "module": "security",
+    "members": [
+      {
+        "name": "acquire",
+        "kind": "method",
+        "signature": "static acquire(id: i64) -> i64"
+      },
+      {
+        "name": "release",
+        "kind": "method",
+        "signature": "static release(id: i64) -> i64"
+      },
+      {
+        "name": "try_acquire",
+        "kind": "method",
+        "signature": "static try_acquire(id: i64) -> i64"
+      },
+      {
+        "name": "is_owned",
+        "kind": "method",
+        "signature": "static is_owned(id: i64) -> i64"
+      }
+    ]
+  },
+  "memsafe": {
+    "module": "security",
+    "members": [
+      {
+        "name": "make_guard",
+        "kind": "method",
+        "signature": "static make_guard(size: i64) -> i64"
+      },
+      {
+        "name": "is_valid",
+        "kind": "method",
+        "signature": "static is_valid(guard_id: i64) -> i64"
+      },
+      {
+        "name": "wipe",
+        "kind": "method",
+        "signature": "static wipe(guard_id: i64) -> i64"
+      },
+      {
+        "name": "guarded_size",
+        "kind": "method",
+        "signature": "static guarded_size(guard_id: i64) -> i64"
+      }
+    ]
+  },
+  "overflow": {
+    "module": "security",
+    "members": [
+      {
+        "name": "add_safe",
+        "kind": "method",
+        "signature": "static add_safe(a: i64, b: i64) -> i64"
+      },
+      {
+        "name": "mul_safe",
+        "kind": "method",
+        "signature": "static mul_safe(a: i64, b: i64) -> i64"
+      },
+      {
+        "name": "sub_safe",
+        "kind": "method",
+        "signature": "static sub_safe(a: i64, b: i64) -> i64"
+      },
+      {
+        "name": "overflowed",
+        "kind": "method",
+        "signature": "static overflowed() -> i64"
+      }
+    ]
+  },
+  "permission": {
+    "module": "security",
+    "members": [
+      {
+        "name": "grant",
+        "kind": "method",
+        "signature": "static grant(subject: i64, perm: i64) -> i64"
+      },
+      {
+        "name": "revoke",
+        "kind": "method",
+        "signature": "static revoke(subject: i64, perm: i64) -> i64"
+      },
+      {
+        "name": "has_perm",
+        "kind": "method",
+        "signature": "static has_perm(subject: i64, perm: i64) -> i64"
+      },
+      {
+        "name": "bits",
+        "kind": "method",
+        "signature": "static bits(subject: i64) -> i64"
+      }
+    ]
+  },
+  "sandbox": {
+    "module": "security",
+    "members": [
+      {
+        "name": "open_sandbox",
+        "kind": "method",
+        "signature": "static open_sandbox(level: i64) -> i64"
+      },
+      {
+        "name": "close_sandbox",
+        "kind": "method",
+        "signature": "static close_sandbox() -> i64"
+      },
+      {
+        "name": "is_active",
+        "kind": "method",
+        "signature": "static is_active() -> i64"
+      },
+      {
+        "name": "allow_path",
+        "kind": "method",
+        "signature": "static allow_path(path: string) -> i64"
+      },
+      {
+        "name": "can_access",
+        "kind": "method",
+        "signature": "static can_access(path: string) -> i64"
+      }
+    ]
+  },
+  "test": {
+    "module": "test",
+    "members": [
+      {
+        "name": "assert_eq_i64",
+        "kind": "method",
+        "signature": "static assert_eq_i64(a: i64, b: i64) -> i64"
+      },
+      {
+        "name": "assert_true",
+        "kind": "method",
+        "signature": "static assert_true(v: i64) -> i64"
+      },
+      {
+        "name": "run_case",
+        "kind": "method",
+        "signature": "static run_case(name: string, code: i64) -> i64"
+      }
+    ]
+  },
+  "time": {
+    "module": "time",
+    "members": [
+      {
+        "name": "milliseconds",
+        "kind": "method",
+        "signature": "static milliseconds() -> i64"
+      },
+      {
+        "name": "seconds",
+        "kind": "method",
+        "signature": "static seconds() -> i64"
+      },
+      {
+        "name": "ticks",
+        "kind": "method",
+        "signature": "static ticks() -> i64"
+      }
+    ]
+  },
+  "xml": {
+    "module": "xml",
+    "members": [
+      {
+        "name": "escape",
+        "kind": "method",
+        "signature": "static escape(s: string) -> string"
+      },
+      {
+        "name": "tag",
+        "kind": "method",
+        "signature": "static tag(name: string, body: string) -> string"
+      },
+      {
+        "name": "get_attr",
+        "kind": "method",
+        "signature": "static get_attr(doc: string, attr: string) -> string"
+      }
+    ]
+  },
+  "yaml": {
+    "module": "yaml",
+    "members": [
+      {
+        "name": "yaml_get_value",
+        "kind": "method",
+        "signature": "static yaml_get_value(doc: string, key: string) -> string"
+      }
+    ]
+  },
+  "vec2": {
+    "module": "vectors",
+    "members": []
+  },
+  "vec3": {
+    "module": "vectors",
+    "members": []
+  },
+  "vec4": {
+    "module": "vectors",
+    "members": []
+  },
+  "dvec2": {
+    "module": "vectors",
+    "members": []
+  },
+  "dvec3": {
+    "module": "vectors",
+    "members": []
+  },
+  "dvec4": {
+    "module": "vectors",
+    "members": []
+  },
+  "ivec2": {
+    "module": "vectors",
+    "members": []
+  },
+  "ivec3": {
+    "module": "vectors",
+    "members": []
+  },
+  "ivec4": {
+    "module": "vectors",
+    "members": []
+  },
+  "vectors": {
+    "module": "vectors",
+    "members": [
+      {
+        "name": "length",
+        "kind": "method",
+        "signature": "static length(v: vec2) -> f64"
+      },
+      {
+        "name": "length",
+        "kind": "method",
+        "signature": "static length(v: vec3) -> f64"
+      },
+      {
+        "name": "length",
+        "kind": "method",
+        "signature": "static length(v: vec4) -> f64"
+      },
+      {
+        "name": "length",
+        "kind": "method",
+        "signature": "static length(v: dvec2) -> f64"
+      },
+      {
+        "name": "length",
+        "kind": "method",
+        "signature": "static length(v: dvec3) -> f64"
+      },
+      {
+        "name": "length",
+        "kind": "method",
+        "signature": "static length(v: dvec4) -> f64"
+      },
+      {
+        "name": "length",
+        "kind": "method",
+        "signature": "static length(v: ivec2) -> f64"
+      },
+      {
+        "name": "length",
+        "kind": "method",
+        "signature": "static length(v: ivec3) -> f64"
+      },
+      {
+        "name": "length",
+        "kind": "method",
+        "signature": "static length(v: ivec4) -> f64"
+      },
+      {
+        "name": "length2",
+        "kind": "method",
+        "signature": "static length2(v: vec2) -> f64"
+      },
+      {
+        "name": "length2",
+        "kind": "method",
+        "signature": "static length2(v: vec3) -> f64"
+      },
+      {
+        "name": "length2",
+        "kind": "method",
+        "signature": "static length2(v: vec4) -> f64"
+      },
+      {
+        "name": "length2",
+        "kind": "method",
+        "signature": "static length2(v: dvec2) -> f64"
+      },
+      {
+        "name": "length2",
+        "kind": "method",
+        "signature": "static length2(v: dvec3) -> f64"
+      },
+      {
+        "name": "length2",
+        "kind": "method",
+        "signature": "static length2(v: dvec4) -> f64"
+      },
+      {
+        "name": "length2",
+        "kind": "method",
+        "signature": "static length2(v: ivec2) -> i64"
+      },
+      {
+        "name": "length2",
+        "kind": "method",
+        "signature": "static length2(v: ivec3) -> i64"
+      },
+      {
+        "name": "length2",
+        "kind": "method",
+        "signature": "static length2(v: ivec4) -> i64"
+      },
+      {
+        "name": "dot",
+        "kind": "method",
+        "signature": "static dot(a: vec2, b: vec2) -> f64"
+      },
+      {
+        "name": "dot",
+        "kind": "method",
+        "signature": "static dot(a: vec3, b: vec3) -> f64"
+      },
+      {
+        "name": "dot",
+        "kind": "method",
+        "signature": "static dot(a: vec4, b: vec4) -> f64"
+      },
+      {
+        "name": "dot",
+        "kind": "method",
+        "signature": "static dot(a: dvec2, b: dvec2) -> f64"
+      },
+      {
+        "name": "dot",
+        "kind": "method",
+        "signature": "static dot(a: dvec3, b: dvec3) -> f64"
+      },
+      {
+        "name": "dot",
+        "kind": "method",
+        "signature": "static dot(a: dvec4, b: dvec4) -> f64"
+      },
+      {
+        "name": "dot",
+        "kind": "method",
+        "signature": "static dot(a: ivec2, b: ivec2) -> i64"
+      },
+      {
+        "name": "dot",
+        "kind": "method",
+        "signature": "static dot(a: ivec3, b: ivec3) -> i64"
+      },
+      {
+        "name": "dot",
+        "kind": "method",
+        "signature": "static dot(a: ivec4, b: ivec4) -> i64"
+      },
+      {
+        "name": "distance",
+        "kind": "method",
+        "signature": "static distance(a: vec2, b: vec2) -> f64"
+      },
+      {
+        "name": "distance",
+        "kind": "method",
+        "signature": "static distance(a: vec3, b: vec3) -> f64"
+      },
+      {
+        "name": "distance",
+        "kind": "method",
+        "signature": "static distance(a: vec4, b: vec4) -> f64"
+      },
+      {
+        "name": "distance",
+        "kind": "method",
+        "signature": "static distance(a: dvec2, b: dvec2) -> f64"
+      },
+      {
+        "name": "distance",
+        "kind": "method",
+        "signature": "static distance(a: dvec3, b: dvec3) -> f64"
+      },
+      {
+        "name": "distance",
+        "kind": "method",
+        "signature": "static distance(a: dvec4, b: dvec4) -> f64"
+      },
+      {
+        "name": "distance2",
+        "kind": "method",
+        "signature": "static distance2(a: vec2, b: vec2) -> f64"
+      },
+      {
+        "name": "distance2",
+        "kind": "method",
+        "signature": "static distance2(a: vec3, b: vec3) -> f64"
+      },
+      {
+        "name": "distance2",
+        "kind": "method",
+        "signature": "static distance2(a: vec4, b: vec4) -> f64"
+      },
+      {
+        "name": "distance2",
+        "kind": "method",
+        "signature": "static distance2(a: dvec2, b: dvec2) -> f64"
+      },
+      {
+        "name": "distance2",
+        "kind": "method",
+        "signature": "static distance2(a: dvec3, b: dvec3) -> f64"
+      },
+      {
+        "name": "distance2",
+        "kind": "method",
+        "signature": "static distance2(a: dvec4, b: dvec4) -> f64"
+      },
+      {
+        "name": "normalize",
+        "kind": "method",
+        "signature": "static normalize(v: vec2) -> vec2"
+      },
+      {
+        "name": "normalize",
+        "kind": "method",
+        "signature": "static normalize(v: vec3) -> vec3"
+      },
+      {
+        "name": "normalize",
+        "kind": "method",
+        "signature": "static normalize(v: vec4) -> vec4"
+      },
+      {
+        "name": "normalize",
+        "kind": "method",
+        "signature": "static normalize(v: dvec2) -> dvec2"
+      },
+      {
+        "name": "normalize",
+        "kind": "method",
+        "signature": "static normalize(v: dvec3) -> dvec3"
+      },
+      {
+        "name": "normalize",
+        "kind": "method",
+        "signature": "static normalize(v: dvec4) -> dvec4"
+      },
+      {
+        "name": "min",
+        "kind": "method",
+        "signature": "static min(a: vec2, b: vec2) -> vec2"
+      },
+      {
+        "name": "min",
+        "kind": "method",
+        "signature": "static min(a: vec3, b: vec3) -> vec3"
+      },
+      {
+        "name": "min",
+        "kind": "method",
+        "signature": "static min(a: vec4, b: vec4) -> vec4"
+      },
+      {
+        "name": "min",
+        "kind": "method",
+        "signature": "static min(a: dvec2, b: dvec2) -> dvec2"
+      },
+      {
+        "name": "min",
+        "kind": "method",
+        "signature": "static min(a: dvec3, b: dvec3) -> dvec3"
+      },
+      {
+        "name": "min",
+        "kind": "method",
+        "signature": "static min(a: dvec4, b: dvec4) -> dvec4"
+      },
+      {
+        "name": "min",
+        "kind": "method",
+        "signature": "static min(a: ivec2, b: ivec2) -> ivec2"
+      },
+      {
+        "name": "min",
+        "kind": "method",
+        "signature": "static min(a: ivec3, b: ivec3) -> ivec3"
+      },
+      {
+        "name": "min",
+        "kind": "method",
+        "signature": "static min(a: ivec4, b: ivec4) -> ivec4"
+      },
+      {
+        "name": "max",
+        "kind": "method",
+        "signature": "static max(a: vec2, b: vec2) -> vec2"
+      },
+      {
+        "name": "max",
+        "kind": "method",
+        "signature": "static max(a: vec3, b: vec3) -> vec3"
+      },
+      {
+        "name": "max",
+        "kind": "method",
+        "signature": "static max(a: vec4, b: vec4) -> vec4"
+      },
+      {
+        "name": "max",
+        "kind": "method",
+        "signature": "static max(a: dvec2, b: dvec2) -> dvec2"
+      },
+      {
+        "name": "max",
+        "kind": "method",
+        "signature": "static max(a: dvec3, b: dvec3) -> dvec3"
+      },
+      {
+        "name": "max",
+        "kind": "method",
+        "signature": "static max(a: dvec4, b: dvec4) -> dvec4"
+      },
+      {
+        "name": "max",
+        "kind": "method",
+        "signature": "static max(a: ivec2, b: ivec2) -> ivec2"
+      },
+      {
+        "name": "max",
+        "kind": "method",
+        "signature": "static max(a: ivec3, b: ivec3) -> ivec3"
+      },
+      {
+        "name": "max",
+        "kind": "method",
+        "signature": "static max(a: ivec4, b: ivec4) -> ivec4"
+      },
+      {
+        "name": "clamp",
+        "kind": "method",
+        "signature": "static clamp(v: vec2, lo: vec2, hi: vec2) -> vec2"
+      },
+      {
+        "name": "clamp",
+        "kind": "method",
+        "signature": "static clamp(v: vec3, lo: vec3, hi: vec3) -> vec3"
+      },
+      {
+        "name": "clamp",
+        "kind": "method",
+        "signature": "static clamp(v: vec4, lo: vec4, hi: vec4) -> vec4"
+      },
+      {
+        "name": "clamp",
+        "kind": "method",
+        "signature": "static clamp(v: dvec2, lo: dvec2, hi: dvec2) -> dvec2"
+      },
+      {
+        "name": "clamp",
+        "kind": "method",
+        "signature": "static clamp(v: dvec3, lo: dvec3, hi: dvec3) -> dvec3"
+      },
+      {
+        "name": "clamp",
+        "kind": "method",
+        "signature": "static clamp(v: dvec4, lo: dvec4, hi: dvec4) -> dvec4"
+      },
+      {
+        "name": "approx_eq",
+        "kind": "method",
+        "signature": "static approx_eq(a: vec2, b: vec2, eps: f64) -> bool"
+      },
+      {
+        "name": "approx_eq",
+        "kind": "method",
+        "signature": "static approx_eq(a: vec3, b: vec3, eps: f64) -> bool"
+      },
+      {
+        "name": "approx_eq",
+        "kind": "method",
+        "signature": "static approx_eq(a: vec4, b: vec4, eps: f64) -> bool"
+      },
+      {
+        "name": "approx_eq",
+        "kind": "method",
+        "signature": "static approx_eq(a: dvec2, b: dvec2, eps: f64) -> bool"
+      },
+      {
+        "name": "approx_eq",
+        "kind": "method",
+        "signature": "static approx_eq(a: dvec3, b: dvec3, eps: f64) -> bool"
+      },
+      {
+        "name": "approx_eq",
+        "kind": "method",
+        "signature": "static approx_eq(a: dvec4, b: dvec4, eps: f64) -> bool"
+      },
+      {
+        "name": "lerp",
+        "kind": "method",
+        "signature": "static lerp(a: vec2, b: vec2, t: f64) -> vec2"
+      },
+      {
+        "name": "lerp",
+        "kind": "method",
+        "signature": "static lerp(a: vec3, b: vec3, t: f64) -> vec3"
+      },
+      {
+        "name": "lerp",
+        "kind": "method",
+        "signature": "static lerp(a: dvec2, b: dvec2, t: f64) -> dvec2"
+      },
+      {
+        "name": "lerp",
+        "kind": "method",
+        "signature": "static lerp(a: dvec3, b: dvec3, t: f64) -> dvec3"
+      },
+      {
+        "name": "reflect_v",
+        "kind": "method",
+        "signature": "static reflect_v(v: vec2, n: vec2) -> vec2"
+      },
+      {
+        "name": "angle",
+        "kind": "method",
+        "signature": "static angle(v: vec2) -> f64"
+      },
+      {
+        "name": "cross",
+        "kind": "method",
+        "signature": "static cross(a: vec3, b: vec3) -> vec3"
+      },
+      {
+        "name": "cross",
+        "kind": "method",
+        "signature": "static cross(a: vec4, b: vec4) -> vec4"
+      },
+      {
+        "name": "cross",
+        "kind": "method",
+        "signature": "static cross(a: dvec3, b: dvec3) -> dvec3"
+      },
+      {
+        "name": "cross",
+        "kind": "method",
+        "signature": "static cross(a: dvec4, b: dvec4) -> dvec4"
+      },
+      {
+        "name": "cross",
+        "kind": "method",
+        "signature": "static cross(a: ivec3, b: ivec3) -> ivec3"
+      },
+      {
+        "name": "cross",
+        "kind": "method",
+        "signature": "static cross(a: ivec4, b: ivec4) -> ivec4"
+      },
+      {
+        "name": "dot_components",
+        "kind": "method",
+        "signature": "static dot_components(ax: f64, ay: f64, az: f64, bx: f64, by: f64, bz: f64) -> f64"
+      }
+    ]
+  },
+  "mat2": {
+    "module": "matrices",
+    "members": []
+  },
+  "mat3": {
+    "module": "matrices",
+    "members": []
+  },
+  "mat4": {
+    "module": "matrices",
+    "members": []
+  },
+  "dmat2": {
+    "module": "matrices",
+    "members": []
+  },
+  "dmat3": {
+    "module": "matrices",
+    "members": []
+  },
+  "dmat4": {
+    "module": "matrices",
+    "members": []
+  },
+  "matrices": {
+    "module": "matrices",
+    "members": [
+      {
+        "name": "transpose",
+        "kind": "method",
+        "signature": "static transpose(v: mat2) -> mat2"
+      },
+      {
+        "name": "transpose",
+        "kind": "method",
+        "signature": "static transpose(v: mat3) -> mat3"
+      },
+      {
+        "name": "transpose",
+        "kind": "method",
+        "signature": "static transpose(v: mat4) -> mat4"
+      },
+      {
+        "name": "transpose",
+        "kind": "method",
+        "signature": "static transpose(v: dmat2) -> dmat2"
+      },
+      {
+        "name": "transpose",
+        "kind": "method",
+        "signature": "static transpose(v: dmat3) -> dmat3"
+      },
+      {
+        "name": "transpose",
+        "kind": "method",
+        "signature": "static transpose(v: dmat4) -> dmat4"
+      },
+      {
+        "name": "determinant",
+        "kind": "method",
+        "signature": "static determinant(v: mat2) -> f64"
+      },
+      {
+        "name": "determinant",
+        "kind": "method",
+        "signature": "static determinant(v: mat3) -> f64"
+      },
+      {
+        "name": "determinant",
+        "kind": "method",
+        "signature": "static determinant(v: mat4) -> f64"
+      },
+      {
+        "name": "determinant",
+        "kind": "method",
+        "signature": "static determinant(v: dmat2) -> f64"
+      },
+      {
+        "name": "determinant",
+        "kind": "method",
+        "signature": "static determinant(v: dmat3) -> f64"
+      },
+      {
+        "name": "determinant",
+        "kind": "method",
+        "signature": "static determinant(v: dmat4) -> f64"
+      },
+      {
+        "name": "mul",
+        "kind": "method",
+        "signature": "static mul(a: mat2, b: vec2) -> vec2"
+      },
+      {
+        "name": "mul",
+        "kind": "method",
+        "signature": "static mul(a: mat3, b: vec3) -> vec3"
+      },
+      {
+        "name": "mul",
+        "kind": "method",
+        "signature": "static mul(a: mat4, b: vec4) -> vec4"
+      },
+      {
+        "name": "mul",
+        "kind": "method",
+        "signature": "static mul(a: dmat2, b: dvec2) -> dvec2"
+      },
+      {
+        "name": "mul",
+        "kind": "method",
+        "signature": "static mul(a: dmat3, b: dvec3) -> dvec3"
+      },
+      {
+        "name": "mul",
+        "kind": "method",
+        "signature": "static mul(a: dmat4, b: dvec4) -> dvec4"
+      },
+      {
+        "name": "trace2",
+        "kind": "method",
+        "signature": "static trace2(m00: f64, m01: f64, m10: f64, m11: f64) -> f64"
+      }
+    ]
+  },
+  "point": {
+    "module": "points",
+    "members": []
+  },
+  "dpoint": {
+    "module": "points",
+    "members": []
+  },
+  "points": {
+    "module": "points",
+    "members": [
+      {
+        "name": "length",
+        "kind": "method",
+        "signature": "static length(v: point) -> f64"
+      },
+      {
+        "name": "length",
+        "kind": "method",
+        "signature": "static length(v: dpoint) -> f64"
+      },
+      {
+        "name": "length2",
+        "kind": "method",
+        "signature": "static length2(v: point) -> f64"
+      },
+      {
+        "name": "length2",
+        "kind": "method",
+        "signature": "static length2(v: dpoint) -> f64"
+      },
+      {
+        "name": "dot",
+        "kind": "method",
+        "signature": "static dot(a: point, b: point) -> f64"
+      },
+      {
+        "name": "dot",
+        "kind": "method",
+        "signature": "static dot(a: dpoint, b: dpoint) -> f64"
+      },
+      {
+        "name": "distance",
+        "kind": "method",
+        "signature": "static distance(a: point, b: point) -> f64"
+      },
+      {
+        "name": "distance",
+        "kind": "method",
+        "signature": "static distance(a: dpoint, b: dpoint) -> f64"
+      },
+      {
+        "name": "distance2",
+        "kind": "method",
+        "signature": "static distance2(a: point, b: point) -> f64"
+      },
+      {
+        "name": "distance2",
+        "kind": "method",
+        "signature": "static distance2(a: dpoint, b: dpoint) -> f64"
+      },
+      {
+        "name": "normalize",
+        "kind": "method",
+        "signature": "static normalize(v: point) -> point"
+      },
+      {
+        "name": "normalize",
+        "kind": "method",
+        "signature": "static normalize(v: dpoint) -> dpoint"
+      },
+      {
+        "name": "min",
+        "kind": "method",
+        "signature": "static min(a: point, b: point) -> point"
+      },
+      {
+        "name": "min",
+        "kind": "method",
+        "signature": "static min(a: dpoint, b: dpoint) -> dpoint"
+      },
+      {
+        "name": "max",
+        "kind": "method",
+        "signature": "static max(a: point, b: point) -> point"
+      },
+      {
+        "name": "max",
+        "kind": "method",
+        "signature": "static max(a: dpoint, b: dpoint) -> dpoint"
+      },
+      {
+        "name": "clamp",
+        "kind": "method",
+        "signature": "static clamp(v: point, lo: point, hi: point) -> point"
+      },
+      {
+        "name": "clamp",
+        "kind": "method",
+        "signature": "static clamp(v: dpoint, lo: dpoint, hi: dpoint) -> dpoint"
+      },
+      {
+        "name": "approx_eq",
+        "kind": "method",
+        "signature": "static approx_eq(a: point, b: point, eps: f64) -> bool"
+      },
+      {
+        "name": "approx_eq",
+        "kind": "method",
+        "signature": "static approx_eq(a: dpoint, b: dpoint, eps: f64) -> bool"
+      },
+      {
+        "name": "distance_to",
+        "kind": "method",
+        "signature": "static distance_to(a: point, b: point) -> f64"
+      },
+      {
+        "name": "distance_to",
+        "kind": "method",
+        "signature": "static distance_to(a: dpoint, b: dpoint) -> f64"
+      },
+      {
+        "name": "translate",
+        "kind": "method",
+        "signature": "static translate(a: point, b: point) -> point"
+      },
+      {
+        "name": "translate",
+        "kind": "method",
+        "signature": "static translate(a: dpoint, b: dpoint) -> dpoint"
+      }
+    ]
+  },
+  "rect": {
+    "module": "rects",
+    "members": []
+  },
+  "drect": {
+    "module": "rects",
+    "members": []
+  },
+  "rects": {
+    "module": "rects",
+    "members": [
+      {
+        "name": "width",
+        "kind": "method",
+        "signature": "static width(v: rect) -> f64"
+      },
+      {
+        "name": "width",
+        "kind": "method",
+        "signature": "static width(v: drect) -> f64"
+      },
+      {
+        "name": "height",
+        "kind": "method",
+        "signature": "static height(v: rect) -> f64"
+      },
+      {
+        "name": "height",
+        "kind": "method",
+        "signature": "static height(v: drect) -> f64"
+      },
+      {
+        "name": "center",
+        "kind": "method",
+        "signature": "static center(v: rect) -> point"
+      },
+      {
+        "name": "center",
+        "kind": "method",
+        "signature": "static center(v: drect) -> dpoint"
+      },
+      {
+        "name": "contains",
+        "kind": "method",
+        "signature": "static contains(a: rect, b: point) -> bool"
+      },
+      {
+        "name": "contains",
+        "kind": "method",
+        "signature": "static contains(a: drect, b: dpoint) -> bool"
+      },
+      {
+        "name": "intersects",
+        "kind": "method",
+        "signature": "static intersects(a: rect, b: rect) -> bool"
+      },
+      {
+        "name": "intersects",
+        "kind": "method",
+        "signature": "static intersects(a: drect, b: drect) -> bool"
+      },
+      {
+        "name": "expand",
+        "kind": "method",
+        "signature": "static expand(a: rect, b: rect) -> rect"
+      },
+      {
+        "name": "expand",
+        "kind": "method",
+        "signature": "static expand(a: drect, b: drect) -> drect"
+      },
+      {
+        "name": "area",
+        "kind": "method",
+        "signature": "static area(v: rect) -> f64"
+      },
+      {
+        "name": "area",
+        "kind": "method",
+        "signature": "static area(v: drect) -> f64"
+      },
+      {
+        "name": "from_xywh",
+        "kind": "method",
+        "signature": "static from_xywh(x: f64, y: f64, w: f64, h: f64) -> drect"
+      },
+      {
+        "name": "union_rect",
+        "kind": "method",
+        "signature": "static union_rect(a: drect, b: drect) -> drect"
+      }
+    ]
+  },
+  "quat": {
+    "module": "quaternions",
+    "members": []
+  },
+  "dquat": {
+    "module": "quaternions",
+    "members": []
+  },
+  "quaternions": {
+    "module": "quaternions",
+    "members": [
+      {
+        "name": "length",
+        "kind": "method",
+        "signature": "static length(v: quat) -> f64"
+      },
+      {
+        "name": "length",
+        "kind": "method",
+        "signature": "static length(v: dquat) -> f64"
+      },
+      {
+        "name": "length2",
+        "kind": "method",
+        "signature": "static length2(v: quat) -> f64"
+      },
+      {
+        "name": "length2",
+        "kind": "method",
+        "signature": "static length2(v: dquat) -> f64"
+      },
+      {
+        "name": "dot",
+        "kind": "method",
+        "signature": "static dot(a: quat, b: quat) -> f64"
+      },
+      {
+        "name": "dot",
+        "kind": "method",
+        "signature": "static dot(a: dquat, b: dquat) -> f64"
+      },
+      {
+        "name": "normalize",
+        "kind": "method",
+        "signature": "static normalize(v: quat) -> quat"
+      },
+      {
+        "name": "normalize",
+        "kind": "method",
+        "signature": "static normalize(v: dquat) -> dquat"
+      },
+      {
+        "name": "mul",
+        "kind": "method",
+        "signature": "static mul(a: quat, b: quat) -> quat"
+      },
+      {
+        "name": "mul",
+        "kind": "method",
+        "signature": "static mul(a: dquat, b: dquat) -> dquat"
+      }
+    ]
+  },
+  "color": {
+    "module": "colors",
+    "members": []
+  },
+  "color32": {
+    "module": "colors",
+    "members": []
+  },
+  "colors": {
+    "module": "colors",
+    "members": [
+      {
+        "name": "min",
+        "kind": "method",
+        "signature": "static min(a: color, b: color) -> color"
+      },
+      {
+        "name": "max",
+        "kind": "method",
+        "signature": "static max(a: color, b: color) -> color"
+      },
+      {
+        "name": "clamp",
+        "kind": "method",
+        "signature": "static clamp(v: color, lo: color, hi: color) -> color"
+      },
+      {
+        "name": "approx_eq",
+        "kind": "method",
+        "signature": "static approx_eq(a: color, b: color, eps: f64) -> bool"
+      },
+      {
+        "name": "to_color",
+        "kind": "method",
+        "signature": "static to_color(v: color32) -> color"
+      }
+    ]
+  },
+  "bounds": {
+    "module": "bounds",
+    "members": [
+      {
+        "name": "contains",
+        "kind": "method",
+        "signature": "static contains(a: bounds, b: vec3) -> bool"
+      },
+      {
+        "name": "intersects",
+        "kind": "method",
+        "signature": "static intersects(a: bounds, b: bounds) -> bool"
+      },
+      {
+        "name": "expand",
+        "kind": "method",
+        "signature": "static expand(a: bounds, b: bounds) -> bounds"
+      },
+      {
+        "name": "center",
+        "kind": "method",
+        "signature": "static center(v: bounds) -> vec3"
+      },
+      {
+        "name": "size",
+        "kind": "method",
+        "signature": "static size(v: bounds) -> vec3"
+      }
+    ]
+  },
+  "transform": {
+    "module": "transforms",
+    "members": []
+  },
+  "transforms": {
+    "module": "transforms",
+    "members": []
+  }
+}

@@ -1,0 +1,85 @@
+# Scientific library: vectors, matrices, statistics, FFT, optimization, ML, numerical, physics
+import matrices
+import science
+import vectors
+fun test_vectors() -> i64 {
+  a = vec3(1.0, 2.0, 3.0)
+  b = vec3(4.0, 5.0, 6.0)
+  if (vectors.dot(a, b) != 32.0) { return 1 }
+  if (vectors.dot_components(1.0, 0.0, 0.0, 1.0, 0.0, 0.0) != 1.0) { return 2 }
+  return 0
+}
+fun test_matrices() -> i64 {
+  m = mat2(1.0, 0.0, 0.0, 2.0)
+  if (matrices.determinant(m) != 2.0) { return 10 }
+  if (matrices.trace2(1.0, 0.0, 0.0, 2.0) != 3.0) { return 11 }
+  return 0
+}
+fun test_statistics() -> i64 {
+  data = [2, 4, 6, 8]
+  if (statistics.mean(data) != 5.0) { return 20 }
+  if (statistics.median(data) != 5.0) { return 21 }
+  if (statistics.stddev(data) <= 0.0) { return 22 }
+  return 0
+}
+fun test_fft() -> i64 {
+  sig = [1, 0, 0, 0]
+  spec = fft.forward(sig)
+  if (len(spec) != 4) { return 30 }
+  if (spec[0] < 1) { return 31 }
+  return 0
+}
+fun test_optimization() -> i64 {
+  x = optimization.grad_step(10.0, 0.1, 2.0)
+  if (x != 9.8) { return 40 }
+  v = optimization.parabola_vertex(1.0, -2.0, 0.0)
+  if (v != 1.0) { return 41 }
+  return 0
+}
+fun test_ml() -> i64 {
+  if (ml.sigmoid(0.0) != 0.5) { return 50 }
+  if (ml.relu(-1.0) != 0.0) { return 51 }
+  if (ml.relu(3.0) != 3.0) { return 52 }
+  a = [1, 2, 3]
+  b = [4, 5, 6]
+  if (ml.dot_vecs(a, b) != 32.0) { return 53 }
+  return 0
+}
+fun test_numerical() -> i64 {
+  y = [0, 2, 4]
+  area = numerical.integrate_trapz(y, 1.0)
+  if (area != 4.0) { return 60 }
+  d = numerical.finite_diff(y)
+  if (len(d) != 2) { return 61 }
+  if (d[0] != 2) { return 62 }
+  return 0
+}
+fun test_physics() -> i64 {
+  ke = physics.kinetic(2.0, 3.0)
+  if (ke != 9.0) { return 70 }
+  pe = physics.potential(1.0, 10.0, 5.0)
+  if (pe != 50.0) { return 71 }
+  r = physics.projectile_range(10.0, 45.0, 10.0)
+  if (r <= 0.0) { return 72 }
+  return 0
+}
+fun main() {
+  r = test_vectors()
+  if (r != 0) { print(r); return r }
+  r = test_matrices()
+  if (r != 0) { print(r); return r }
+  r = test_statistics()
+  if (r != 0) { print(r); return r }
+  r = test_fft()
+  if (r != 0) { print(r); return r }
+  r = test_optimization()
+  if (r != 0) { print(r); return r }
+  r = test_ml()
+  if (r != 0) { print(r); return r }
+  r = test_numerical()
+  if (r != 0) { print(r); return r }
+  r = test_physics()
+  if (r != 0) { print(r); return r }
+  print(0)
+  return 0
+}

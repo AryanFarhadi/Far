@@ -1,0 +1,71 @@
+# Comprehensive: structs, classes, enums, Option/Result, lambdas, closures
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(id: i64, r: i64) -> i64 { if (r != 0) { print(id); return id } return 0 }
+struct P { x: i64 y: i64 }
+fun t01_struct_ctor() -> i64 {
+  p = P(2, 3)
+  return eq(p.x + p.y, 5)
+}
+fun t02_struct_mutate() -> i64 {
+  p = P(1, 1)
+  p.x = 10
+  return eq(p.x, 10)
+}
+class Counter {
+  public n: i64 = 0
+  public Counter(v: i64) { n = v }
+  public fun get() -> i64 { return n }
+  public fun inc() -> i64 { n = n + 1; return n }
+}
+fun t03_class_ctor() -> i64 {
+  c = Counter(11)
+  return eq(c.get(), 11)
+}
+fun t04_class_method() -> i64 {
+  c = Counter(0)
+  c.inc()
+  return eq(c.get(), 1)
+}
+enum E { Zero, One, Two }
+fun t05_enum_zero() -> i64 { return eq(i64(E.Zero), 0) }
+fun t06_enum_one() -> i64 { return eq(i64(E.One), 1) }
+fun t07_enum_two() -> i64 { return eq(i64(E.Two), 2) }
+fun t08_some() -> i64 { return eq(i64(Some(5).unwrap()), 5) }
+fun t09_none_or() -> i64 { return eq(i64(None().unwrap_or(9)), 9) }
+fun t10_ok() -> i64 { return eq(i64(Ok(4).unwrap()), 4) }
+fun t11_err_or() -> i64 { return eq(i64(Err(1).unwrap_or(0)), 0) }
+fun t12_lambda() -> i64 {
+  f = |x| x * 3
+  return eq(f(4), 12)
+}
+fun t13_fn_expr() -> i64 {
+  g = fn(n) { return n + 2 }
+  return eq(g(5), 7)
+}
+fun t14_closure() -> i64 {
+  base = 10
+  h = |x| base + x
+  return eq(h(5), 15)
+}
+fun inc_one(x: i64) -> i64 { return x + 1 }
+fun t15_named_fn() -> i64 { return eq(inc_one(8), 9) }
+fun main() {
+  r = 0
+  r = run(1, t01_struct_ctor()); if (r != 0) { return r }
+  r = run(2, t02_struct_mutate()); if (r != 0) { return r }
+  r = run(3, t03_class_ctor()); if (r != 0) { return r }
+  r = run(4, t04_class_method()); if (r != 0) { return r }
+  r = run(5, t05_enum_zero()); if (r != 0) { return r }
+  r = run(6, t06_enum_one()); if (r != 0) { return r }
+  r = run(7, t07_enum_two()); if (r != 0) { return r }
+  r = run(8, t08_some()); if (r != 0) { return r }
+  r = run(9, t09_none_or()); if (r != 0) { return r }
+  r = run(10, t10_ok()); if (r != 0) { return r }
+  r = run(11, t11_err_or()); if (r != 0) { return r }
+  r = run(12, t12_lambda()); if (r != 0) { return r }
+  r = run(13, t13_fn_expr()); if (r != 0) { return r }
+  r = run(14, t14_closure()); if (r != 0) { return r }
+  r = run(15, t15_named_fn()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

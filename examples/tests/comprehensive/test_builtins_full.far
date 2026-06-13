@@ -1,0 +1,50 @@
+# Comprehensive: builtins, threads, spawn, program.far-style patterns
+import math
+import perf
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(id: i64, r: i64) -> i64 { if (r != 0) { print(id); return id } return 0 }
+fun name(first, family) {
+  return first + " " + family
+}
+fun inc_one(x: i64) -> i64 { return x + 1 }
+fun t01_name_fn() -> i64 {
+  s = name("John", "Doe")
+  if (s != "John Doe") { return 1 }
+  return 0
+}
+fun t02_print_no_crash() -> i64 {
+  print("ok")
+  return 0
+}
+fun t03_iabs() -> i64 { return eq(i64(math.iabs(-6)), 6) }
+fun t04_thread_count() -> i64 { return eq(i64(threads.count() >= 1), 1) }
+fun t05_cores() -> i64 { return eq(i64(threads.cores() > 0), 1) }
+fun t06_spawn() -> i64 {
+  h = spawn inc_one(8)
+  return eq(threads.join(h), 9)
+}
+fun t07_imin_import() -> i64 { return eq(math.imin(9, 4), 4) }
+fun t08_len_builtin() -> i64 { return eq(len("abc"), 3) }
+fun t09_typeof_int() -> i64 {
+  x = 42
+  if (typeof(x) != "i32") { return 1 }
+  t = type_tag(x)
+  if (t <= 0) { return 2 }
+  return 0
+}
+fun t10_main_returns() -> i64 { return 0 }
+fun main() {
+  r = 0
+  r = run(1, t01_name_fn()); if (r != 0) { return r }
+  r = run(2, t02_print_no_crash()); if (r != 0) { return r }
+  r = run(3, t03_iabs()); if (r != 0) { return r }
+  r = run(4, t04_thread_count()); if (r != 0) { return r }
+  r = run(5, t05_cores()); if (r != 0) { return r }
+  r = run(6, t06_spawn()); if (r != 0) { return r }
+  r = run(7, t07_imin_import()); if (r != 0) { return r }
+  r = run(8, t08_len_builtin()); if (r != 0) { return r }
+  r = run(9, t09_typeof_int()); if (r != 0) { return r }
+  r = run(10, t10_main_returns()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

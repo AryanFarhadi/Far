@@ -1,0 +1,61 @@
+# Constructors: C# syntax, field init, positional struct init
+fun eq(a: i64, b: i64) -> i64 {
+  if (a != b) { return 1 }
+  return 0
+}
+fun run(n: i64, r: i64) -> i64 {
+  if (r != 0) { print(n); return n }
+  return 0
+}
+struct Point {
+  x: i64
+  y: i64
+}
+class Account {
+  public balance: i64 = 0
+  public id: int = 0
+  public Account(userId: int) {
+    id = userId
+    balance = 1000
+  }
+}
+class Counter {
+  private n: i64 = 0
+  public Counter(start: i64) {
+    n = start
+  }
+  public fun value() -> i64 {
+    return n
+  }
+  public fun bump() -> i64 {
+    n = n + 1
+    return n
+  }
+}
+fun t01_ctor_sets_fields() -> i64 {
+  a = Account(42)
+  if (a.id != 42) { return 1 }
+  if (a.balance != 1000) { return 2 }
+  return 0
+}
+fun t02_struct_positional() -> i64 {
+  p = Point(3, 4)
+  return eq(p.x + p.y, 7)
+}
+fun t03_ctor_start() -> i64 {
+  c = Counter(9)
+  return eq(c.bump(), 10)
+}
+fun t04_method_after_ctor() -> i64 {
+  c = Counter(5)
+  return eq(c.bump() + c.value(), 12)
+}
+fun main() {
+  r = 0
+  r = run(1, t01_ctor_sets_fields()); if (r != 0) { return r }
+  r = run(2, t02_struct_positional()); if (r != 0) { return r }
+  r = run(3, t03_ctor_start()); if (r != 0) { return r }
+  r = run(4, t04_method_after_ctor()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

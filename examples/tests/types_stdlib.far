@@ -1,0 +1,149 @@
+# Language core: math, linalg, random, time, date, fs, net, json, xml, yaml,
+# csv, log, regex, compress, crypto, hash, proc, env, cli, i18n, test, bench
+import bench
+import cli
+import compress
+import crypto
+import csv
+import date
+import env
+import fs
+import hash
+import i18n
+import json
+import log
+import math
+import network
+import proc
+import random
+import regex
+import test
+import time
+import vectors
+import xml
+import yaml
+fun test_math() -> i64 {
+  c = math.clamp(5.0, 0.0, 10.0)
+  if (c != 5.0) { return 1 }
+  if (math.sin(0.0) != 0.0) { return 2 }
+  return 0
+}
+fun test_linalg() -> i64 {
+  a = vec2(3.0, 4.0)
+  b = vec2(1.0, 2.0)
+  if (vectors.dot(a, b) != 11.0) { return 10 }
+  if (vectors.length(a) != 5.0) { return 11 }
+  return 0
+}
+fun test_random() -> i64 {
+  random.seed(42)
+  r = random.rand_between(1, 6)
+  if (r < 1) { return 20 }
+  if (r > 6) { return 21 }
+  return 0
+}
+fun test_time_date() -> i64 {
+  ms = time.milliseconds()
+  if (ms <= 0) { return 30 }
+  y = date.year(ms)
+  if (y < 1970) { return 31 }
+  return 0
+}
+fun test_fs() -> i64 {
+  path = "far_stdlib_test_tmp.txt"
+  if (fs.write_text(path, "far") != 0) { return 40 }
+  data = fs.read_text(path)
+  if (len(data) != 3) { return 41 }
+  if (fs.remove(path) != 0) { return 42 }
+  return 0
+}
+fun test_json() -> i64 {
+  s = json.stringify_i64(7)
+  if (len(s) != 1) { return 51 }
+  return 0
+}
+fun test_xml() -> i64 {
+  x = xml.tag("k", "v")
+  if (len(x) < 5) { return 60 }
+  return 0
+}
+fun test_yaml_csv() -> i64 {
+  y = yaml.yaml_get_value("name: far\n", "name")
+  if (len(y) != 3) { return 70 }
+  line = "a,b,c"
+  if (csv.count(line) != 3) { return 71 }
+  f = csv.field(line, 1)
+  if (len(f) != 1) { return 72 }
+  return 0
+}
+fun test_regex_compress_crypto_hash() -> i64 {
+  if (regex.glob_match("f*r", "far") == 0) { return 80 }
+  raw = "aaabbb"
+  enc = compress.rle_encode(raw)
+  dec = compress.rle_decode(enc)
+  if (len(dec) != len(raw)) { return 81 }
+  secret = crypto.xor_encrypt("data", "key")
+  plain = crypto.xor_decrypt(secret, "key")
+  if (len(plain) != 4) { return 82 }
+  if (hash.fnv("far") == 0) { return 83 }
+  return 0
+}
+fun test_proc_env_cli() -> i64 {
+  if (proc.pid() <= 0) { return 90 }
+  env.env_set_var("FAR_TEST_KEY", "ok")
+  v = env.env_get_var("FAR_TEST_KEY")
+  if (len(v) != 2) { return 91 }
+  if (cli.argc() < 1) { return 92 }
+  return 0
+}
+fun test_i18n_bench() -> i64 {
+  msg = i18n.translate("hello", "es")
+  if (len(msg) < 1) { return 100 }
+  t0 = bench.start()
+  x = 0
+  i = 0
+  while (i < 100) {
+    x = x + i
+    i = i + 1
+  }
+  e = bench.elapsed_ms(t0)
+  if (e < 0) { return 101 }
+  return 0
+}
+fun test_net() -> i64 {
+  sock = net.connect("127.0.0.1", 1)
+  if (sock >= 0) {
+    net.close(sock)
+  }
+  return 0
+}
+fun main() {
+  log.info("stdlib test start")
+  r = test_math()
+  if (r != 0) { print(r); return r }
+  r = test_linalg()
+  if (r != 0) { print(r); return r }
+  r = test_random()
+  if (r != 0) { print(r); return r }
+  r = test_time_date()
+  if (r != 0) { print(r); return r }
+  r = test_fs()
+  if (r != 0) { print(r); return r }
+  r = test_json()
+  if (r != 0) { print(r); return r }
+  r = test_xml()
+  if (r != 0) { print(r); return r }
+  r = test_yaml_csv()
+  if (r != 0) { print(r); return r }
+  r = test_regex_compress_crypto_hash()
+  if (r != 0) { print(r); return r }
+  r = test_proc_env_cli()
+  if (r != 0) { print(r); return r }
+  r = test_i18n_bench()
+  if (r != 0) { print(r); return r }
+  r = test_net()
+  if (r != 0) { print(r); return r }
+  if (test.assert_eq_i64(1, 1) != 0) { print(200); return 200 }
+  print(0)
+  return 0
+}

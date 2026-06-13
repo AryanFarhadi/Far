@@ -1,0 +1,6 @@
+fun main() {
+  s = "a"
+  s += "b"
+  print(s)
+  return 0
+}

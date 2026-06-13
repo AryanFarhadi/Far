@@ -1,0 +1,9 @@
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun t09() -> i64 {
+  r = Rc<i64>(8)
+  rp = r.get()
+  unsafe { *rp = 5 }
+  r2 = r.clone()
+  return eq(*r2.get(), 5)
+}
+fun main() { return t09() }

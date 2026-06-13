@@ -1,0 +1,470 @@
+# suite_100.far — 100 regression tests: types, ops, builtins, stdlib
+# Each tNNN returns 0 on pass; main prints failing test id (1-100).
+import compress
+import csv
+import hash
+import json
+import math
+import matrices
+import perf
+import points
+import quaternions
+import rects
+import regex
+import vectors
+fun eq(a: i64, b: i64) -> i64 {
+  if (a != b) { return 1 }
+  return 0
+}
+fun run(n: i64, r: i64) -> i64 {
+  if (r != 0) {
+    print(n)
+    return n
+  }
+  return 0
+}
+# --- 001-010: type aliases ---
+fun t001() -> i64 { return eq(i64(short(10) + int(20)), 30) }
+fun t002() -> i64 { return eq(i64(long(100) + int(23)), 123) }
+fun t003() -> i64 { return eq(i64(byte(255)), 255) }
+fun t004() -> i64 { return eq(i64(ushort(400) + uint(100)), 500) }
+fun t005() -> i64 { return eq(i64(ulong(999)), 999) }
+fun t006() -> i64 { return eq(i64(int(float(3.7f))), 3) }
+fun t007() -> i64 { return eq(i64(int(double(2.9))), 2) }
+fun t008() -> i64 { return eq(i64(len("hi")), 2) }
+fun t009() -> i64 { return eq(i64(sbyte(-1)), -1) }
+fun t010() -> i64 { return eq(i64(math.iabs(-9)), 9) }
+# --- 011-025: integer arithmetic ---
+fun t011() -> i64 { return eq(10 + 3, 13) }
+fun t012() -> i64 { return eq(10 - 3, 7) }
+fun t013() -> i64 { return eq(10 * 3, 30) }
+fun t014() -> i64 { return eq(10 / 3, 3) }
+fun t015() -> i64 { return eq(10 % 3, 1) }
+fun t016() -> i64 { return eq(2 ** 10, 1024) }
+fun t017() -> i64 { return eq(10 // 3, 3) }
+fun t018() -> i64 { return eq(-10 // 3, -4) }
+fun t019() -> i64 { return eq(7 // 3, 2) }
+fun t020() -> i64 {
+  a = 5
+  a += 10
+  a -= 3
+  a *= 2
+  return eq(a, 24)
+}
+fun t021() -> i64 {
+  i = 0
+  i++
+  i++
+  i--
+  return eq(i, 1)
+}
+fun t022() -> i64 { return eq(i64(i32.max), 2147483647) }
+fun t023() -> i64 { return eq(i64(u32(4294967295)), 4294967295) }
+fun t024() -> i64 { return eq(i64(u8(300)), 44) }
+fun t025() -> i64 { return eq(i64(i8(-129)), 127) }
+# --- 026-035: bitwise and logic ---
+fun t026() -> i64 { return eq(5 & 3, 1) }
+fun t027() -> i64 { return eq(5 | 2, 7) }
+fun t028() -> i64 { return eq(5 ^ 1, 4) }
+fun t029() -> i64 { return eq(8 << 2, 32) }
+fun t030() -> i64 { return eq(8 >> 1, 4) }
+fun t031() -> i64 { return eq(i64(i32(bool(1))), 1) }
+fun t032() -> i64 { return eq(i64(bool(0)), 0) }
+fun t033() -> i64 { return eq(i64(i32(1 && 1)), 1) }
+fun t034() -> i64 { return eq(i64(i32(0 || 1)), 1) }
+fun t035() -> i64 { return eq(i64(!false), 1) }
+# --- 036-045: float math ---
+fun t036() -> i64 { return eq(i64(int(3.0 + 4.0)), 7) }
+fun t037() -> i64 { return eq(i64(int(10.0 / 4.0)), 2) }
+fun t038() -> i64 { return eq(i64(int(1 + 2.0)), 3) }
+fun t039() -> i64 { return eq(i64(int(2.0 * 3)), 6) }
+fun t040() -> i64 { return eq(i64(int(math.sin(0.0))), 0) }
+fun t041() -> i64 { return eq(i64(int(math.cos(0.0))), 1) }
+fun t042() -> i64 { return eq(i64(int(math.sqrt(9.0))), 3) }
+fun t043() -> i64 { return eq(i64(int(math.fabs(-5.0))), 5) }
+fun t044() -> i64 { return eq(i64(int(math.floor(3.9))), 3) }
+fun t045() -> i64 { return eq(i64(int(math.ceil(3.1))), 4) }
+# --- 046-055: strings ---
+fun t046() -> i64 { return eq(i64(len("abc")), 3) }
+fun t047() -> i64 { return eq(i64(len("a" + "b")), 2) }
+fun t048() -> i64 { return eq(i64(len($"x{42}")), 3) }
+fun t049() -> i64 { return eq(i64(i32('A')), 65) }
+fun t050() -> i64 { return eq(i64(i32(char(66))), 66) }
+fun t051() -> i64 {
+  s = "far"
+  t = s + "!"
+  if (len(t) != 4) { return 1 }
+  return 0
+}
+fun t052() -> i64 { return eq(i64(len($"hello")), 5) }
+fun t053() -> i64 { return eq(i64(len($"neg {~-5}")), 5) }
+fun t054() -> i64 { return eq(i64(i32(char(48 + 9))), i64(i32(char(57)))) }
+fun t055() -> i64 { return eq(i64(len(json.stringify_i64(42))), 2) }
+# --- 056-060: arrays ---
+fun t056() -> i64 {
+  a = [1, 2, 3]
+  return eq(i64(len(a)), 3)
+}
+fun t057() -> i64 {
+  a = [10, 20, 30]
+  return eq(i64(a[1]), 20)
+}
+fun t058() -> i64 {
+  a = [1, 2, 3]
+  s = 0
+  i = 0
+  while (i < len(a)) {
+    s = s + a[i]
+    i = i + 1
+  }
+  return eq(i64(s), 6)
+}
+fun t059() -> i64 {
+  a = [5, 5, 5]
+  return eq(i64(a[0] + a[1] + a[2]), 15)
+}
+fun t060() -> i64 {
+  a = [7, 8]
+  return eq(i64(a[0] + a[1]), 15)
+}
+# --- 061-070: vectors and aggregates ---
+fun t061() -> i64 {
+  a = dvec2(3.0, 4.0)
+  b = dvec2(1.0, 2.0)
+  c = a + b
+  if (c.x != 4.0) { return 1 }
+  if (c.y != 6.0) { return 2 }
+  return 0
+}
+fun t062() -> i64 {
+  a = dvec2(3.0, 4.0)
+  if (int(vectors.dot(a, dvec2(1.0, 2.0))) != 11) { return 1 }
+  return 0
+}
+fun t063() -> i64 {
+  a = dvec2(3.0, 4.0)
+  if (int(vectors.length(a)) != 5) { return 1 }
+  return 0
+}
+fun t064() -> i64 {
+  x = dvec2(2.0, 3.0)
+  y = dvec2(2.0, 2.0)
+  r = x ** y
+  if (r.x != 4.0) { return 1 }
+  if (r.y != 9.0) { return 2 }
+  return 0
+}
+fun t065() -> i64 {
+  s = dvec2(1.0, 2.0) * 3.0
+  if (s.x != 3.0) { return 1 }
+  if (s.y != 6.0) { return 2 }
+  return 0
+}
+fun t066() -> i64 {
+  z = vectors.cross(dvec3(1.0, 0.0, 0.0), dvec3(0.0, 1.0, 0.0))
+  if (z.z != 1.0) { return 1 }
+  return 0
+}
+fun t067() -> i64 {
+  v = fvec2(3.0, 4.0)
+  if (vectors.length(v) < 4.9) { return 1 }
+  return 0
+}
+fun t068() -> i64 {
+  p = dpoint(3.0, 4.0)
+  q = dpoint(0.0, 0.0)
+  if (int(points.distance2(p, q)) != 25) { return 1 }
+  return 0
+}
+fun t069() -> i64 {
+  r = drect(0.0, 0.0, 10.0, 20.0)
+  if (rects.width(r) != 10.0) { return 1 }
+  if (rects.height(r) != 20.0) { return 2 }
+  return 0
+}
+fun t070() -> i64 {
+  a = ivec2(2, 3) + ivec2(1, 1)
+  return eq(i64(a.x + a.y), 7)
+}
+# --- 071-080: casts and string parsing ---
+fun t071() -> i64 { return eq(i64(int("42")), 42) }
+fun t072() -> i64 { return eq(i64(int("-17")), -17) }
+fun t073() -> i64 { return eq(i64(int("0")), 0) }
+fun t074() -> i64 { return eq(i64(int(float("3.14"))), 3) }
+fun t075() -> i64 { return eq(i64(int(f64("2.5"))), 2) }
+fun t076() -> i64 { return eq(i64(u8(i32(256))), 0) }
+fun t077() -> i64 { return eq(i64(i32(bool(99))), 1) }
+fun t078() -> i64 { return eq(i64(i32(f64(f32(i32(17))))), 17) }
+fun t079() -> i64 { return eq(i64(i32(char(255))), 255) }
+fun t080() -> i64 { return eq(i64(long("1000")), 1000) }
+# --- 081-090: builtins and reflection ---
+fun t081() -> i64 { return eq(i64(sizeof(i64)), 8) }
+fun t082() -> i64 { return eq(i64(sizeof(i32)), 4) }
+fun t083() -> i64 { return eq(i64(len([1, 2, 3, 4])), 4) }
+fun t084() -> i64 { return eq(i64(i32(threads.cores() > 0)), 1) }
+fun t085() -> i64 { return eq(i64(i32(threads.count() >= 1)), 1) }
+fun t086() -> i64 { return eq(i64(i32(type_tag(42) > 0)), 1) }
+fun t087() -> i64 { return eq(i64(i32(type_tag("x") > 0)), 1) }
+fun t088() -> i64 { return eq(i64(math.imin(3, 7)), 3) }
+fun t089() -> i64 { return eq(i64(math.imax(3, 7)), 7) }
+fun t090() -> i64 {
+  arr = [1, 2, 3]
+  if (2 not in arr) { return 1 }
+  if (9 in arr) { return 2 }
+  return 0
+}
+# --- 091-100: stdlib modules ---
+fun t091() -> i64 {
+  c = math.clamp(15.0, 0.0, 10.0)
+  if (c != 10.0) { return 1 }
+  return 0
+}
+fun t092() -> i64 { return eq(i64(i32(hash.fnv("test") != 0)), 1) }
+fun t093() -> i64 {
+  j = json.stringify_i64(42)
+  if (len(j) != 2) { return 1 }
+  if (int(j) != 42) { return 2 }
+  return 0
+}
+fun t094() -> i64 {
+  row = "a,b,c"
+  if (csv.count(row) != 3) { return 1 }
+  if (len(csv.field(row, 1)) != 1) { return 2 }
+  return 0
+}
+fun t095() -> i64 {
+  enc = compress.rle_encode("aaabbc")
+  dec = compress.rle_decode(enc)
+  if (len(dec) != 6) { return 1 }
+  return 0
+}
+fun t096() -> i64 {
+  if (!regex.glob_match("*.far", "test.far")) { return 1 }
+  if (regex.glob_match("*.txt", "test.far")) { return 2 }
+  return 0
+}
+fun t097() -> i64 {
+  a = vec2(1.0, 0.0)
+  b = vec2(0.0, 1.0)
+  if (int(vectors.dot(a, b)) != 0) { return 1 }
+  return 0
+}
+fun t098() -> i64 {
+  m = mat2(2.0, 0.0, 0.0, 3.0)
+  if (matrices.determinant(m) != 6.0) { return 1 }
+  return 0
+}
+fun t099() -> i64 {
+  q = quat(0.0, 0.0, 0.0, 1.0)
+  if (quaternions.length(q) < 0.99) { return 1 }
+  return 0
+}
+fun t100() -> i64 {
+  col = color(1.0, 0.5, 0.25, 1.0)
+  if (col.a != 1.0) { return 1 }
+  return 0
+}
+fun main() -> i64 {
+  r = run(1, t001())
+  if (r != 0) { return r }
+  r = run(2, t002())
+  if (r != 0) { return r }
+  r = run(3, t003())
+  if (r != 0) { return r }
+  r = run(4, t004())
+  if (r != 0) { return r }
+  r = run(5, t005())
+  if (r != 0) { return r }
+  r = run(6, t006())
+  if (r != 0) { return r }
+  r = run(7, t007())
+  if (r != 0) { return r }
+  r = run(8, t008())
+  if (r != 0) { return r }
+  r = run(9, t009())
+  if (r != 0) { return r }
+  r = run(10, t010())
+  if (r != 0) { return r }
+  r = run(11, t011())
+  if (r != 0) { return r }
+  r = run(12, t012())
+  if (r != 0) { return r }
+  r = run(13, t013())
+  if (r != 0) { return r }
+  r = run(14, t014())
+  if (r != 0) { return r }
+  r = run(15, t015())
+  if (r != 0) { return r }
+  r = run(16, t016())
+  if (r != 0) { return r }
+  r = run(17, t017())
+  if (r != 0) { return r }
+  r = run(18, t018())
+  if (r != 0) { return r }
+  r = run(19, t019())
+  if (r != 0) { return r }
+  r = run(20, t020())
+  if (r != 0) { return r }
+  r = run(21, t021())
+  if (r != 0) { return r }
+  r = run(22, t022())
+  if (r != 0) { return r }
+  r = run(23, t023())
+  if (r != 0) { return r }
+  r = run(24, t024())
+  if (r != 0) { return r }
+  r = run(25, t025())
+  if (r != 0) { return r }
+  r = run(26, t026())
+  if (r != 0) { return r }
+  r = run(27, t027())
+  if (r != 0) { return r }
+  r = run(28, t028())
+  if (r != 0) { return r }
+  r = run(29, t029())
+  if (r != 0) { return r }
+  r = run(30, t030())
+  if (r != 0) { return r }
+  r = run(31, t031())
+  if (r != 0) { return r }
+  r = run(32, t032())
+  if (r != 0) { return r }
+  r = run(33, t033())
+  if (r != 0) { return r }
+  r = run(34, t034())
+  if (r != 0) { return r }
+  r = run(35, t035())
+  if (r != 0) { return r }
+  r = run(36, t036())
+  if (r != 0) { return r }
+  r = run(37, t037())
+  if (r != 0) { return r }
+  r = run(38, t038())
+  if (r != 0) { return r }
+  r = run(39, t039())
+  if (r != 0) { return r }
+  r = run(40, t040())
+  if (r != 0) { return r }
+  r = run(41, t041())
+  if (r != 0) { return r }
+  r = run(42, t042())
+  if (r != 0) { return r }
+  r = run(43, t043())
+  if (r != 0) { return r }
+  r = run(44, t044())
+  if (r != 0) { return r }
+  r = run(45, t045())
+  if (r != 0) { return r }
+  r = run(46, t046())
+  if (r != 0) { return r }
+  r = run(47, t047())
+  if (r != 0) { return r }
+  r = run(48, t048())
+  if (r != 0) { return r }
+  r = run(49, t049())
+  if (r != 0) { return r }
+  r = run(50, t050())
+  if (r != 0) { return r }
+  r = run(51, t051())
+  if (r != 0) { return r }
+  r = run(52, t052())
+  if (r != 0) { return r }
+  r = run(53, t053())
+  if (r != 0) { return r }
+  r = run(54, t054())
+  if (r != 0) { return r }
+  r = run(55, t055())
+  if (r != 0) { return r }
+  r = run(56, t056())
+  if (r != 0) { return r }
+  r = run(57, t057())
+  if (r != 0) { return r }
+  r = run(58, t058())
+  if (r != 0) { return r }
+  r = run(59, t059())
+  if (r != 0) { return r }
+  r = run(60, t060())
+  if (r != 0) { return r }
+  r = run(61, t061())
+  if (r != 0) { return r }
+  r = run(62, t062())
+  if (r != 0) { return r }
+  r = run(63, t063())
+  if (r != 0) { return r }
+  r = run(64, t064())
+  if (r != 0) { return r }
+  r = run(65, t065())
+  if (r != 0) { return r }
+  r = run(66, t066())
+  if (r != 0) { return r }
+  r = run(67, t067())
+  if (r != 0) { return r }
+  r = run(68, t068())
+  if (r != 0) { return r }
+  r = run(69, t069())
+  if (r != 0) { return r }
+  r = run(70, t070())
+  if (r != 0) { return r }
+  r = run(71, t071())
+  if (r != 0) { return r }
+  r = run(72, t072())
+  if (r != 0) { return r }
+  r = run(73, t073())
+  if (r != 0) { return r }
+  r = run(74, t074())
+  if (r != 0) { return r }
+  r = run(75, t075())
+  if (r != 0) { return r }
+  r = run(76, t076())
+  if (r != 0) { return r }
+  r = run(77, t077())
+  if (r != 0) { return r }
+  r = run(78, t078())
+  if (r != 0) { return r }
+  r = run(79, t079())
+  if (r != 0) { return r }
+  r = run(80, t080())
+  if (r != 0) { return r }
+  r = run(81, t081())
+  if (r != 0) { return r }
+  r = run(82, t082())
+  if (r != 0) { return r }
+  r = run(83, t083())
+  if (r != 0) { return r }
+  r = run(84, t084())
+  if (r != 0) { return r }
+  r = run(85, t085())
+  if (r != 0) { return r }
+  r = run(86, t086())
+  if (r != 0) { return r }
+  r = run(87, t087())
+  if (r != 0) { return r }
+  r = run(88, t088())
+  if (r != 0) { return r }
+  r = run(89, t089())
+  if (r != 0) { return r }
+  r = run(90, t090())
+  if (r != 0) { return r }
+  r = run(91, t091())
+  if (r != 0) { return r }
+  r = run(92, t092())
+  if (r != 0) { return r }
+  r = run(93, t093())
+  if (r != 0) { return r }
+  r = run(94, t094())
+  if (r != 0) { return r }
+  r = run(95, t095())
+  if (r != 0) { return r }
+  r = run(96, t096())
+  if (r != 0) { return r }
+  r = run(97, t097())
+  if (r != 0) { return r }
+  r = run(98, t098())
+  if (r != 0) { return r }
+  r = run(99, t099())
+  if (r != 0) { return r }
+  r = run(100, t100())
+  if (r != 0) { return r }
+  print(0)
+  return 0
+}

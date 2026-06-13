@@ -1,0 +1,55 @@
+# Combined stress: loops, arrays, recursion, types together
+import math
+fun twice(x: i32) -> i32 {
+  return x * 2
+}
+fun sum_typed(n: i32) -> i32 {
+  total = 0
+  i = 0
+  while (i < n) {
+    total = total + i
+    i = i + 1
+  }
+  return total
+}
+fun fib_typed(n: i32) -> i32 {
+  if (n < 2) {
+    return n
+  }
+  return fib_typed(n - 1) + fib_typed(n - 2)
+}
+fun clamp_u8(x: i32) -> u8 {
+  if (x < 0) {
+    return u8(0)
+  }
+  if (x > 255) {
+    return u8(255)
+  }
+  return u8(x)
+}
+fun main() {
+  print(sum_typed(50))
+  print(fib_typed(10))
+  print(clamp_u8(-10))
+  print(clamp_u8(500))
+  print(clamp_u8(128))
+  print(math.twice(50))
+  print(math.twice(i32(21)))
+  arr = [u8(1), u8(2), u8(3)]
+  print(len(arr))
+  print(arr[0])
+  print(arr[2])
+  s = "types"
+  print(len(s))
+  print(s + "!")
+  for i in 0..5 {
+    print(i)
+  }
+  print(i8.min)
+  print(byte.max)
+  print(i32.min)
+  print(i64(3) + i64(4))
+  print(f64(1) + f64(2) + f64(3))
+  print(i32(f64(100) / f64(3)))
+  return 0
+}

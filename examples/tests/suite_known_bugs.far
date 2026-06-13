@@ -1,0 +1,20 @@
+# Regression: string == and != compare contents (not pointer identity).
+# Run: far run examples\tests\suite_known_bugs.far
+import json
+fun test_string_eq() -> i64 {
+  a = "far" + "!"
+  if (a == "far!") { return 0 }
+  return 1
+}
+fun test_stringify_eq() -> i64 {
+  if (json.stringify_i64(42) == "42") { return 0 }
+  return 2
+}
+fun main() -> i64 {
+  r = test_string_eq()
+  if (r != 0) { print(r); return r }
+  r = test_stringify_eq()
+  if (r != 0) { print(r); return r }
+  print(0)
+  return 0
+}

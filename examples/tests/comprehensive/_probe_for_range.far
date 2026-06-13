@@ -1,0 +1,14 @@
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun t06_range_for_sum() -> i64 {
+  sum = 0
+  for i in 0..3 {
+    sum = sum + i
+  }
+  return eq(sum, 3)
+}
+fun main() {
+  r = t06_range_for_sum()
+  if (r != 0) { print(r); return r }
+  print(0)
+  return 0
+}

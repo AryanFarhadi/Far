@@ -1,0 +1,43 @@
+# Comprehensive: imports, modules, selective symbols
+import hash
+import json
+import math
+import test
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(id: i64, r: i64) -> i64 { if (r != 0) { print(id); return id } return 0 }
+fun t01_clamp() -> i64 {
+  if (math.clamp(99.0, 0.0, 10.0) != 10.0) { return 1 }
+  return 0
+}
+fun t02_imin() -> i64 { return eq(math.imin(3, 8), 3) }
+fun t03_imax() -> i64 { return eq(math.imax(3, 8), 8) }
+fun t04_fnv() -> i64 {
+  h = hash.fnv("test")
+  if (h == 0) { return 1 }
+  return 0
+}
+fun t05_json() -> i64 {
+  s = json.stringify_i64(100)
+  if (len(s) < 3) { return 1 }
+  return 0
+}
+fun t06_assert() -> i64 {
+  test.assert_eq_i64(1, 1)
+  return 0
+}
+fun double_val(x: i64) -> i64 { return x * 2 }
+fun t07_local_fn() -> i64 {
+  return eq(double_val(6), 12)
+}
+fun main() {
+  r = 0
+  r = run(1, t01_clamp()); if (r != 0) { return r }
+  r = run(2, t02_imin()); if (r != 0) { return r }
+  r = run(3, t03_imax()); if (r != 0) { return r }
+  r = run(4, t04_fnv()); if (r != 0) { return r }
+  r = run(5, t05_json()); if (r != 0) { return r }
+  r = run(6, t06_assert()); if (r != 0) { return r }
+  r = run(7, t07_local_fn()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

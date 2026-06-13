@@ -1,0 +1,33 @@
+# Early returns with typed values
+fun abs_i32(x: i32) -> i32 {
+  if (x < 0) {
+    return -x
+  }
+  return x
+}
+fun classify_u8(x: i32) -> u8 {
+  if (x < 0) {
+    return u8(0)
+  }
+  if (x > 255) {
+    return u8(255)
+  }
+  return u8(x)
+}
+fun pick_f64(flag: bool) -> f64 {
+  if (flag) {
+    return f64(1)
+  }
+  return f64(0)
+}
+fun main() {
+  print(abs_i32(-42))
+  print(abs_i32(42))
+  print(abs_i32(0))
+  print(classify_u8(-5))
+  print(classify_u8(300))
+  print(classify_u8(42))
+  print(i32(pick_f64(true)))
+  print(i32(pick_f64(false)))
+  return 0
+}

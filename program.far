@@ -1,0 +1,8 @@
+import math
+import vectors
+
+fun main() {
+  x=0
+  print(typeof(x) == typeof(i64))
+  return 0
+}

@@ -1,0 +1,115 @@
+# Comprehensive: arrays, Dict, Set, Queue, Stack, indexers
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(id: i64, r: i64) -> i64 { if (r != 0) { print(id); return id } return 0 }
+fun t01_array_len() -> i64 {
+  a = [1, 2, 3]
+  return eq(len(a), 3)
+}
+fun t02_array_index() -> i64 {
+  a = [10, 20, 30]
+  return eq(i64(a[1]), 20)
+}
+fun t03_array_mutate() -> i64 {
+  a = [1, 2, 3]
+  a[0] = 99
+  return eq(i64(a[0]), 99)
+}
+fun t04_array_slice() -> i64 {
+  a = [1, 2, 3, 4, 5]
+  sl = a.slice(1, 3)
+  return eq(len(sl), 2)
+}
+fun t05_list_push() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  lst.push(2)
+  return eq(len(lst), 2)
+}
+fun t06_dict_set_get() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d.set(1, 42)
+  return eq(i64(d.get(1)), 42)
+}
+fun t07_dict_contains_key() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d.set(99, 7)
+  if (!d.contains_key(99)) { return 1 }
+  return 0
+}
+fun t08_dict_remove() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d.set(1, 1)
+  d.remove(1)
+  if (d.contains_key(1)) { return 1 }
+  return 0
+}
+fun t09_dict_keys() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d.set(1, 10)
+  d.set(2, 20)
+  keys = d.keys()
+  return eq(len(keys), 2)
+}
+fun t10_set_add() -> i64 {
+  s: Set<i64> = Set<i64>()
+  s.add(7)
+  if (!s.contains(7)) { return 1 }
+  return 0
+}
+fun t11_set_dup() -> i64 {
+  s: Set<i64> = Set<i64>()
+  s.add(1)
+  s.add(1)
+  return eq(len(s), 1)
+}
+fun t12_set_remove() -> i64 {
+  s: Set<i64> = Set<i64>()
+  s.add(5)
+  s.remove(5)
+  if (s.contains(5)) { return 1 }
+  return 0
+}
+fun t13_queue() -> i64 {
+  q: Queue<i64> = Queue<i64>()
+  q.enqueue(5)
+  q.enqueue(10)
+  if (i64(q.dequeue()) != 5) { return 1 }
+  return eq(i64(q.dequeue()), 10)
+}
+fun t14_stack() -> i64 {
+  st: Stack<i64> = Stack<i64>()
+  st.push(1)
+  st.push(2)
+  if (i64(st.pop()) != 2) { return 1 }
+  return eq(i64(st.pop()), 1)
+}
+fun t15_loop_array() -> i64 {
+  a = [1, 2, 3, 4, 5]
+  total = 0
+  i = 0
+  while (i < len(a)) {
+    total = total + i64(a[i])
+    i = i + 1
+  }
+  return eq(total, 15)
+}
+fun main() {
+  r = 0
+  r = run(1, t01_array_len()); if (r != 0) { return r }
+  r = run(2, t02_array_index()); if (r != 0) { return r }
+  r = run(3, t03_array_mutate()); if (r != 0) { return r }
+  r = run(4, t04_array_slice()); if (r != 0) { return r }
+  r = run(5, t05_list_push()); if (r != 0) { return r }
+  r = run(6, t06_dict_set_get()); if (r != 0) { return r }
+  r = run(7, t07_dict_contains_key()); if (r != 0) { return r }
+  r = run(8, t08_dict_remove()); if (r != 0) { return r }
+  r = run(9, t09_dict_keys()); if (r != 0) { return r }
+  r = run(10, t10_set_add()); if (r != 0) { return r }
+  r = run(11, t11_set_dup()); if (r != 0) { return r }
+  r = run(12, t12_set_remove()); if (r != 0) { return r }
+  r = run(13, t13_queue()); if (r != 0) { return r }
+  r = run(14, t14_stack()); if (r != 0) { return r }
+  r = run(15, t15_loop_array()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

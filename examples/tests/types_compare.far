@@ -1,0 +1,28 @@
+# Comparisons and logic with typed values
+fun cmp_i32(a: i32, b: i32) -> bool {
+  return a < b
+}
+fun main() {
+  print(cmp_i32(1, 2))
+  print(cmp_i32(2, 1))
+  print(cmp_i32(5, 5))
+  print(f64(1.5) < f64(2.5))
+  print(f64(3.0) == f64(3.0))
+  print(f64(1.0) != f64(2.0))
+  if (u8(10) > u8(5)) {
+    print(1)
+  } else {
+    print(0)
+  }
+  if (true and bool(1)) {
+    print(100)
+  }
+  if (false or bool(1)) {
+    print(200)
+  }
+  print(~-5)
+  print(~-10)
+  print(2 ** 8)
+  print(2 ** 0)
+  return 0
+}

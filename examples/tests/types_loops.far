@@ -1,0 +1,36 @@
+# Typed variables in loops and accumulation
+import math
+fun sum_first_n(n: i32) -> i32 {
+  total = 0
+  i = 0
+  while (i < n) {
+    total = total + i
+    i = i + 1
+  }
+  return total
+}
+fun factorial(n: i32) -> i32 {
+  if (n < 2) {
+    return 1
+  }
+  return n * factorial(n - 1)
+}
+fun main() {
+  print(sum_first_n(10))
+  print(sum_first_n(0))
+  print(factorial(5))
+  print(factorial(0))
+  acc = u8(0)
+  for i in 0..10 {
+    acc = u8(i32(acc) + 1)
+  }
+  print(acc)
+  x = f64(0)
+  j = 0
+  while (j < 5) {
+    x = x + f64(1)
+    j = j + 1
+  }
+  print(i32(x))
+  return 0
+}

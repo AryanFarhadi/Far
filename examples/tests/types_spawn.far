@@ -1,0 +1,34 @@
+# Spawn and join
+import perf
+fun add_one(x: i64) -> i64 {
+  return x + 1
+}
+fun eq(a: i64, b: i64) -> i64 {
+  if (a != b) { return 1 }
+  return 0
+}
+fun run(n: i64, r: i64) -> i64 {
+  if (r != 0) { print(n); return n }
+  return 0
+}
+fun t01_spawn_join() -> i64 {
+  h = spawn add_one(41)
+  return eq(threads.join(h), 42)
+}
+fun t02_double_spawn() -> i64 {
+  h1 = spawn add_one(1)
+  h2 = spawn add_one(2)
+  return eq(threads.join(h1) + threads.join(h2), 5)
+}
+fun t03_spawn_zero() -> i64 {
+  h = spawn add_one(0)
+  return eq(threads.join(h), 1)
+}
+fun main() {
+  r = 0
+  r = run(1, t01_spawn_join()); if (r != 0) { return r }
+  r = run(2, t02_double_spawn()); if (r != 0) { return r }
+  r = run(3, t03_spawn_zero()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

@@ -1,0 +1,23 @@
+# Boundary values and overflow truncation
+fun main() {
+  print(i8(-128))
+  print(i8(127))
+  print(u8(0))
+  print(u8(255))
+  print(i16(-32768))
+  print(i16(32767))
+  print(u16(0))
+  print(u16(65535))
+  print(i32(i64.min))
+  print(i32(i64.max))
+  print(i64(i32.min))
+  print(i64(i32.max))
+  print(u8(i32(256)))
+  print(u8(i32(-1)))
+  print(i8(i32(128)))
+  print(i8(i32(-129)))
+  print(i32(f32(1.9)))
+  print(i32(f32(-1.9)))
+  print(i32(f64(99.99)))
+  return 0
+}

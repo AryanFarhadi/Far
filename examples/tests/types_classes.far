@@ -1,0 +1,47 @@
+# Classes: visibility, properties, methods without explicit this, operators
+class Wallet {
+  private cents: i64 = 0
+  public Wallet(start: i64) {
+    cents = start
+  }
+  public prop balance: i64 {
+    get { return cents }
+    set(v) { cents = v }
+  }
+  public fun deposit(amount: i64) -> i64 {
+    cents = cents + amount
+    return cents
+  }
+  public operator +(bonus: i64) -> i64 {
+    return cents + bonus
+  }
+}
+fun eq(a: i64, b: i64) -> i64 {
+  if (a != b) { return 1 }
+  return 0
+}
+fun run(n: i64, r: i64) -> i64 {
+  if (r != 0) { print(n); return n }
+  return 0
+}
+fun t01_ctor_and_method() -> i64 {
+  w = Wallet(100)
+  return eq(w.deposit(50), 150)
+}
+fun t02_property_get_set() -> i64 {
+  w = Wallet(10)
+  w.balance = 99
+  return eq(w.balance, 99)
+}
+fun t03_operator() -> i64 {
+  w = Wallet(20)
+  return eq(w + 5, 25)
+}
+fun main() {
+  r = 0
+  r = run(1, t01_ctor_and_method()); if (r != 0) { return r }
+  r = run(2, t02_property_get_set()); if (r != 0) { return r }
+  r = run(3, t03_operator()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

@@ -1,0 +1,28 @@
+fun eq(a: i64, b: i64) -> i64 {
+  if (a == b) { return 0 }
+  return 1
+}
+
+fun t01_substring_in() -> i64 {
+  if (!("aryan" in "aryan farhadi")) { return 1 }
+  if ("xyz" in "aryan farhadi") { return 2 }
+  name = "aryan farhadi"
+  if (!("aryan" in name)) { return 3 }
+  return 0
+}
+
+fun t02_value_in_array() -> i64 {
+  arr = [1, 2, 3]
+  if (!(2 in arr)) { return 1 }
+  if (9 in arr) { return 2 }
+  return 0
+}
+
+fun main() {
+  r = t01_substring_in(); if (r != 0) { print(r); return r }
+  r = t02_value_in_array(); if (r != 0) { print(r); return r }
+  print("bye")
+  print("aryan" in "aryan farhadi")
+  print("hi")
+  return 0
+}

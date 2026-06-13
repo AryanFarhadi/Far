@@ -1,0 +1,64 @@
+# Comprehensive: strings, casts, interpolation, comparison
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(id: i64, r: i64) -> i64 { if (r != 0) { print(id); return id } return 0 }
+fun t01_len_lit() -> i64 { return eq(len("hello"), 5) }
+fun t02_len_empty() -> i64 { return eq(len(""), 0) }
+fun t03_concat() -> i64 { return eq(len("ab" + "cd"), 4) }
+fun t04_concat_chain() -> i64 { s = "a" + "b" + "c"; return eq(len(s), 3) }
+fun t05_eq_lit() -> i64 { if ("far" == "far") { return 0 } return 1 }
+fun t06_eq_concat() -> i64 { a = "hello" + " world"; if (a == "hello world") { return 0 } return 1 }
+fun t07_ne() -> i64 { if ("a" != "b") { return 0 } return 1 }
+fun t08_eq_diff_ptr() -> i64 { a = "x" + "y"; b = "xy"; if (a == b) { return 0 } return 1 }
+fun t09_cast_i64() -> i64 { return eq(int(string(42)), 42) }
+fun t10_cast_neg() -> i64 { return eq(int(string(-7)), -7) }
+fun t11_cast_zero() -> i64 { return eq(int(string(0)), 0) }
+fun t12_parse_int() -> i64 { return eq(int("12345"), 12345) }
+fun t13_char_lit() -> i64 { return eq(i64(char(65)), 65) }
+fun t14_char_in_str() -> i64 { c = char(33); s = "hi" + string(c); return eq(len(s), 3) }
+fun t15_interp_num() -> i64 { n = 42; s = $"n={n}"; return eq(len(s), 4) }
+fun t16_interp_str() -> i64 { name = "Ann"; s = $"hi {name}"; return eq(len(s), 6) }
+fun t17_interp_expr() -> i64 { s = $"sum={2+3}"; return eq(len(s), 5) }
+fun t18_escape_char() -> i64 { return eq(len("a\nb"), 3) }
+fun t19_compare_loop() -> i64 {
+  i = 0
+  while (i < 50) {
+    a = "v=" + string(i)
+    b = "v=" + string(i)
+    if (!(a == b)) { return i + 100 }
+    i = i + 1
+  }
+  return 0
+}
+fun t20_ne_loop() -> i64 {
+  i = 0
+  while (i < 50) {
+    if (!("a" + string(i) != "b" + string(i))) { return i + 200 }
+    i = i + 1
+  }
+  return 0
+}
+fun main() {
+  r = 0
+  r = run(1, t01_len_lit()); if (r != 0) { return r }
+  r = run(2, t02_len_empty()); if (r != 0) { return r }
+  r = run(3, t03_concat()); if (r != 0) { return r }
+  r = run(4, t04_concat_chain()); if (r != 0) { return r }
+  r = run(5, t05_eq_lit()); if (r != 0) { return r }
+  r = run(6, t06_eq_concat()); if (r != 0) { return r }
+  r = run(7, t07_ne()); if (r != 0) { return r }
+  r = run(8, t08_eq_diff_ptr()); if (r != 0) { return r }
+  r = run(9, t09_cast_i64()); if (r != 0) { return r }
+  r = run(10, t10_cast_neg()); if (r != 0) { return r }
+  r = run(11, t11_cast_zero()); if (r != 0) { return r }
+  r = run(12, t12_parse_int()); if (r != 0) { return r }
+  r = run(13, t13_char_lit()); if (r != 0) { return r }
+  r = run(14, t14_char_in_str()); if (r != 0) { return r }
+  r = run(15, t15_interp_num()); if (r != 0) { return r }
+  r = run(16, t16_interp_str()); if (r != 0) { return r }
+  r = run(17, t17_interp_expr()); if (r != 0) { return r }
+  r = run(18, t18_escape_char()); if (r != 0) { return r }
+  r = run(19, t19_compare_loop()); if (r != 0) { return r }
+  r = run(20, t20_ne_loop()); if (r != 0) { return r }
+  print(0)
+  return 0
+}
