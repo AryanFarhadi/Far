@@ -85,6 +85,14 @@ void declareErrorRuntime(std::ostringstream& out) {
   out << "declare void @far_throw(i64, i64)\n";
   out << "declare i64 @far_caught_tag()\n";
   out << "declare i64 @far_caught_value()\n";
+  out << "declare i32 @far_caught_matches(i64)\n";
+  out << "@far_g_caught_tag = global i64 0\n";
+  out << "@far_g_caught_value = global i64 0\n";
+  out << "define void @far_store_caught(i64 %tag, i64 %val) {\n";
+  out << "  store volatile i64 %tag, i64* @far_g_caught_tag\n";
+  out << "  store volatile i64 %val, i64* @far_g_caught_value\n";
+  out << "  ret void\n";
+  out << "}\n";
   out << "declare void @far_panic(i64)\n";
   out << "declare void @far_assert(i64, i64)\n";
   out << "declare void @far_stack_trace()\n";

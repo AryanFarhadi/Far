@@ -21,7 +21,7 @@ fun main() {
   print(factorial(5))
   print(factorial(0))
   acc = u8(0)
-  for i in 0..10 {
+  for i in 0..<10 {
     acc = u8(i32(acc) + 1)
   }
   print(acc)

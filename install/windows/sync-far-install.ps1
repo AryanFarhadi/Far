@@ -27,9 +27,11 @@ function Export-FarInstallFiles([string]$root, [string]$installRoot) {
   Get-ChildItem (Join-Path $root "runtime\*.c") | ForEach-Object {
     Copy-Item $_.FullName (Join-Path $runtimeDir $_.Name) -Force
   }
-  $rtObj = Join-Path $root "runtime\far_rt.windows-x64.o"
-  if (Test-Path $rtObj) {
-    Copy-Item $rtObj (Join-Path $runtimeDir "far_rt.windows-x64.o") -Force
+  Get-ChildItem (Join-Path $root "runtime\*.h") | ForEach-Object {
+    Copy-Item $_.FullName (Join-Path $runtimeDir $_.Name) -Force
+  }
+  Get-ChildItem (Join-Path $root "runtime\far_rt*.o") -ErrorAction SilentlyContinue | ForEach-Object {
+    Copy-Item $_.FullName (Join-Path $runtimeDir $_.Name) -Force
   }
 
   return $farExe

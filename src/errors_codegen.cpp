@@ -94,6 +94,37 @@ void emitTryEnter(ErrCodegenCtx ctx, const std::string& resume_var, const std::s
 
 void emitTrySuccess(ErrCodegenCtx ctx) { ctx.out << "  call void @far_try_success()\n"; }
 
+std::string emitCaughtValue(ErrCodegenCtx ctx) {
+  std::string tmp = ctx.fresh("caught");
+  ctx.out << "  %" << tmp << " = call i64 @far_caught_value()\n";
+  return "%" + tmp;
+}
+
+std::string emitCaughtTag(ErrCodegenCtx ctx) {
+  std::string tmp = ctx.fresh("ctag");
+  ctx.out << "  %" << tmp << " = call i64 @far_caught_tag()\n";
+  return "%" + tmp;
+}
+
+std::string emitCaughtMatches(ErrCodegenCtx ctx, int64_t expected_tag) {
+  std::string tag = emitCaughtTagGlobal(ctx);
+  std::string cmp = ctx.fresh("tagcmp");
+  ctx.out << "  %" << cmp << " = icmp eq i64 " << tag << ", " << expected_tag << "\n";
+  return "%" + cmp;
+}
+
+std::string emitCaughtValueGlobal(ErrCodegenCtx ctx) {
+  std::string tmp = ctx.fresh("caught");
+  ctx.out << "  %" << tmp << " = load volatile i64, i64* @far_g_caught_value\n";
+  return "%" + tmp;
+}
+
+std::string emitCaughtTagGlobal(ErrCodegenCtx ctx) {
+  std::string tmp = ctx.fresh("ctag");
+  ctx.out << "  %" << tmp << " = load volatile i64, i64* @far_g_caught_tag\n";
+  return "%" + tmp;
+}
+
 void emitCaughtBind(ErrCodegenCtx ctx, const std::string& catch_var) {
   std::string tmp = ctx.fresh("caught");
   ctx.out << "  %" << tmp << " = call i64 @far_caught_value()\n";

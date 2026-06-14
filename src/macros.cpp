@@ -222,6 +222,14 @@ static void expandStmtMacros(Stmt& stmt, const Program& program) {
         expandStmtMacros(*s, program);
       return;
     case Stmt::ForStmt:
+      if (stmt.for_stmt.is_parallel || stmt.for_stmt.is_range) {
+        if (stmt.for_stmt.range_start)
+          expandExprMacros(*stmt.for_stmt.range_start, program);
+        if (stmt.for_stmt.range_end)
+          expandExprMacros(*stmt.for_stmt.range_end, program);
+      } else if (stmt.for_stmt.is_foreach) {
+        expandExprMacros(*stmt.for_stmt.foreach_iter, program);
+      }
       if (stmt.for_stmt.init)
         expandStmtMacros(*stmt.for_stmt.init, program);
       if (stmt.for_stmt.cond)
@@ -230,6 +238,31 @@ static void expandStmtMacros(Stmt& stmt, const Program& program) {
         expandStmtMacros(*stmt.for_stmt.step, program);
       for (auto& s : stmt.for_stmt.body)
         expandStmtMacros(*s, program);
+      return;
+    case Stmt::TryStmtK:
+      for (auto& s : stmt.try_stmt.try_body)
+        expandStmtMacros(*s, program);
+      for (auto& s : stmt.try_stmt.catch_body)
+        expandStmtMacros(*s, program);
+      for (auto& s : stmt.try_stmt.finally_body)
+        expandStmtMacros(*s, program);
+      return;
+    case Stmt::ThrowStmtK:
+      expandExprMacros(*stmt.throw_stmt.value, program);
+      return;
+    case Stmt::DeferStmtK:
+      expandExprMacros(*stmt.defer.expr, program);
+      return;
+    case Stmt::UnsafeStmtK:
+      for (auto& s : stmt.unsafe.body)
+        expandStmtMacros(*s, program);
+      return;
+    case Stmt::MatchStmtK:
+      expandExprMacros(*stmt.match_stmt.scrutinee, program);
+      for (auto& arm : stmt.match_stmt.arms) {
+        for (auto& s : arm.body)
+          expandStmtMacros(*s, program);
+      }
       return;
     default:
       return;

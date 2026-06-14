@@ -32,14 +32,14 @@ fun t03_while_sum() -> i64 {
 }
 fun t04_for_range() -> i64 {
   s = 0
-  for i in 0..5 {
+  for i in 0..<5 {
     s = s + i
   }
   return eq(s, 10)
 }
 fun t05_break() -> i64 {
   s = 0
-  for i in 0..100 {
+  for i in 0..<100 {
     if (i == 7) { break }
     s = s + 1
   }
@@ -47,7 +47,7 @@ fun t05_break() -> i64 {
 }
 fun t06_continue() -> i64 {
   s = 0
-  for i in 0..10 {
+  for i in 0..<10 {
     if (i % 2 == 0) { continue }
     s = s + i
   }
@@ -55,7 +55,7 @@ fun t06_continue() -> i64 {
 }
 fun t07_nested() -> i64 {
   acc = 0
-  for i in 0..3 {
+  for i in 0..<3 {
     j = 0
     while (j < 2) {
       acc = acc + 1

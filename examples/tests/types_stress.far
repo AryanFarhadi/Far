@@ -42,7 +42,7 @@ fun main() {
   s = "types"
   print(len(s))
   print(s + "!")
-  for i in 0..5 {
+  for i in 0..<5 {
     print(i)
   }
   print(i8.min)

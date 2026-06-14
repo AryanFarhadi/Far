@@ -139,6 +139,12 @@ void transformStmt(Stmt& stmt, const UserTypeDef& td, const std::unordered_set<s
         transformStmt(*s, td, exclude);
       break;
     case Stmt::ForStmt:
+      if (stmt.for_stmt.is_range) {
+        transformExpr(*stmt.for_stmt.range_start, td, exclude);
+        transformExpr(*stmt.for_stmt.range_end, td, exclude);
+      } else if (stmt.for_stmt.is_foreach) {
+        transformExpr(*stmt.for_stmt.foreach_iter, td, exclude);
+      }
       if (stmt.for_stmt.init)
         transformStmt(*stmt.for_stmt.init, td, exclude);
       if (stmt.for_stmt.cond)

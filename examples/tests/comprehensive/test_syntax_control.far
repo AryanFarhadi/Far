@@ -35,13 +35,13 @@ fun t06_while_zero() -> i64 {
 }
 fun t07_for_range() -> i64 {
   total = 0
-  for i in 0..5 { total = total + i }
+  for i in 0..<5 { total = total + i }
   return eq(total, 10)
 }
 fun t08_for_nested() -> i64 {
   n = 0
-  for i in 0..3 {
-    for j in 0..3 { n = n + 1 }
+  for i in 0..<3 {
+    for j in 0..<3 { n = n + 1 }
   }
   return eq(n, 9)
 }
@@ -88,7 +88,7 @@ fun t13_break() -> i64 {
 }
 fun t14_continue() -> i64 {
   s = 0
-  for i in 0..10 {
+  for i in 0..<10 {
     if (i % 2 == 0) { continue }
     s = s + i
   }

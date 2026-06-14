@@ -297,6 +297,8 @@ static void foldExprComptime(Expr& expr, ComptimeContext& ctx) {
     return;
   }
   if (expr.kind == Expr::PrefixExprK) {
+    if (expr.prefix.op == "++" || expr.prefix.op == "--")
+      return;
     foldExprComptime(*expr.prefix.operand, ctx);
     ComptimeValue v;
     if (tryEvalExpr(ctx, expr, v))
@@ -348,6 +350,14 @@ static void foldStmtComptime(Stmt& stmt, ComptimeContext& ctx) {
         foldStmtComptime(*s, ctx);
       return;
     case Stmt::ForStmt:
+      if (stmt.for_stmt.is_parallel || stmt.for_stmt.is_range) {
+        if (stmt.for_stmt.range_start)
+          foldExprComptime(*stmt.for_stmt.range_start, ctx);
+        if (stmt.for_stmt.range_end)
+          foldExprComptime(*stmt.for_stmt.range_end, ctx);
+      } else if (stmt.for_stmt.is_foreach) {
+        foldExprComptime(*stmt.for_stmt.foreach_iter, ctx);
+      }
       if (stmt.for_stmt.init)
         foldStmtComptime(*stmt.for_stmt.init, ctx);
       if (stmt.for_stmt.cond)
@@ -356,6 +366,31 @@ static void foldStmtComptime(Stmt& stmt, ComptimeContext& ctx) {
         foldStmtComptime(*stmt.for_stmt.step, ctx);
       for (auto& s : stmt.for_stmt.body)
         foldStmtComptime(*s, ctx);
+      return;
+    case Stmt::TryStmtK:
+      for (auto& s : stmt.try_stmt.try_body)
+        foldStmtComptime(*s, ctx);
+      for (auto& s : stmt.try_stmt.catch_body)
+        foldStmtComptime(*s, ctx);
+      for (auto& s : stmt.try_stmt.finally_body)
+        foldStmtComptime(*s, ctx);
+      return;
+    case Stmt::ThrowStmtK:
+      foldExprComptime(*stmt.throw_stmt.value, ctx);
+      return;
+    case Stmt::DeferStmtK:
+      foldExprComptime(*stmt.defer.expr, ctx);
+      return;
+    case Stmt::UnsafeStmtK:
+      for (auto& s : stmt.unsafe.body)
+        foldStmtComptime(*s, ctx);
+      return;
+    case Stmt::MatchStmtK:
+      foldExprComptime(*stmt.match_stmt.scrutinee, ctx);
+      for (auto& arm : stmt.match_stmt.arms) {
+        for (auto& st : arm.body)
+          foldStmtComptime(*st, ctx);
+      }
       return;
     default:
       return;
@@ -384,6 +419,21 @@ static void materializeCodegenFunction(Program& program, Function& fn, ComptimeC
   fn.body.push_back(std::move(ret));
 }
 
+static void seedComptimeGlobals(Program& program, ComptimeContext& ctx) {
+  for (const auto& fn : program.functions) {
+    if (fn.is_constexpr || fn.is_consteval || fn.is_codegen)
+      ctx.fns[fn.name] = &fn;
+  }
+  for (auto& stmt : program.comptime_stmts) {
+    if (stmt->kind == Stmt::ComptimeBlockK)
+      runComptimeStmts(stmt->comptime_block, ctx);
+    else if (stmt->kind == Stmt::LetStmt && stmt->let.is_constexpr && stmt->let.value) {
+      ComptimeValue v = evalExpr(ctx, *stmt->let.value);
+      ctx.vars[stmt->let.name] = v;
+    }
+  }
+}
+
 void prepareProgram(Program& program) {
   expandMacros(program);
 
@@ -394,19 +444,7 @@ void prepareProgram(Program& program) {
   ComptimeContext ctx;
   ctx.program = &program;
   ctx.obj_reg = &reg;
-  for (const auto& fn : program.functions) {
-    if (fn.is_constexpr || fn.is_consteval || fn.is_codegen)
-      ctx.fns[fn.name] = &fn;
-  }
-
-  for (auto& stmt : program.comptime_stmts) {
-    if (stmt->kind == Stmt::ComptimeBlockK)
-      runComptimeStmts(stmt->comptime_block, ctx);
-    else if (stmt->kind == Stmt::LetStmt && stmt->let.is_constexpr) {
-      ComptimeValue v = evalExpr(ctx, *stmt->let.value);
-      ctx.vars[stmt->let.name] = v;
-    }
-  }
+  seedComptimeGlobals(program, ctx);
 
   for (auto& fn : program.functions) {
     if (fn.is_codegen && !fn.is_comptime_materialized)
@@ -431,6 +469,7 @@ void foldProgramExpressions(Program& program) {
   ComptimeContext ctx;
   ctx.program = &program;
   ctx.obj_reg = &reg;
+  seedComptimeGlobals(program, ctx);
   for (auto& fn : program.functions) {
     for (auto& stmt : fn.body)
       foldStmtComptime(*stmt, ctx);

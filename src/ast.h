@@ -582,6 +582,9 @@ struct For {
   std::unique_ptr<Expr> cond;
   std::unique_ptr<Stmt> step;
   std::vector<std::unique_ptr<Stmt>> body;
+  bool is_range = false;
+  bool range_exclusive = false;
+  std::string range_var;
   bool is_parallel = false;
   std::string parallel_var;
   std::unique_ptr<Expr> range_start;
@@ -604,6 +607,9 @@ struct TryStmt {
   std::vector<std::unique_ptr<Stmt>> try_body;
   bool has_catch = false;
   std::string catch_var;
+  TypeDesc catch_type = TypeDesc::prim(FarTypeId::I64);
+  bool catch_type_explicit = false;
+  int64_t catch_type_tag = 0;
   std::vector<std::unique_ptr<Stmt>> catch_body;
   bool has_finally = false;
   std::vector<std::unique_ptr<Stmt>> finally_body;

@@ -73,7 +73,7 @@ fun t35() -> i64 {
 }
 fun t36() -> i64 {
   total = 0
-  for i in 0..5 { total = total + i }
+  for i in 0..<5 { total = total + i }
   return eq(total, 10)
 }
 fun t37() -> i64 {

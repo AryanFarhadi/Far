@@ -140,6 +140,7 @@ void declareConcurrencyRuntime(std::ostringstream& out) {
   out << "declare i64 @far_channel_send(i64, i64)\n";
   out << "declare i64 @far_channel_recv(i64)\n";
   out << "declare void @far_channel_close(i64)\n";
+  out << "declare void @far_channel_drop(i64)\n";
   out << "declare i64 @far_mutex_new()\n";
   out << "declare void @far_mutex_lock(i64)\n";
   out << "declare void @far_mutex_unlock(i64)\n";

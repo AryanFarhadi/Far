@@ -539,6 +539,12 @@ bool canAssignTypes(const TypeDesc& from, const TypeDesc& to) {
     return typeDescEquals(from, to);
   if (from.form == TypeForm::User && to.form == TypeForm::User)
     return typeDescEquals(from, to);
+  if (from.form == TypeForm::Result && to.form == TypeForm::Result && from.args.size() == 2 &&
+      to.args.size() == 2)
+    return canAssignTypes(from.args[0], to.args[0]) && canAssignTypes(from.args[1], to.args[1]);
+  if (from.form == TypeForm::Optional && to.form == TypeForm::Optional && !from.args.empty() &&
+      !to.args.empty())
+    return canAssignTypes(from.args[0], to.args[0]);
   if (isPointerDesc(from) && isPointerDesc(to))
     return canAssignTypes(from.args[0], to.args[0]) || typeDescEquals(from.args[0], to.args[0]);
   if (isBorrowRefDesc(from) && isBorrowRefDesc(to))

@@ -11,7 +11,7 @@ Each `.far` file is one self-contained program exercising a language area.
 | `suite_language.far` | 60 core language checks |
 | `suite_builtins.far` | print/write/stringify smoke tests |
 | `suite_10000.far` | Large generated suite (slow) |
-| `suite_known_bugs.far` | Expected failures — not in default runner |
+| `suite_known_bugs.far` | String equality regression (now passing) |
 
 ## Harness convention
 
@@ -31,7 +31,7 @@ Windows:
 
 ```bat
 build.bat
-run_tests.bat          :: 58 feature + suite tests
+run_tests.bat          :: 104 programs (check + run)
 run_suite_10000.bat    :: 10,000 generated checks
 ```
 

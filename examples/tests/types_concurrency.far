@@ -47,7 +47,7 @@ fun main() {
   q.push(11)
   print(q.pop())
   # Parallel loop
-  parallel for i in 0..4 {
+  parallel for i in 0..<4 {
     pfor_worker(i)
   }
   # Actor model

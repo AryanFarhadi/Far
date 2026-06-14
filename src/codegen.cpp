@@ -1,5 +1,7 @@
 #include "codegen.h"
 
+#include <algorithm>
+
 #include "target.h"
 
 #include "aggregate.h"
@@ -285,12 +287,26 @@ private:
 
   std::ostringstream globals_;
 
+  std::ostringstream hoisted_allocas_;
+
   int tmp_ = 0;
 
   int str_id_ = 0;
 
+  std::string pending_ret_flag_;
+  std::string pending_ret_val_;
+  bool pending_ret_init_ = false;
+
   std::unordered_map<std::string, const Function*> fn_by_llvm_;
   std::unordered_map<std::string, std::vector<const Function*>> fn_by_name_;
+
+  void hoistedAlloca(const std::string& slot, const TypeDesc& type) {
+    hoisted_allocas_ << "  %" << slot << " = alloca " << slotLlvmTypeDesc(type) << "\n";
+  }
+
+  void hoistedAllocaRaw(const std::string& slot, const char* llvm_ty) {
+    hoisted_allocas_ << "  %" << slot << " = alloca " << llvm_ty << "\n";
+  }
 
 
 
@@ -538,6 +554,9 @@ private:
     }
     out_ << ") {\nentry:\n";
 
+    hoisted_allocas_.str("");
+    hoisted_allocas_.clear();
+
     std::unordered_map<std::string, VarInfo> env;
     for (const auto& p : fn.params) {
       std::string slot = fresh("slot");
@@ -548,7 +567,12 @@ private:
       env[p.name] = {p.type, slot};
     }
 
+    std::ostringstream body;
+    std::ostringstream saved = std::move(out_);
+    out_ = std::move(body);
+
     Ctx ctx(this, env, fn.return_type);
+    ctx.resetPendingReturn();
     const auto& body_stmts = fn.body_source     ? fn.body_source->body
                              : fn.shared_body ? *fn.shared_body
                                               : fn.body;
@@ -563,6 +587,11 @@ private:
                                                                                 : "0"));
       out_ << "  ret " << ret_ty << " " << zero << "\n";
     }
+
+    body = std::move(out_);
+    out_ = std::move(saved);
+    out_ << hoisted_allocas_.str();
+    out_ << body.str();
     out_ << "}\n\n";
   }
 
@@ -649,6 +678,8 @@ private:
       c.defer_stack_ = defer_stack_;
       c.loop_stack_ = loop_stack_;
       c.autodrop_frames_ = autodrop_frames_;
+      c.autodrop_scope_base_ =
+          c.autodrop_frames_.empty() ? 0 : c.autodrop_frames_.back().size();
       c.terminated = terminated;
       return c;
     }
@@ -661,6 +692,12 @@ private:
         flushDefers();
         flushAllAutoDrops();
       }
+    }
+
+    void resetPendingReturn() {
+      gen_->pending_ret_init_ = false;
+      gen_->pending_ret_flag_.clear();
+      gen_->pending_ret_val_.clear();
     }
 
   private:
@@ -679,16 +716,121 @@ private:
       TypeForm form;
     };
     std::vector<std::vector<AutoDrop>> autodrop_frames_;
+    size_t autodrop_scope_base_ = 0;
 
     struct TryLabels {
+      std::string resume_label;
+      std::string body_label;
       std::string catch_label;
       std::string finally_label;
       std::string after_label;
       std::string catch_var;
+      TypeDesc catch_type = TypeDesc::prim(FarTypeId::I64);
+      int64_t catch_type_tag = 0;
+      bool catch_type_explicit = false;
       bool has_catch = false;
       bool has_finally = false;
+      size_t stack_index = 0;
     };
     std::vector<TryLabels> try_stack_;
+
+    void ensurePendingReturn() {
+      if (gen_->pending_ret_init_)
+        return;
+      gen_->pending_ret_flag_ = gen_->fresh("pretflag");
+      gen_->pending_ret_val_ = gen_->fresh("pretval");
+      const char* ret_ty = llvmAbiTypeDesc(return_type_);
+      gen_->out_ << "  %" << gen_->pending_ret_flag_ << " = alloca i1\n";
+      gen_->out_ << "  store i1 false, i1* %" << gen_->pending_ret_flag_ << "\n";
+      gen_->out_ << "  %" << gen_->pending_ret_val_ << " = alloca " << ret_ty << "\n";
+      gen_->pending_ret_init_ = true;
+    }
+
+    void mergeChild(Ctx& child) {
+      if (!child.terminated)
+        child.flushDefers();
+      env_ = child.env_;
+      if (!autodrop_frames_.empty() && !child.autodrop_frames_.empty()) {
+        const auto& added = child.autodrop_frames_.back();
+        for (size_t i = child.autodrop_scope_base_; i < added.size(); ++i)
+          autodrop_frames_.back().push_back(added[i]);
+      }
+    }
+
+    void removeAutoDrop(const std::string& name) {
+      if (autodrop_frames_.empty())
+        return;
+      auto& frame = autodrop_frames_.back();
+      frame.erase(std::remove_if(frame.begin(), frame.end(),
+                                 [&](const AutoDrop& ad) { return ad.name == name; }),
+                  frame.end());
+    }
+
+    std::string innermostFinallyLabel() const {
+      for (auto it = try_stack_.rbegin(); it != try_stack_.rend(); ++it) {
+        if (it->has_finally)
+          return it->finally_label;
+      }
+      return {};
+    }
+
+    void setPendingReturn(const Return& ret) {
+      ensurePendingReturn();
+      gen_->out_ << "  store i1 true, i1* %" << gen_->pending_ret_flag_ << "\n";
+      const char* ret_ty = llvmAbiTypeDesc(return_type_);
+      if (!ret.has_value) {
+        std::string zero =
+            (isPrimitiveDesc(return_type_) && isFloatType(return_type_.primitive)) ? "0.0" : "0";
+        gen_->out_ << "  store " << ret_ty << " " << zero << ", " << ret_ty << "* %"
+                   << gen_->pending_ret_val_ << "\n";
+        return;
+      }
+      std::string value = emitExpr(*ret.value);
+      std::string abi = gen_->internalToAbiDesc(ret.value->type, return_type_, value);
+      gen_->out_ << "  store " << ret_ty << " " << abi << ", " << ret_ty << "* %"
+                 << gen_->pending_ret_val_ << "\n";
+    }
+
+    void emitReturnFromPending() {
+      ensurePendingReturn();
+      const char* ret_ty = llvmAbiTypeDesc(return_type_);
+      flushDefers();
+      flushAllAutoDrops();
+      std::string val = gen_->fresh("pretload");
+      gen_->out_ << "  %" << val << " = load " << ret_ty << ", " << ret_ty << "* %"
+                 << gen_->pending_ret_val_ << "\n";
+      gen_->out_ << "  ret " << ret_ty << " %" << val << "\n";
+      terminated = true;
+    }
+
+    void emitFinallyEpilogue(const TryLabels& labels) {
+      if (!gen_->pending_ret_init_) {
+        if (!terminated)
+          gen_->out_ << "  br label %" << labels.after_label << "\n";
+        return;
+      }
+      std::string flag = gen_->fresh("pfl");
+      gen_->out_ << "  %" << flag << " = load i1, i1* %" << gen_->pending_ret_flag_ << "\n";
+      std::string ret_path = gen_->fresh("tryret");
+      std::string done = labels.after_label;
+      gen_->out_ << "  br i1 %" << flag << ", label %" << ret_path << ", label %" << done << "\n";
+      gen_->out_ << ret_path << ":\n";
+      for (size_t i = labels.stack_index; i > 0;) {
+        --i;
+        if (try_stack_[i].has_finally) {
+          gen_->out_ << "  br label %" << try_stack_[i].finally_label << "\n";
+          return;
+        }
+      }
+      emitReturnFromPending();
+    }
+
+    void emitRethrowCaught() {
+      std::string tag = emitCaughtTagGlobal(errCtx());
+      std::string val = emitCaughtValueGlobal(errCtx());
+      gen_->out_ << "  call void @far_throw(i64 " << tag << ", i64 " << val << ")\n";
+      gen_->out_ << "  unreachable\n";
+    }
 
     void pushScope() { autodrop_frames_.push_back({}); }
 
@@ -703,7 +845,7 @@ private:
           emitMemDrop(memCtx(), ad.form, val);
         else if (isConcurrencyHandleDesc(drop_ty))
           emitConcDrop(concCtx(), ad.form, val);
-        storeVar(ad.name, "0", TypeDesc::prim(FarTypeId::I64));
+        storeSlotValue(ad.name, "0");
       }
       autodrop_frames_.pop_back();
     }
@@ -746,7 +888,7 @@ private:
     void ensureSlot(const std::string& name, const TypeDesc& type) {
       if (env_.find(name) == env_.end()) {
         std::string slot = gen_->fresh("slot");
-        gen_->out_ << "  %" << slot << " = alloca " << slotLlvmTypeDesc(type) << "\n";
+        gen_->hoistedAlloca(slot, type);
         env_[name] = {type, slot};
       }
     }
@@ -761,11 +903,18 @@ private:
       return "%" + tmp;
     }
 
+    void storeSlotValue(const std::string& name, const std::string& value) {
+      auto it = env_.find(name);
+      if (it == env_.end())
+        throw FarError("undefined variable '" + name + "'");
+      const char* st = slotLlvmTypeDesc(it->second.type);
+      gen_->out_ << "  store " << st << " " << value << ", " << st << "* %" << it->second.slot << "\n";
+    }
+
     void storeVar(const std::string& name, const std::string& value, const TypeDesc& type) {
       ensureSlot(name, type);
       env_[name].type = type;
-      const char* st = slotLlvmTypeDesc(type);
-      gen_->out_ << "  store " << st << " " << value << ", " << st << "* %" << env_[name].slot << "\n";
+      storeSlotValue(name, value);
       assigned_.insert(name);
     }
 
@@ -785,6 +934,13 @@ private:
 
 
     void emitReturn(const Return& ret) {
+      std::string finally = innermostFinallyLabel();
+      if (!finally.empty()) {
+        setPendingReturn(ret);
+        gen_->out_ << "  br label %" << finally << "\n";
+        terminated = true;
+        return;
+      }
       const char* ret_ty = llvmAbiTypeDesc(return_type_);
       if (!ret.has_value) {
         flushDefers();
@@ -916,6 +1072,16 @@ private:
     }
 
 
+
+    std::string emitIsNullish(const Expr& expr, const std::string& val) {
+      std::string is_n = gen_->fresh();
+      if (isPrimitiveDesc(exprType(expr)) && isFloatType(exprType(expr).primitive)) {
+        gen_->out_ << "  %" << is_n << " = fcmp oeq " << F64 << " " << val << ", 0.0\n";
+      } else {
+        gen_->out_ << "  %" << is_n << " = icmp eq " << I64 << " " << val << ", 0\n";
+      }
+      return "%" + is_n;
+    }
 
     std::string emitBranchCond(const Expr& expr) {
       std::string value = emitExpr(expr);
@@ -1060,6 +1226,8 @@ private:
 
           body_ctx.emitStmt(*s);
 
+        mergeChild(body_ctx);
+
         if (!body_ctx.terminated)
 
           gen_->out_ << "  br label %" << end_label << "\n";
@@ -1081,6 +1249,8 @@ private:
         for (const auto& s : ifs.else_body)
 
           else_ctx.emitStmt(*s);
+
+        mergeChild(else_ctx);
 
         if (!else_ctx.terminated)
 
@@ -1128,11 +1298,11 @@ private:
 
         body_ctx.emitStmt(*s);
 
+      mergeChild(body_ctx);
+
       if (!body_ctx.terminated)
 
         gen_->out_ << "  br label %" << cond_label << "\n";
-
-      env_ = body_ctx.env_;
 
 
 
@@ -1146,48 +1316,72 @@ private:
 
     void emitTry(const TryStmt& tr) {
       TryLabels labels;
-      labels.catch_label = gen_->fresh("catch");
-      labels.finally_label = gen_->fresh("finally");
-      labels.after_label = gen_->fresh("after");
+      labels.resume_label = gen_->fresh("try.resume");
+      labels.body_label = gen_->fresh("try.body");
+      labels.catch_label = gen_->fresh("try.catch");
+      labels.finally_label = gen_->fresh("try.finally");
+      labels.after_label = gen_->fresh("try.after");
       labels.catch_var = tr.catch_var;
+      labels.catch_type = tr.catch_type;
+      labels.catch_type_tag = tr.catch_type_tag;
+      labels.catch_type_explicit = tr.catch_type_explicit;
       labels.has_catch = tr.has_catch;
       labels.has_finally = tr.has_finally;
+      labels.stack_index = try_stack_.size();
       if (tr.has_catch)
-        ensureSlot(tr.catch_var, TypeDesc::prim(FarTypeId::I64));
+        ensureSlot(tr.catch_var, tr.catch_type);
 
-      std::string try_label = gen_->fresh("try.body");
+      std::string unwind_slot = gen_->fresh("tryunw");
+      gen_->hoistedAllocaRaw(unwind_slot, "i1");
+      gen_->out_ << "  store i1 false, i1* %" << unwind_slot << "\n";
+
       try_stack_.push_back(labels);
 
-      gen_->out_ << "  br label %" << try_label << "\n";
-      gen_->out_ << try_label << ":\n";
+      std::string enter_label = gen_->fresh("try.enter");
+      std::string resume_var = gen_->fresh("tryres");
+      gen_->out_ << "  br label %" << enter_label << "\n";
+      gen_->out_ << enter_label << ":\n";
+      emitTryEnter(errCtx(), resume_var, labels.resume_label, labels.body_label);
+
+      gen_->out_ << labels.body_label << ":\n";
       {
         Ctx body_ctx = fork();
         for (const auto& s : tr.try_body)
           body_ctx.emitStmt(*s);
+        mergeChild(body_ctx);
         if (!body_ctx.terminated) {
-          if (tr.has_finally)
-            gen_->out_ << "  br label %" << labels.finally_label << "\n";
-          else
-            gen_->out_ << "  br label %" << labels.after_label << "\n";
+          emitTrySuccess(errCtx());
+          gen_->out_ << "  br label %"
+                     << (tr.has_finally ? labels.finally_label : labels.after_label) << "\n";
         }
-        env_ = body_ctx.env_;
-        terminated = body_ctx.terminated;
       }
-      try_stack_.pop_back();
 
+      gen_->out_ << labels.resume_label << ":\n";
+      gen_->out_ << "  store i1 true, i1* %" << unwind_slot << "\n";
       if (tr.has_catch) {
-        gen_->out_ << labels.catch_label << ":\n";
+        std::string caught = emitCaughtValueGlobal(errCtx());
+        if (tr.catch_type_explicit && tr.catch_type_tag != 0) {
+          std::string ok = gen_->fresh("tagok");
+          std::string mismatch = gen_->fresh("tagbad");
+          std::string cmp = emitCaughtMatches(errCtx(), tr.catch_type_tag);
+          gen_->out_ << "  br i1 " << cmp << ", label %" << ok << ", label %" << mismatch << "\n";
+          gen_->out_ << mismatch << ":\n";
+          emitRethrowCaught();
+          gen_->out_ << ok << ":\n";
+        }
+        storeVar(tr.catch_var, caught, tr.catch_type);
         Ctx catch_ctx = fork();
         for (const auto& s : tr.catch_body)
           catch_ctx.emitStmt(*s);
+        mergeChild(catch_ctx);
         if (!catch_ctx.terminated) {
-          if (tr.has_finally)
-            gen_->out_ << "  br label %" << labels.finally_label << "\n";
-          else
-            gen_->out_ << "  br label %" << labels.after_label << "\n";
+          gen_->out_ << "  br label %"
+                     << (tr.has_finally ? labels.finally_label : labels.after_label) << "\n";
         }
-        env_ = catch_ctx.env_;
-        terminated = catch_ctx.terminated;
+      } else if (tr.has_finally) {
+        gen_->out_ << "  br label %" << labels.finally_label << "\n";
+      } else {
+        emitRethrowCaught();
       }
 
       if (tr.has_finally) {
@@ -1195,13 +1389,25 @@ private:
         Ctx fin_ctx = fork();
         for (const auto& s : tr.finally_body)
           fin_ctx.emitStmt(*s);
-        if (!fin_ctx.terminated)
-          gen_->out_ << "  br label %" << labels.after_label << "\n";
-        env_ = fin_ctx.env_;
-        terminated = fin_ctx.terminated;
+        mergeChild(fin_ctx);
+        if (!fin_ctx.terminated) {
+          std::string unw = gen_->fresh("tryunl");
+          gen_->out_ << "  %" << unw << " = load i1, i1* %" << unwind_slot << "\n";
+          if (!tr.has_catch) {
+            std::string rethrow_path = gen_->fresh("tryrethrow");
+            std::string done = labels.after_label;
+            gen_->out_ << "  br i1 %" << unw << ", label %" << rethrow_path << ", label %" << done
+                       << "\n";
+            gen_->out_ << rethrow_path << ":\n";
+            emitRethrowCaught();
+          } else {
+            emitFinallyEpilogue(labels);
+          }
+        }
       }
 
       gen_->out_ << labels.after_label << ":\n";
+      try_stack_.pop_back();
     }
 
     PatCodegenCtx patCtx() {
@@ -1235,6 +1441,7 @@ private:
           body_ctx.storeVar(b.name, b.value, b.type);
         for (const auto& s : arm.body)
           body_ctx.emitStmt(*s);
+        mergeChild(body_ctx);
         if (!body_ctx.terminated)
           gen_->out_ << "  br label %" << end_label << "\n";
 
@@ -1247,17 +1454,8 @@ private:
 
     void emitThrowStmt(const ThrowStmt& th) {
       std::string val = emitExpr(*th.value);
-      if (!try_stack_.empty()) {
-        const TryLabels& top = try_stack_.back();
-        if (top.has_catch)
-          storeVar(top.catch_var, val, TypeDesc::prim(FarTypeId::I64));
-        gen_->out_ << "  br label %" << top.catch_label << "\n";
-        gen_->out_ << "  unreachable\n";
-        terminated = true;
-        return;
-      }
-      TypeDesc val_ty = th.value->type;
       int64_t tag = 0;
+      TypeDesc val_ty = th.value->type;
       if (isUserDesc(val_ty)) {
         const UserTypeDef* ut = gen_->obj_reg_.lookup(val_ty.user_name);
         if (ut && ut->kind == UserTypeKind::Exception)
@@ -1303,9 +1501,9 @@ private:
       Ctx body_ctx = fork();
       for (const auto& s : fo.body)
         body_ctx.emitStmt(*s);
+      mergeChild(body_ctx);
       if (!body_ctx.terminated)
         gen_->out_ << "  br label %" << step_label << "\n";
-      env_ = body_ctx.env_;
 
       gen_->out_ << step_label << ":\n";
       std::string idx_step = gen_->fresh("fi");
@@ -1320,12 +1518,102 @@ private:
       loop_stack_.pop_back();
     }
 
+    void emitRangeFor(const For& fo) {
+      std::string start = emitExpr(*fo.range_start);
+      std::string end = emitExpr(*fo.range_end);
+      storeVar(fo.range_var, start, defaultIntType());
+
+      std::string asc_label = gen_->fresh("rng.asc");
+      std::string desc_label = gen_->fresh("rng.desc");
+      std::string asc_cond = gen_->fresh("rng.acond");
+      std::string asc_body = gen_->fresh("rng.abody");
+      std::string asc_step = gen_->fresh("rng.astep");
+      std::string desc_cond = gen_->fresh("rng.dcond");
+      std::string desc_body = gen_->fresh("rng.dbody");
+      std::string desc_step = gen_->fresh("rng.dstep");
+      std::string end_label = gen_->fresh("rng.end");
+
+      std::string cmp = gen_->fresh("rngcmp");
+      gen_->out_ << "  %" << cmp << " = icmp sle " << I64 << " " << start << ", " << end << "\n";
+      gen_->out_ << "  br i1 %" << cmp << ", label %" << asc_label << ", label %" << desc_label << "\n";
+
+      loop_stack_.push_back({end_label, asc_step});
+      gen_->out_ << asc_label << ":\n";
+      gen_->out_ << "  br label %" << asc_cond << "\n";
+      gen_->out_ << asc_cond << ":\n";
+      std::string iv = loadVar(fo.range_var);
+      std::string acmp = gen_->fresh("rngac");
+      if (fo.range_exclusive)
+        gen_->out_ << "  %" << acmp << " = icmp slt " << I64 << " " << iv << ", " << end << "\n";
+      else
+        gen_->out_ << "  %" << acmp << " = icmp sle " << I64 << " " << iv << ", " << end << "\n";
+      gen_->out_ << "  br i1 %" << acmp << ", label %" << asc_body << ", label %" << end_label << "\n";
+      gen_->out_ << asc_body << ":\n";
+      {
+        Ctx body_ctx = fork();
+        for (const auto& s : fo.body)
+          body_ctx.emitStmt(*s);
+        mergeChild(body_ctx);
+        if (!body_ctx.terminated)
+          gen_->out_ << "  br label %" << asc_step << "\n";
+      }
+      gen_->out_ << asc_step << ":\n";
+      std::string cur = loadVar(fo.range_var);
+      std::string nxt = gen_->fresh("rngan");
+      gen_->out_ << "  %" << nxt << " = add " << I64 << " " << cur << ", 1\n";
+      storeVar(fo.range_var, "%" + nxt, defaultIntType());
+      if (!terminated)
+        gen_->out_ << "  br label %" << asc_cond << "\n";
+
+      loop_stack_.pop_back();
+      loop_stack_.push_back({end_label, desc_step});
+      gen_->out_ << desc_label << ":\n";
+      gen_->out_ << "  br label %" << desc_cond << "\n";
+      gen_->out_ << desc_cond << ":\n";
+      std::string dv = loadVar(fo.range_var);
+      std::string dcmp = gen_->fresh("rngdc");
+      if (fo.range_exclusive)
+        gen_->out_ << "  %" << dcmp << " = icmp sgt " << I64 << " " << dv << ", " << end << "\n";
+      else
+        gen_->out_ << "  %" << dcmp << " = icmp sge " << I64 << " " << dv << ", " << end << "\n";
+      gen_->out_ << "  br i1 %" << dcmp << ", label %" << desc_body << ", label %" << end_label << "\n";
+      gen_->out_ << desc_body << ":\n";
+      {
+        Ctx body_ctx = fork();
+        for (const auto& s : fo.body)
+          body_ctx.emitStmt(*s);
+        mergeChild(body_ctx);
+        if (!body_ctx.terminated)
+          gen_->out_ << "  br label %" << desc_step << "\n";
+      }
+      gen_->out_ << desc_step << ":\n";
+      std::string dcur = loadVar(fo.range_var);
+      std::string dnxt = gen_->fresh("rngdn");
+      gen_->out_ << "  %" << dnxt << " = sub " << I64 << " " << dcur << ", 1\n";
+      storeVar(fo.range_var, "%" + dnxt, defaultIntType());
+      if (!terminated)
+        gen_->out_ << "  br label %" << desc_cond << "\n";
+      loop_stack_.pop_back();
+
+      gen_->out_ << end_label << ":\n";
+    }
+
     void emitFor(const For& fo) {
 
       if (fo.is_parallel) {
         std::string start = emitExpr(*fo.range_start);
         std::string end = emitExpr(*fo.range_end);
+        if (!fo.range_exclusive) {
+          std::string adj = gen_->fresh("pend");
+          gen_->out_ << "  %" << adj << " = add " << I64 << " " << end << ", 1\n";
+          end = "%" + adj;
+        }
         emitParallelFor(concCtx(), fo.parallel_fn, start, end);
+        return;
+      }
+
+      if (fo.is_range) {
+        emitRangeFor(fo);
         return;
       }
 
@@ -1374,13 +1662,11 @@ private:
 
         body_ctx.emitStmt(*s);
 
+      mergeChild(body_ctx);
+
       if (!body_ctx.terminated)
 
         gen_->out_ << "  br label %" << step_label << "\n";
-
-      env_ = body_ctx.env_;
-
-
 
       gen_->out_ << step_label << ":\n";
 
@@ -1390,7 +1676,7 @@ private:
 
         step_ctx.emitStmt(*fo.step);
 
-        env_ = step_ctx.env_;
+        mergeChild(step_ctx);
 
       }
 
@@ -1525,24 +1811,21 @@ private:
           {"**=", "**"}, {"//=", "//"}, {"&=", "&"}, {"|=", "|"},   {"^=", "^"},
           {"<<=", "<<"}, {">>=", ">>"}};
       if (a.op == "\?\?=") {
+        TypeDesc target_ty = exprType(*a.target);
         std::string cur = emitExpr(*a.target);
-        std::string is_n = gen_->fresh();
-        gen_->out_ << "  %" << is_n << " = icmp eq " << I64 << " " << cur << ", 0\n";
+        std::string is_n = emitIsNullish(*a.target, cur);
         std::string rhs_label = gen_->fresh("nass");
         std::string end_label = gen_->fresh("naend");
         std::string skip_label = gen_->fresh("nask");
-        gen_->out_ << "  br i1 %" << is_n << ", label %" << rhs_label << ", label %" << skip_label << "\n";
+        gen_->out_ << "  br i1 " << is_n << ", label %" << rhs_label << ", label %" << skip_label << "\n";
         gen_->out_ << rhs_label << ":\n";
-        std::string val = emitExpr(*a.value);
-        emitStoreTarget(*a.target, val, a.value->type);
+        std::string val = coerceToType(*a.value, target_ty, emitExpr(*a.value));
+        emitStoreTarget(*a.target, val, target_ty);
         gen_->out_ << "  br label %" << end_label << "\n";
         gen_->out_ << skip_label << ":\n";
         gen_->out_ << "  br label %" << end_label << "\n";
         gen_->out_ << end_label << ":\n";
-        std::string phi = gen_->fresh("naph");
-        gen_->out_ << "  %" << phi << " = phi " << I64 << " [ " << val << ", %" << rhs_label << " ], [ " << cur
-                   << ", %" << skip_label << " ]\n";
-        return "%" + phi;
+        return emitExpr(*a.target);
       }
       std::string rhs;
       if (a.op == "=") {
@@ -1556,9 +1839,29 @@ private:
         std::string tmp = gen_->fresh();
         const std::string& cop = it->second;
         bool rhs_ready = false;
-        if (cop == "+") {
-          TypeDesc target_ty = exprType(*a.target);
-          TypeDesc value_ty = a.value ? a.value->type : TypeDesc::prim(FarTypeId::I64);
+        TypeDesc target_ty = exprType(*a.target);
+        TypeDesc value_ty = a.value ? exprType(*a.value) : TypeDesc::prim(FarTypeId::I64);
+        bool use_float = (isPrimitiveDesc(target_ty) && isFloatType(target_ty.primitive)) ||
+                         (isPrimitiveDesc(value_ty) && isFloatType(value_ty.primitive));
+        if (use_float && (cop == "+" || cop == "-" || cop == "*" || cop == "/" || cop == "%")) {
+          std::string l = cur;
+          std::string r = right;
+          if (!(isPrimitiveDesc(target_ty) && isFloatType(target_ty.primitive))) {
+            std::string conv = gen_->fresh();
+            gen_->out_ << "  %" << conv << " = sitofp " << I64 << " " << cur << " to " << F64 << "\n";
+            l = "%" + conv;
+          }
+          if (!(isPrimitiveDesc(value_ty) && isFloatType(value_ty.primitive))) {
+            std::string conv = gen_->fresh();
+            gen_->out_ << "  %" << conv << " = sitofp " << I64 << " " << right << " to " << F64 << "\n";
+            r = "%" + conv;
+          }
+          static const std::unordered_map<std::string, std::string> fops = {
+              {"+", "fadd"}, {"-", "fsub"}, {"*", "fmul"}, {"/", "fdiv"}, {"%", "frem"}};
+          gen_->out_ << "  %" << tmp << " = " << fops.at(cop) << " " << F64 << " " << l << ", " << r << "\n";
+          rhs = "%" + tmp;
+          rhs_ready = true;
+        } else if (cop == "+") {
           if (isPrimTy(target_ty, FarTypeId::String) || isPrimTy(value_ty, FarTypeId::String) ||
               isPrimTy(target_ty, FarTypeId::Char) || isPrimTy(value_ty, FarTypeId::Char)) {
             std::string l = emitExprAsString(*a.target);
@@ -1630,14 +1933,24 @@ private:
       if (p.op == "++" || p.op == "--") {
         if (p.operand->kind != Expr::Variable)
           throw FarError("increment requires variable operand");
+        TypeDesc op_ty = exprType(*p.operand);
+        const char* llvm_ty = slotLlvmTypeDesc(op_ty);
+        bool is_float = isPrimitiveDesc(op_ty) && isFloatType(op_ty.primitive);
         std::string cur = loadVar(p.operand->var.name);
-        std::string one = "1";
         std::string tmp = gen_->fresh();
-        if (p.op == "++")
-          gen_->out_ << "  %" << tmp << " = add " << I64 << " " << cur << ", " << one << "\n";
-        else
-          gen_->out_ << "  %" << tmp << " = sub " << I64 << " " << cur << ", " << one << "\n";
-        storeVar(p.operand->var.name, "%" + tmp, TypeDesc::prim(FarTypeId::I64));
+        if (is_float) {
+          if (p.op == "++")
+            gen_->out_ << "  %" << tmp << " = fadd " << F64 << " " << cur << ", 1.0\n";
+          else
+            gen_->out_ << "  %" << tmp << " = fsub " << F64 << " " << cur << ", 1.0\n";
+        } else {
+          if (p.op == "++")
+            gen_->out_ << "  %" << tmp << " = add " << I64 << " " << cur << ", 1\n";
+          else
+            gen_->out_ << "  %" << tmp << " = sub " << I64 << " " << cur << ", 1\n";
+        }
+        (void)llvm_ty;
+        storeSlotValue(p.operand->var.name, "%" + tmp);
         return "%" + tmp;
       }
       if (p.op == "~") {
@@ -1666,13 +1979,22 @@ private:
       if (p.op == "++" || p.op == "--") {
         if (p.operand->kind != Expr::Variable)
           throw FarError("increment requires variable operand");
+        TypeDesc op_ty = exprType(*p.operand);
+        bool is_float = isPrimitiveDesc(op_ty) && isFloatType(op_ty.primitive);
         std::string cur = loadVar(p.operand->var.name);
         std::string tmp = gen_->fresh();
-        if (p.op == "++")
-          gen_->out_ << "  %" << tmp << " = add " << I64 << " " << cur << ", 1\n";
-        else
-          gen_->out_ << "  %" << tmp << " = sub " << I64 << " " << cur << ", 1\n";
-        storeVar(p.operand->var.name, "%" + tmp, TypeDesc::prim(FarTypeId::I64));
+        if (is_float) {
+          if (p.op == "++")
+            gen_->out_ << "  %" << tmp << " = fadd " << F64 << " " << cur << ", 1.0\n";
+          else
+            gen_->out_ << "  %" << tmp << " = fsub " << F64 << " " << cur << ", 1.0\n";
+        } else {
+          if (p.op == "++")
+            gen_->out_ << "  %" << tmp << " = add " << I64 << " " << cur << ", 1\n";
+          else
+            gen_->out_ << "  %" << tmp << " = sub " << I64 << " " << cur << ", 1\n";
+        }
+        storeSlotValue(p.operand->var.name, "%" + tmp);
         return cur;
       }
       if (p.op == "!?") {
@@ -1682,23 +2004,51 @@ private:
       throw FarError("unknown postfix operator '" + p.op + "'");
     }
 
-    std::string emitTernaryExpr(const TernaryExpr& t) {
+    std::string coerceToType(const Expr& expr, const TypeDesc& target, const std::string& val) {
+      TypeDesc from = exprType(expr);
+      if (typeDescEquals(from, target))
+        return val;
+      if (canAssignTypes(from, target))
+        return gen_->emitCastValueDesc(from, target, val);
+      return val;
+    }
+
+    void emitExprToSlot(const Expr& expr, const TypeDesc& result_ty, const std::string& slot, const char* st,
+                        const std::string& done) {
+      if (expr.kind == Expr::TernaryExprK) {
+        emitTernaryToSlot(expr.ternary, result_ty, slot, st, done);
+        return;
+      }
+      std::string v = coerceToType(expr, result_ty, emitExpr(expr));
+      gen_->out_ << "  store " << st << " " << v << ", " << st << "* %" << slot << "\n";
+      gen_->out_ << "  br label %" << done << "\n";
+    }
+
+    void emitTernaryToSlot(const TernaryExpr& t, const TypeDesc& result_ty, const std::string& slot, const char* st,
+                           const std::string& done) {
       std::string cond = emitBranchCond(*t.cond);
       std::string then_label = gen_->fresh("then");
       std::string else_label = gen_->fresh("else");
-      std::string end_label = gen_->fresh("tend");
+      std::string join = gen_->fresh("tjoin");
       gen_->out_ << "  br i1 " << cond << ", label %" << then_label << ", label %" << else_label << "\n";
       gen_->out_ << then_label << ":\n";
-      std::string tv = emitExpr(*t.then_br);
-      gen_->out_ << "  br label %" << end_label << "\n";
+      emitExprToSlot(*t.then_br, result_ty, slot, st, join);
       gen_->out_ << else_label << ":\n";
-      std::string ev = emitExpr(*t.else_br);
-      gen_->out_ << "  br label %" << end_label << "\n";
-      gen_->out_ << end_label << ":\n";
-      std::string phi = gen_->fresh("tphi");
-      gen_->out_ << "  %" << phi << " = phi " << I64 << " [ " << tv << ", %" << then_label << " ], [ " << ev
-                 << ", %" << else_label << " ]\n";
-      return "%" + phi;
+      emitExprToSlot(*t.else_br, result_ty, slot, st, join);
+      gen_->out_ << join << ":\n";
+      gen_->out_ << "  br label %" << done << "\n";
+    }
+
+    std::string emitTernaryExpr(const TernaryExpr& t, const TypeDesc& result_ty) {
+      std::string slot = gen_->fresh("tslot");
+      const char* st = slotLlvmTypeDesc(result_ty);
+      gen_->hoisted_allocas_ << "  %" << slot << " = alloca " << st << "\n";
+      std::string done = gen_->fresh("tdone");
+      emitTernaryToSlot(t, result_ty, slot, st, done);
+      gen_->out_ << done << ":\n";
+      std::string loaded = gen_->fresh("tld");
+      gen_->out_ << "  %" << loaded << " = load " << st << ", " << st << "* %" << slot << "\n";
+      return "%" + loaded;
     }
 
     std::string compileTimeTypeTag(const TypeDesc& td) {
@@ -1767,7 +2117,7 @@ private:
         case Expr::Variable:
           return loadVar(expr.var.name);
         case Expr::Binary:
-          return emitBinOp(expr.bin_op);
+          return emitBinOp(expr.bin_op, expr.type);
         case Expr::FnCall:
           return emitCall(expr.call, expr.type);
         case Expr::CastExpr: {
@@ -1865,7 +2215,7 @@ private:
         case Expr::AssignExprK:
           return emitAssignExpr(expr.assign);
         case Expr::TernaryExprK:
-          return emitTernaryExpr(expr.ternary);
+          return emitTernaryExpr(expr.ternary, expr.type);
         case Expr::PrefixExprK:
           return emitPrefixExpr(expr.prefix);
         case Expr::PostfixExprK:
@@ -2092,7 +2442,7 @@ private:
 
 
 
-    std::string emitBinOp(const BinOp& op) {
+    std::string emitBinOp(const BinOp& op, const TypeDesc& result_ty) {
 
       if (op.op == "and" || op.op == "&&") return emitShortCircuitAnd(*op.left, *op.right);
 
@@ -2112,23 +2462,27 @@ private:
       }
 
       if (op.op == "??") {
+        const char* st = slotLlvmTypeDesc(result_ty);
+        std::string slot = gen_->fresh("ncslot");
+        gen_->hoisted_allocas_ << "  %" << slot << " = alloca " << st << "\n";
         std::string left = emitExpr(*op.left);
-        std::string is_n = gen_->fresh();
-        gen_->out_ << "  %" << is_n << " = icmp eq " << I64 << " " << left << ", 0\n";
+        std::string is_n = emitIsNullish(*op.left, left);
         std::string rhs_label = gen_->fresh("nclr");
         std::string end_label = gen_->fresh("nclend");
         std::string ok_label = gen_->fresh("nclok");
-        gen_->out_ << "  br i1 %" << is_n << ", label %" << rhs_label << ", label %" << ok_label << "\n";
+        gen_->out_ << "  br i1 " << is_n << ", label %" << rhs_label << ", label %" << ok_label << "\n";
         gen_->out_ << ok_label << ":\n";
+        std::string left_ok = coerceToType(*op.left, result_ty, left);
+        gen_->out_ << "  store " << st << " " << left_ok << ", " << st << "* %" << slot << "\n";
         gen_->out_ << "  br label %" << end_label << "\n";
         gen_->out_ << rhs_label << ":\n";
-        std::string right = emitExpr(*op.right);
+        std::string right = coerceToType(*op.right, result_ty, emitExpr(*op.right));
+        gen_->out_ << "  store " << st << " " << right << ", " << st << "* %" << slot << "\n";
         gen_->out_ << "  br label %" << end_label << "\n";
         gen_->out_ << end_label << ":\n";
-        std::string phi = gen_->fresh("nc");
-        gen_->out_ << "  %" << phi << " = phi " << I64 << " [ " << left << ", %" << ok_label << " ], [ " << right
-                   << ", %" << rhs_label << " ]\n";
-        return "%" + phi;
+        std::string loaded = gen_->fresh("ncld");
+        gen_->out_ << "  %" << loaded << " = load " << st << ", " << st << "* %" << slot << "\n";
+        return "%" + loaded;
       }
 
       if (op.op == "in" || op.op == "not in") {
@@ -2659,12 +3013,16 @@ private:
         std::string val = emitExpr(*call.args[0].value);
         if (isMemoryHandleDesc(arg_ty)) {
           emitMemDrop(memCtx(), arg_ty.form, val);
-          if (call.args[0].value->kind == Expr::Variable)
-            storeVar(call.args[0].value->var.name, "0", TypeDesc::prim(FarTypeId::I64));
+          if (call.args[0].value->kind == Expr::Variable) {
+            storeSlotValue(call.args[0].value->var.name, "0");
+            removeAutoDrop(call.args[0].value->var.name);
+          }
         } else if (isConcurrencyHandleDesc(arg_ty)) {
           emitConcDrop(concCtx(), arg_ty.form, val);
-          if (call.args[0].value->kind == Expr::Variable)
-            storeVar(call.args[0].value->var.name, "0", TypeDesc::prim(FarTypeId::I64));
+          if (call.args[0].value->kind == Expr::Variable) {
+            storeSlotValue(call.args[0].value->var.name, "0");
+            removeAutoDrop(call.args[0].value->var.name);
+          }
         }
         return "0";
       }

@@ -139,17 +139,22 @@ TypeDesc collMethodRetType(TypeForm form, CollMethodId id, const TypeDesc& recv,
     case CollMethodId::PushFront:
     case CollMethodId::PushBack:
       return recv;
+    case CollMethodId::Get:
+      if (form == TypeForm::Dict)
+        return recv.args.size() > 1 ? recv.args[1] : TypeDesc::prim(FarTypeId::I64);
+      [[fallthrough]];
     case CollMethodId::Pop:
     case CollMethodId::Dequeue:
-    case CollMethodId::Get:
     case CollMethodId::Peek:
     case CollMethodId::PopFront:
     case CollMethodId::PopBack:
       return elem;
     case CollMethodId::Keys:
-      return TypeDesc::list(recv.args[0]);
+      return recv.args.empty() ? TypeDesc::list(TypeDesc::prim(FarTypeId::I64))
+                               : TypeDesc::list(recv.args[0]);
     case CollMethodId::Values:
-      return TypeDesc::list(recv.args[1]);
+      return recv.args.size() > 1 ? TypeDesc::list(recv.args[1])
+                                  : TypeDesc::list(TypeDesc::prim(FarTypeId::I64));
     case CollMethodId::Slice:
       return TypeDesc::slice(elem);
     default:

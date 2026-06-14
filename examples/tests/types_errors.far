@@ -10,7 +10,7 @@ fun may_fail(fail: i64) -> i64 {
 }
 fun divide(a: i64, b: i64) -> Result<i64, i64> {
   if (b == 0) {
-    return Err(1)
+    return Err(i64(1))
   }
   return Ok(a / b)
 }
@@ -38,7 +38,7 @@ fun main() {
     if (fail) {
       throw AppError(fail)
     }
-  } catch (ex) {
+  } catch (ex: AppError) {
     caught = 1
   } finally {
     fin = 1
@@ -57,4 +57,4 @@ fun main() {
   assert(1 == 1)
   stack_trace()
   return 0
-}
+}

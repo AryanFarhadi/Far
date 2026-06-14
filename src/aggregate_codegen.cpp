@@ -314,7 +314,7 @@ static std::string emitAggregateMethodImpl(AggCodegenCtx ctx, const std::string&
                                              FarTypeId ret_ty) {
   const MethodInfo* mi = lookupMethod(obj_ty, method);
   if (!mi)
-    throw FarError("unknown method");
+    throw FarError("unknown method '" + method + "' on aggregate " + typeInfo(obj_ty).name);
   std::string recv = ctx.emit_expr(recv_expr);
   const char* st = aggLlvmType(obj_ty);
   const char* rt_st = aggLlvmType(ret_ty);

@@ -112,6 +112,10 @@ static void materializeParallelForsInStmts(Program& program, std::vector<std::un
     } else if (s->kind == Stmt::WhileStmt) {
       materializeParallelForsInStmts(program, s->while_stmt.body, ctx);
     } else if (s->kind == Stmt::ForStmt) {
+      if (s->for_stmt.is_parallel || s->for_stmt.is_range) {
+        materializeParallelForsInStmts(program, s->for_stmt.body, ctx);
+        continue;
+      }
       if (s->for_stmt.is_foreach) {
         materializeParallelForsInStmts(program, s->for_stmt.body, ctx);
         continue;
@@ -134,6 +138,10 @@ static void materializeParallelForsInStmts(Program& program, std::vector<std::un
     } else if (s->kind == Stmt::MatchStmtK) {
       for (auto& arm : s->match_stmt.arms)
         materializeParallelForsInStmts(program, arm.body, ctx);
+    } else if (s->kind == Stmt::TryStmtK) {
+      materializeParallelForsInStmts(program, s->try_stmt.try_body, ctx);
+      materializeParallelForsInStmts(program, s->try_stmt.catch_body, ctx);
+      materializeParallelForsInStmts(program, s->try_stmt.finally_body, ctx);
     }
   }
 }
@@ -153,6 +161,11 @@ static TypeDesc promoteNumeric(const TypeDesc& a, const TypeDesc& b) {
     return defaultIntType();
   FarTypeId pa = a.primitive;
   FarTypeId pb = b.primitive;
+  if (pa == FarTypeId::Bool || pb == FarTypeId::Bool) {
+    if (pa == FarTypeId::Bool && pb == FarTypeId::Bool)
+      return TypeDesc::prim(FarTypeId::Bool);
+    return defaultIntType();
+  }
   if (isFloatType(pa) || isFloatType(pb)) {
     if (pa == FarTypeId::F32 && pb == FarTypeId::F32)
       return TypeDesc::prim(FarTypeId::F32);
@@ -162,6 +175,24 @@ static TypeDesc promoteNumeric(const TypeDesc& a, const TypeDesc& b) {
       pa == FarTypeId::I128 || pb == FarTypeId::I128 || pa == FarTypeId::U128 || pb == FarTypeId::U128)
     return TypeDesc::prim(FarTypeId::I64);
   return defaultIntType();
+}
+
+static TypeDesc unifyTernaryBranches(const TypeDesc& a, const TypeDesc& b) {
+  if (typeDescEquals(a, b))
+    return a;
+  if (!isPrimitiveDesc(a) || !isPrimitiveDesc(b))
+    throw FarError("ternary branches must have compatible types");
+  FarTypeId pa = a.primitive;
+  FarTypeId pb = b.primitive;
+  if (pa == FarTypeId::Bool || pb == FarTypeId::Bool) {
+    if (pa == FarTypeId::Bool && pb == FarTypeId::Bool)
+      return TypeDesc::prim(FarTypeId::Bool);
+    throw FarError("ternary branches must have compatible types");
+  }
+  TypeDesc ty = promoteNumeric(a, b);
+  if (!canAssignTypes(a, ty) || !canAssignTypes(b, ty))
+    throw FarError("ternary branches must have compatible types");
+  return ty;
 }
 
 static bool methodArgMatches(TypeDesc arg, TypeDesc expected, TypeDesc recv) {
@@ -293,8 +324,15 @@ static void collectFreeVarsStmt(const Stmt& stmt, std::unordered_set<std::string
         collectFreeVarsStmt(*s, out);
       break;
     case Stmt::ForStmt:
-      if (stmt.for_stmt.is_foreach)
+      if (stmt.for_stmt.is_parallel) {
+        collectFreeVarsExpr(*stmt.for_stmt.range_start, out);
+        collectFreeVarsExpr(*stmt.for_stmt.range_end, out);
+      } else if (stmt.for_stmt.is_range) {
+        collectFreeVarsExpr(*stmt.for_stmt.range_start, out);
+        collectFreeVarsExpr(*stmt.for_stmt.range_end, out);
+      } else if (stmt.for_stmt.is_foreach) {
         collectFreeVarsExpr(*stmt.for_stmt.foreach_iter, out);
+      }
       if (stmt.for_stmt.init)
         collectFreeVarsStmt(*stmt.for_stmt.init, out);
       if (stmt.for_stmt.cond)
@@ -302,6 +340,31 @@ static void collectFreeVarsStmt(const Stmt& stmt, std::unordered_set<std::string
       if (stmt.for_stmt.step)
         collectFreeVarsStmt(*stmt.for_stmt.step, out);
       for (const auto& s : stmt.for_stmt.body)
+        collectFreeVarsStmt(*s, out);
+      break;
+    case Stmt::TryStmtK:
+      for (const auto& s : stmt.try_stmt.try_body)
+        collectFreeVarsStmt(*s, out);
+      for (const auto& s : stmt.try_stmt.catch_body)
+        collectFreeVarsStmt(*s, out);
+      for (const auto& s : stmt.try_stmt.finally_body)
+        collectFreeVarsStmt(*s, out);
+      break;
+    case Stmt::MatchStmtK:
+      collectFreeVarsExpr(*stmt.match_stmt.scrutinee, out);
+      for (const auto& arm : stmt.match_stmt.arms) {
+        for (const auto& s : arm.body)
+          collectFreeVarsStmt(*s, out);
+      }
+      break;
+    case Stmt::ThrowStmtK:
+      collectFreeVarsExpr(*stmt.throw_stmt.value, out);
+      break;
+    case Stmt::DeferStmtK:
+      collectFreeVarsExpr(*stmt.defer.expr, out);
+      break;
+    case Stmt::UnsafeStmtK:
+      for (const auto& s : stmt.unsafe.body)
         collectFreeVarsStmt(*s, out);
       break;
     default:
@@ -554,6 +617,29 @@ class TypeChecker {
   const UserTypeDef* current_user_type_ = nullptr;
   int lambda_counter_ = 0;
   int unsafe_depth_ = 0;
+  int comptime_depth_ = 0;
+
+  static bool isIntegerScrutinee(const TypeDesc& ty) {
+    return isPrimitiveDesc(ty) && isIntegerType(ty.primitive);
+  }
+
+  void injectConstexprFromStmts(const std::vector<std::unique_ptr<Stmt>>& stmts) {
+    for (const auto& stmt : stmts) {
+      if (stmt->kind == Stmt::LetStmt && stmt->let.is_constexpr) {
+        if (!locals_.count(stmt->let.name)) {
+          TypeDesc ty =
+              stmt->let.explicit_type ? stmt->let.type : TypeDesc::prim(FarTypeId::I64);
+          locals_[stmt->let.name] = ty;
+        }
+      } else if (stmt->kind == Stmt::ComptimeBlockK) {
+        injectConstexprFromStmts(stmt->comptime_block);
+      }
+    }
+  }
+
+  void injectConstexprGlobals() {
+    injectConstexprFromStmts(program_.comptime_stmts);
+  }
 
   void checkPattern(Pattern& pat, const TypeDesc& scrut_ty) {
     switch (pat.kind) {
@@ -563,7 +649,7 @@ class TypeChecker {
         locals_[pat.bind_name] = scrut_ty;
         return;
       case PatKind::Literal:
-        if (!isPrim(scrut_ty, FarTypeId::I64))
+        if (!isIntegerScrutinee(scrut_ty))
           throw FarError("literal pattern requires integer scrutinee");
         return;
       case PatKind::EnumVariant: {
@@ -571,7 +657,7 @@ class TypeChecker {
         if (v < 0)
           throw FarError("unknown enum variant " + pat.type_name + "." + pat.variant);
         pat.variant_value = v;
-        if (!isPrim(scrut_ty, FarTypeId::I64))
+        if (!isIntegerScrutinee(scrut_ty))
           throw FarError("enum pattern requires integer scrutinee");
         return;
       }
@@ -640,6 +726,7 @@ class TypeChecker {
       }
       locals_[p.name] = p.type;
     }
+    injectConstexprGlobals();
     const std::vector<std::unique_ptr<Stmt>>* body = &fn.body;
     if (fn.body_source)
       body = &fn.body_source->body;
@@ -711,6 +798,15 @@ class TypeChecker {
           checkExpr(*stmt.for_stmt.range_end);
           break;
         }
+        if (stmt.for_stmt.is_range) {
+          checkExpr(*stmt.for_stmt.range_start);
+          checkExpr(*stmt.for_stmt.range_end);
+          locals_[stmt.for_stmt.range_var] = defaultIntType();
+          for (const auto& s : stmt.for_stmt.body)
+            checkStmt(*s);
+          locals_.erase(stmt.for_stmt.range_var);
+          break;
+        }
         if (stmt.for_stmt.is_foreach) {
           TypeDesc coll_ty = checkExpr(*stmt.for_stmt.foreach_iter);
           if (!isIndexable(coll_ty))
@@ -754,9 +850,20 @@ class TypeChecker {
         for (const auto& s : stmt.try_stmt.try_body)
           checkStmt(*s);
         if (stmt.try_stmt.has_catch) {
-          locals_[stmt.try_stmt.catch_var] = TypeDesc::prim(FarTypeId::I64);
+          TypeDesc catch_ty = TypeDesc::prim(FarTypeId::I64);
+          if (stmt.try_stmt.catch_type_explicit) {
+            catch_ty = stmt.try_stmt.catch_type;
+            if (isUserDesc(catch_ty)) {
+              const UserTypeDef* ut = obj_reg_.lookup(catch_ty.user_name);
+              if (ut && ut->kind == UserTypeKind::Exception)
+                stmt.try_stmt.catch_type_tag = ut->type_tag;
+            }
+          }
+          stmt.try_stmt.catch_type = catch_ty;
+          locals_[stmt.try_stmt.catch_var] = catch_ty;
           for (const auto& s : stmt.try_stmt.catch_body)
             checkStmt(*s);
+          locals_.erase(stmt.try_stmt.catch_var);
         }
         if (stmt.try_stmt.has_finally) {
           for (const auto& s : stmt.try_stmt.finally_body)
@@ -825,7 +932,14 @@ class TypeChecker {
             if (!isPrim(lt, FarTypeId::String) && !isPrim(lt, FarTypeId::Char))
               throwAt(expr, "left operand of 'in' must be a string when searching inside a string");
           } else if (isIndexable(rt) || rt.form == TypeForm::Set || rt.form == TypeForm::Dict) {
-            /* value/key membership in collection */
+            if (rt.form == TypeForm::Dict) {
+              if (!canAssignTypes(lt, rt.args[0]))
+                throwAt(expr, "left operand type mismatch for dict key in 'in'");
+            } else if (rt.form == TypeForm::Set) {
+              if (!rt.args.empty() && !canAssignTypes(lt, rt.args[0]))
+                throwAt(expr, "left operand type mismatch for set element in 'in'");
+            } else if (!canAssignTypes(lt, elemTypeOf(rt)))
+              throwAt(expr, "left operand type mismatch for collection element in 'in'");
           } else {
             throwAt(expr, "right operand of 'in' must be a string or indexable collection");
           }
@@ -833,8 +947,13 @@ class TypeChecker {
         } else if (op == "and" || op == "or" || op == "&&" || op == "||" || op == "==" || op == "!=" ||
                  op == "===" || op == "!==" || op == "<" || op == ">" || op == "<=" || op == ">=")
           ty = TypeDesc::prim(FarTypeId::Bool);
-        else if (op == "??")
-          ty = promoteNumeric(lt, rt);
+        else if (op == "??") {
+          try {
+            ty = unifyTernaryBranches(lt, rt);
+          } catch (const FarError& e) {
+            throwAt(expr, e.what());
+          }
+        }
         else if (op == "&" || op == "|" || op == "^" || op == "<<" || op == ">>" || op == "?.")
           ty = TypeDesc::prim(FarTypeId::I64);
         else if (op == "//" &&
@@ -882,7 +1001,11 @@ class TypeChecker {
         checkExpr(*expr.ternary.cond);
         TypeDesc a = checkExpr(*expr.ternary.then_br);
         TypeDesc b = checkExpr(*expr.ternary.else_br);
-        ty = promoteNumeric(a, b);
+        try {
+          ty = unifyTernaryBranches(a, b);
+        } catch (const FarError& e) {
+          throwAt(expr, e.what());
+        }
         break;
       }
       case Expr::PrefixExprK: {
@@ -894,14 +1017,20 @@ class TypeChecker {
         } else if (expr.prefix.op == "&") {
           ty = TypeDesc::pointer(inner);
         } else if (expr.prefix.op == "++" || expr.prefix.op == "--") {
-          ty = TypeDesc::prim(FarTypeId::I64);
+          if (expr.prefix.operand->kind != Expr::Variable)
+            throwAt(expr, "increment/decrement requires a variable");
+          ty = inner;
         } else {
           ty = inner;
         }
         break;
       }
       case Expr::PostfixExprK: {
-        ty = checkExpr(*expr.postfix.operand);
+        TypeDesc inner = checkExpr(*expr.postfix.operand);
+        if ((expr.postfix.op == "++" || expr.postfix.op == "--") &&
+            expr.postfix.operand->kind != Expr::Variable)
+          throwAt(expr, "increment/decrement requires a variable");
+        ty = inner;
         break;
       }
       case Expr::TypeUnaryExprK:
@@ -1126,7 +1255,9 @@ class TypeChecker {
       case Expr::MacroInvokeExprK:
         throw FarError("unexpanded macro in typecheck");
       case Expr::ComptimeExprK:
+        ++comptime_depth_;
         ty = checkExpr(*expr.comptime_expr.value);
+        --comptime_depth_;
         break;
     }
     expr.type = ty;
@@ -1589,6 +1720,8 @@ class TypeChecker {
       TypeDesc arg_ty = TypeDesc::prim(FarTypeId::I64);
       for (const auto& a : call.args)
         arg_ty = checkExpr(*a.value);
+      if (isPrimitiveDesc(arg_ty) && isIntegerType(arg_ty.primitive))
+        arg_ty = TypeDesc::prim(FarTypeId::I64);
       if (ec->is_some)
         return TypeDesc::optional(arg_ty);
       if (ec->nargs == 0)
@@ -1671,7 +1804,7 @@ class TypeChecker {
         throwAt(expr, "undefined function '" + call.name + "'");
       BoundCall bc = resolveCall(call.name, call, fn_overloads_, [&](Expr& e) { return checkExpr(e); },
                                  program_, &obj_reg_);
-      if (bc.fn->is_consteval)
+      if (bc.fn->is_consteval && comptime_depth_ == 0)
         throw FarError("consteval function '" + call.name + "' must be called via comptime");
       if (bc.fn->is_async)
         return TypeDesc::prim(FarTypeId::I64);

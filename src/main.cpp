@@ -132,6 +132,44 @@ static void initExeDir(const char* argv0) {
     g_exe_dir = p.parent_path();
 }
 
+#ifdef _WIN32
+static std::string findLlvmMingwClang() {
+  const char* local = std::getenv("LOCALAPPDATA");
+  if (!local || !local[0])
+    return "";
+  fs::path winget = fs::path(local) / "Microsoft" / "WinGet" / "Packages";
+  if (!fs::exists(winget))
+    return "";
+  std::string best;
+  for (const auto& entry : fs::recursive_directory_iterator(winget, fs::directory_options::skip_permission_denied)) {
+    if (!entry.is_regular_file())
+      continue;
+    if (entry.path().filename() != "clang.exe")
+      continue;
+    std::string p = entry.path().string();
+    std::string lower = p;
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (lower.find("llvm-mingw") == std::string::npos)
+      continue;
+    if (best.empty() || p.size() < best.size())
+      best = p;
+  }
+  return best;
+}
+
+static bool isLlvmMingwClang(const std::string& clang) {
+  std::string lower = clang;
+  std::transform(lower.begin(), lower.end(), lower.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return lower.find("llvm-mingw") != std::string::npos;
+}
+
+static bool isMsvcWindowsTriple(const std::string& triple) {
+  return triple.find("windows-msvc") != std::string::npos;
+}
+#endif
+
 static std::string resolveClang() {
   const char* env = std::getenv("FAR_CLANG");
   if (env && env[0] != '\0')
@@ -150,8 +188,21 @@ static std::string resolveClang() {
       return std::string(shortbuf);
     return cand;
   }
+  std::string mingw = findLlvmMingwClang();
+  if (!mingw.empty())
+    return mingw;
 #endif
   return "clang";
+}
+
+static void adaptTargetForClang(const std::string& clang) {
+#ifdef _WIN32
+  if (!isLlvmMingwClang(clang))
+    return;
+  g_target.triple = "x86_64-w64-windows-gnu";
+  g_target.link_flags = "-lws2_32 -lwinhttp";
+  g_target.object_cache_name = "far_rt.windows-gnu.o";
+#endif
 }
 
 static std::string trimTrailingWhitespace(std::string s) {
@@ -194,23 +245,31 @@ static fs::path programOutputPath(const fs::path& sourcePath) {
 }
 
 static fs::path runtimeObject(const std::string& clang) {
-  fs::path rt_c = exeDir() / "runtime" / "far_rt.c";
-  fs::path rt_net = exeDir() / "runtime" / "far_net.c";
-  fs::path rt_o = exeDir() / "runtime" / g_target.object_cache_name;
+  fs::path rt_dir = exeDir() / "runtime";
+  fs::path rt_c = rt_dir / "far_rt.c";
+  fs::path rt_net = rt_dir / "far_net.c";
+  fs::path rt_o = rt_dir / g_target.object_cache_name;
   auto source_time = fs::last_write_time(rt_c);
   if (fs::exists(rt_net)) {
     auto net_time = fs::last_write_time(rt_net);
     if (net_time > source_time)
       source_time = net_time;
   }
+  fs::path rt_hdr = rt_dir / "far_pthread_win32.h";
+  if (fs::exists(rt_hdr)) {
+    auto hdr_time = fs::last_write_time(rt_hdr);
+    if (hdr_time > source_time)
+      source_time = hdr_time;
+  }
   if (!fs::exists(rt_o) || source_time > fs::last_write_time(rt_o)) {
-    std::string cmd = quoteShellArg(clang) + " -c \"" + rt_c.string() + "\" -o \"" + rt_o.string() + "\"";
+    std::string cmd = quoteShellArg(clang) + " -O0 -c \"" + rt_c.string() + "\" -o \"" + rt_o.string() + "\"";
+    cmd += " -I\"" + rt_dir.string() + "\"";
     if (!g_target.runtime_cflags.empty())
       cmd += " " + g_target.runtime_cflags;
     if (!g_target.triple.empty())
       cmd += " --target=" + g_target.triple;
 #ifdef _WIN32
-    if (g_target.triple.find("windows-msvc") != std::string::npos)
+    if (isMsvcWindowsTriple(g_target.triple))
       cmd += " -fms-runtime-lib=static";
 #endif
     if (runCommand(cmd) != 0)
@@ -239,11 +298,11 @@ static int compileSource(const std::string& source, const fs::path& sourcePath, 
 
   writeFile(ll.string(), ir);
 
-  std::string cmd = quoteShellArg(clang) + " -O2 \"" + ll.string() + "\" \"" + rt_o.string() + "\" -o \"" + output.string() + "\"";
+  std::string cmd = quoteShellArg(clang) + " -O0 \"" + ll.string() + "\" \"" + rt_o.string() + "\" -o \"" + output.string() + "\"";
   if (!g_target.triple.empty())
     cmd += " --target=" + g_target.triple;
 #ifdef _WIN32
-  if (g_target.triple.find("windows-msvc") != std::string::npos) {
+  if (isMsvcWindowsTriple(g_target.triple)) {
     cmd += " -fuse-ld=lld-link -fms-runtime-lib=static";
     std::string libdir = windowsUmLibDir();
     if (!libdir.empty()) {
@@ -439,6 +498,7 @@ int main(int argc, char** argv) {
 
   std::string command = argv[1];
   std::string clang = resolveClang();
+  adaptTargetForClang(clang);
   normalizeTargetTriple(clang);
 
   try {

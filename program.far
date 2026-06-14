@@ -4,5 +4,7 @@ import vectors
 fun main() {
   x=0
   print(typeof(x) == typeof(i64))
-  
+  for i in 19..3 {
+    print(i)
+  }
 }

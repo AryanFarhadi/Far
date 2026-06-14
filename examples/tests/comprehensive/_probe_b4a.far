@@ -16,7 +16,7 @@ fun t04_range_len_step() -> i64 {
 }
 fun t06_range_for_sum() -> i64 {
   sum = 0
-  for i in 0..3 {
+  for i in 0..<3 {
     sum = sum + i
   }
   return eq(sum, 3)

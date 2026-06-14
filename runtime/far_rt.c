@@ -2296,6 +2296,21 @@ void far_channel_close(int64_t handle) {
   pthread_mutex_unlock(&c->mu);
 }
 
+void far_channel_drop(int64_t handle) {
+  FarChannel* c = channel_from(handle);
+  if (!c) return;
+  pthread_mutex_lock(&c->mu);
+  c->closed = 1;
+  pthread_cond_broadcast(&c->not_empty);
+  pthread_cond_broadcast(&c->not_full);
+  pthread_mutex_unlock(&c->mu);
+  pthread_mutex_destroy(&c->mu);
+  pthread_cond_destroy(&c->not_empty);
+  pthread_cond_destroy(&c->not_full);
+  free(c->buf);
+  free(c);
+}
+
 typedef struct {
   pthread_mutex_t mu;
 } FarMutex;
@@ -2642,9 +2657,19 @@ static struct {
   int64_t value;
 } g_try_stack[FAR_TRY_MAX];
 
-static int g_try_depth = 0;
+static volatile int g_try_depth = 0;
 
-int32_t far_try_enter(void) {
+extern void far_store_caught(int64_t tag, int64_t value);
+
+#if defined(_MSC_VER)
+#define FAR_NOINLINE __declspec(noinline)
+#elif defined(__GNUC__) || defined(__clang__)
+#define FAR_NOINLINE __attribute__((noinline))
+#else
+#define FAR_NOINLINE
+#endif
+
+FAR_NOINLINE int32_t far_try_enter(void) {
   if (g_try_depth >= FAR_TRY_MAX) {
     far_panic(0);
     return 1;
@@ -2656,12 +2681,12 @@ int32_t far_try_enter(void) {
   return 1;
 }
 
-void far_try_success(void) {
+FAR_NOINLINE void far_try_success(void) {
   if (g_try_depth > 0)
     g_try_depth--;
 }
 
-void far_throw(int64_t tag, int64_t value) {
+FAR_NOINLINE void far_throw(int64_t tag, int64_t value) {
   if (g_try_depth <= 0) {
     fprintf(stderr, "uncaught exception tag=%" PRId64 " value=%" PRId64 "\n", tag, value);
     far_stack_trace();
@@ -2670,19 +2695,21 @@ void far_throw(int64_t tag, int64_t value) {
   g_try_depth--;
   g_try_stack[g_try_depth].tag = tag;
   g_try_stack[g_try_depth].value = value;
+  far_store_caught(tag, value);
   longjmp(g_try_stack[g_try_depth].buf, 1);
 }
 
-int64_t far_caught_tag(void) {
-  if (g_try_depth < 0 || g_try_depth >= FAR_TRY_MAX)
-    return 0;
-  return g_try_stack[g_try_depth].tag;
+FAR_NOINLINE int32_t far_caught_matches(int64_t expected_tag) {
+  (void)expected_tag;
+  return 0;
 }
 
-int64_t far_caught_value(void) {
-  if (g_try_depth < 0 || g_try_depth >= FAR_TRY_MAX)
-    return 0;
-  return g_try_stack[g_try_depth].value;
+FAR_NOINLINE int64_t far_caught_tag(void) {
+  return 0;
+}
+
+FAR_NOINLINE int64_t far_caught_value(void) {
+  return 0;
 }
 
 int64_t far_option_some(int64_t value) { return (value << 1) | 1; }

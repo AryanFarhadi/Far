@@ -9,4 +9,4 @@ fun t07_str_plus_eq() -> i64 {
 fun main() {
   print(run(7, t07_str_plus_eq()))
   return 0
-}
+}

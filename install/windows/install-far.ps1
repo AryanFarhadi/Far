@@ -193,7 +193,7 @@ if (-not (Test-Path $builtFar)) {
 # --- Install files ---
 Write-Step "Installing Far to $InstallRoot ..."
 & (Join-Path $PSScriptRoot "sync-far-install.ps1") -RepoRoot $RepoRoot -InstallRoot $InstallRoot -Quiet
-Write-Ok "Installed far.exe + runtime (all .c sources)"
+Write-Ok "Installed far.exe + runtime (sources + headers)"
 
 # --- Clang ---
 $clangPath = Find-Clang

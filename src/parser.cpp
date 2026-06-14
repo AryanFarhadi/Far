@@ -1181,7 +1181,8 @@ std::unique_ptr<Stmt> Parser::parseForStmt() {
     if (check(TokenKind::DotDot) || check(TokenKind::DotDotLt)) {
       auto start = std::move(first);
 
-      if (!match(TokenKind::DotDotLt))
+      bool range_exclusive = match(TokenKind::DotDotLt);
+      if (!range_exclusive)
         expect(TokenKind::DotDot);
 
       auto end = parseExpr();
@@ -1192,35 +1193,17 @@ std::unique_ptr<Stmt> Parser::parseForStmt() {
 
       expect(TokenKind::RBrace);
 
+      s->for_stmt.is_range = true;
+      s->for_stmt.range_exclusive = range_exclusive;
+      s->for_stmt.range_var = var;
+      s->for_stmt.range_start = std::move(start);
+      s->for_stmt.range_end = std::move(end);
+
       if (is_parallel) {
         s->for_stmt.is_parallel = true;
         s->for_stmt.parallel_var = var;
-        s->for_stmt.range_start = std::move(start);
-        s->for_stmt.range_end = std::move(end);
         return s;
       }
-
-      auto init = std::make_unique<Stmt>();
-
-      init->kind = Stmt::LetStmt;
-
-      init->let.name = var;
-
-      init->let.value = std::move(start);
-
-      auto step = std::make_unique<Stmt>();
-
-      step->kind = Stmt::LetStmt;
-
-      step->let.name = var;
-
-      step->let.value = Expr::makeBinOp("+", Expr::makeVar(var), Expr::makeInt(1));
-
-      s->for_stmt.init = std::move(init);
-
-      s->for_stmt.cond = Expr::makeBinOp("<", Expr::makeVar(var), std::move(end));
-
-      s->for_stmt.step = std::move(step);
 
       return s;
     }
@@ -1346,6 +1329,10 @@ std::unique_ptr<Stmt> Parser::parseTryStmt() {
     s->try_stmt.has_catch = true;
     expect(TokenKind::LParen);
     s->try_stmt.catch_var = expect(TokenKind::Ident).value;
+    if (match(TokenKind::Colon)) {
+      s->try_stmt.catch_type = parseType();
+      s->try_stmt.catch_type_explicit = true;
+    }
     expect(TokenKind::RParen);
     expect(TokenKind::LBrace);
     s->try_stmt.catch_body = parseBlock();
@@ -1705,6 +1692,22 @@ std::unique_ptr<Stmt> Parser::parseStmt() {
 
     }
 
+  }
+
+
+
+  if (check(TokenKind::PlusPlus) || check(TokenKind::MinusMinus)) {
+    const Token& op_tok = current();
+    pos_++;
+    std::string op = op_tok.kind == TokenKind::PlusPlus ? "++" : "--";
+    std::string name = expect(TokenKind::Ident).value;
+    auto var = Expr::makeVar(std::move(name));
+    auto inc = Expr::makePrefix(op, std::move(var));
+    auto s = std::make_unique<Stmt>();
+    s->kind = Stmt::ExprStmtK;
+    s->expr_stmt.expr = std::move(inc);
+    consumeOptionalSemi();
+    return s;
   }
 
 
@@ -2182,10 +2185,18 @@ std::unique_ptr<Expr> Parser::parsePostfix(std::unique_ptr<Expr> left) {
       continue;
     }
     if (match(TokenKind::PlusPlus)) {
+      if ((left->kind == Expr::Int || left->kind == Expr::Float) && check(TokenKind::Ident)) {
+        pos_--;
+        break;
+      }
       left = Expr::makePostfix(std::move(left), "++");
       continue;
     }
     if (match(TokenKind::MinusMinus)) {
+      if ((left->kind == Expr::Int || left->kind == Expr::Float) && check(TokenKind::Ident)) {
+        pos_--;
+        break;
+      }
       left = Expr::makePostfix(std::move(left), "--");
       continue;
     }

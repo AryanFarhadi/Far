@@ -136,7 +136,7 @@ void emitConcDrop(ConcCodegenCtx ctx, TypeForm form, const std::string& handle) 
       ctx.out << "  call void @far_lfqueue_drop(i64 " << handle << ")\n";
       break;
     case TypeForm::Channel:
-      ctx.out << "  call void @far_channel_close(i64 " << handle << ")\n";
+      ctx.out << "  call void @far_channel_drop(i64 " << handle << ")\n";
       break;
     default:
       break;
