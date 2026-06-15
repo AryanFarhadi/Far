@@ -1,0 +1,2 @@
+constexpr X = comptime (u64(18446744073709551615))
+fun main() { if (X == u64(18446744073709551615)) { print(0) } else { print(1) }; return 0 }

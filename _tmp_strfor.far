@@ -1,0 +1,4 @@
+﻿fun main() {
+  for c in "hi" { print(c) }
+  return 0
+}

@@ -1,6 +1,7 @@
 /* Far modern features runtime — included from far_rt.c */
 
 #include <ctype.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -42,17 +43,21 @@ static const char* far_mod_skip_ws(const char* p) {
 static const char* far_mod_field(const char* text, const char* key, char* out, size_t cap) {
   if (!text || !key || !out || cap == 0)
     return NULL;
-  char pattern[128];
-  snprintf(pattern, sizeof(pattern), "%s=", key);
+  size_t klen = strlen(key);
+  char* pattern = (char*)malloc(klen + 2);
+  if (!pattern)
+    return NULL;
+  snprintf(pattern, klen + 2, "%s=", key);
   const char* p = strstr(text, pattern);
+  free(pattern);
   if (!p)
     return NULL;
-  p += strlen(pattern);
+  p += klen + 1;
   size_t n = 0;
   while (p[n] && p[n] != '\n' && p[n] != '\r')
     ++n;
   if (n >= cap)
-    n = cap - 1;
+    return NULL;
   memcpy(out, p, n);
   out[n] = '\0';
   return out;
@@ -100,9 +105,14 @@ int64_t far_mod_pat_in_range(int64_t value, int64_t lo, int64_t hi) {
 
 static int64_t g_immut_counter = 0;
 
-int64_t far_mod_immut_seal(int64_t value) { return (value << 16) | (++g_immut_counter & 0xFFFF); }
+int64_t far_mod_immut_seal(int64_t value) {
+  uint64_t u = (uint64_t)value;
+  if (u > 0xFFFFFFFFFFFFULL)
+    return 0;
+  return (int64_t)((u << 16) | (uint64_t)(++g_immut_counter & 0xFFFF));
+}
 
-int64_t far_mod_immut_value(int64_t sealed) { return sealed >> 16; }
+int64_t far_mod_immut_value(int64_t sealed) { return (int64_t)((uint64_t)sealed >> 16); }
 
 int64_t far_mod_immut_is_sealed(int64_t sealed) { return sealed != 0 ? 1 : 0; }
 
@@ -155,21 +165,40 @@ char* far_mod_pkg_read(const char* path) {
   FILE* f = fopen(path, "rb");
   if (!f)
     return NULL;
-  fseek(f, 0, SEEK_END);
+#if defined(_WIN32)
+  if (_fseeki64(f, 0, SEEK_END) != 0) {
+    fclose(f);
+    return NULL;
+  }
+  __int64 n = _ftelli64(f);
+#else
+  if (fseek(f, 0, SEEK_END) != 0) {
+    fclose(f);
+    return NULL;
+  }
   long n = ftell(f);
+#endif
   if (n < 0) {
     fclose(f);
     return NULL;
   }
-  fseek(f, 0, SEEK_SET);
+  if ((unsigned long long)n > (unsigned long long)SIZE_MAX - 1) {
+    fclose(f);
+    return NULL;
+  }
+  rewind(f);
   char* buf = (char*)malloc((size_t)n + 1);
   if (!buf) {
     fclose(f);
     return NULL;
   }
-  size_t rd = fread(buf, 1, (size_t)n, f);
+  if (fread(buf, 1, (size_t)n, f) != (size_t)n) {
+    free(buf);
+    fclose(f);
+    return NULL;
+  }
+  buf[n] = '\0';
   fclose(f);
-  buf[rd] = '\0';
   return buf;
 }
 
@@ -235,7 +264,36 @@ int64_t far_mod_dep_satisfies(const char* name, const char* constraint) {
     return 0;
   if (!constraint || !constraint[0])
     return 1;
-  return strstr(constraint, name) != NULL ? 1 : 0;
+  size_t nlen = strlen(name);
+  const char* deps = strstr(constraint, "deps=");
+  if (deps) {
+    const char* p = deps + 5;
+    while (*p && *p != '\n' && *p != '\r') {
+      while (*p == ' ')
+        ++p;
+      const char* start = p;
+      while (*p && *p != ',' && *p != '\n' && *p != '\r' && *p != ' ')
+        ++p;
+      if ((size_t)(p - start) == nlen && strncmp(start, name, nlen) == 0)
+        return 1;
+      if (*p == ',')
+        ++p;
+    }
+    return 0;
+  }
+  const char* p = constraint;
+  while (*p) {
+    while (*p == ' ' || *p == ',' || *p == '\t' || *p == '\n' || *p == '\r')
+      ++p;
+    if (!*p)
+      break;
+    const char* start = p;
+    while (*p && *p != ' ' && *p != ',' && *p != '\t' && *p != '\n' && *p != '\r')
+      ++p;
+    if ((size_t)(p - start) == nlen && strncmp(start, name, nlen) == 0)
+      return 1;
+  }
+  return 0;
 }
 
 /* --- LSP support --- */

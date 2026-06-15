@@ -1,0 +1,6 @@
+﻿fun main() {
+  x: i32 = 2147483647
+  x += 1
+  print(x)
+  return 0
+}

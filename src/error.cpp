@@ -1,6 +1,9 @@
 #include "error.h"
 
 #include <algorithm>
+#include <cctype>
+#include <climits>
+#include <cstdint>
 #include <iomanip>
 #include <iostream>
 
@@ -108,6 +111,40 @@ void printDiagnostic(std::ostream& out, const std::exception& err) {
     return;
   }
   out << "error: " << err.what() << '\n';
+}
+
+int64_t parseIntLiteral(const std::string& text, int line, int col, bool* unsigned_decimal) {
+  if (unsigned_decimal)
+    *unsigned_decimal = false;
+  if (text.empty())
+    throw FarError("invalid integer literal", line, col);
+  size_t i = 0;
+  bool neg = false;
+  if (text[0] == '-') {
+    neg = true;
+    i = 1;
+  }
+  if (i >= text.size())
+    throw FarError("invalid integer literal", line, col);
+  uint64_t v = 0;
+  for (; i < text.size(); ++i) {
+    if (!std::isdigit(static_cast<unsigned char>(text[i])))
+      throw FarError("invalid integer literal", line, col);
+    unsigned digit = static_cast<unsigned>(text[i] - '0');
+    if (v > (UINT64_MAX - digit) / 10)
+      throw FarError("integer literal overflow", line, col);
+    v = v * 10 + digit;
+  }
+  if (!neg) {
+    if (unsigned_decimal && v > static_cast<uint64_t>(INT64_MAX))
+      *unsigned_decimal = true;
+    return static_cast<int64_t>(v);
+  }
+  if (v > static_cast<uint64_t>(INT64_MAX) + 1ULL)
+    throw FarError("integer literal overflow", line, col);
+  if (v == static_cast<uint64_t>(INT64_MAX) + 1ULL)
+    return INT64_MIN;
+  return -static_cast<int64_t>(v);
 }
 
 }  // namespace far

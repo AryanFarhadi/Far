@@ -1,0 +1,1 @@
+﻿fun main() { constexpr S = ""; for c in S { x=1 }; return 0 }

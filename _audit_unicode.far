@@ -1,0 +1,5 @@
+fun test_unicode() -> i64 {
+  π = 3
+  return π
+}
+fun main() { print(test_unicode()); return 0 }

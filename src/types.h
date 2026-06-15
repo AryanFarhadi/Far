@@ -79,6 +79,10 @@ bool isIntegerType(FarTypeId id);
 bool isFloatType(FarTypeId id);
 bool isStringType(FarTypeId id);
 bool isVoidType(FarTypeId id);
+bool isNarrowingIntegerAssign(FarTypeId from, FarTypeId to);
 bool canAssign(FarTypeId from, FarTypeId to);
+struct Expr;
+bool intLiteralValueFitsType(int64_t value, bool unsigned_decimal, FarTypeId target);
+bool intLiteralExprFitsType(const Expr& expr, FarTypeId target);
 
 }  // namespace far

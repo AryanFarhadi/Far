@@ -1,5 +1,7 @@
 #include "typecheck.h"
 
+#include <cmath>
+
 #include "aggregate.h"
 #include "builtins.h"
 #include "comptime.h"
@@ -152,6 +154,14 @@ static void materializeParallelFors(Program& program) {
     materializeParallelForsInStmts(program, fn.body, fn.name);
 }
 
+static Function* findSyntheticByLlvm(Program& program, const std::string& llvm_name) {
+  for (auto& f : program.synthetic_functions) {
+    if (f.llvm_name == llvm_name)
+      return &f;
+  }
+  return nullptr;
+}
+
 static bool isPrim(const TypeDesc& td, FarTypeId id) {
   return isPrimitiveDesc(td) && td.primitive == id;
 }
@@ -193,6 +203,325 @@ static TypeDesc unifyTernaryBranches(const TypeDesc& a, const TypeDesc& b) {
   if (!canAssignTypes(a, ty) || !canAssignTypes(b, ty))
     throw FarError("ternary branches must have compatible types");
   return ty;
+}
+
+enum class ConstBool { Unknown, False, True };
+
+struct ConstLocalsState {
+  std::unordered_map<std::string, int64_t> ints;
+  std::unordered_map<std::string, double> floats;
+};
+
+static ConstBool constBoolFromExpr(const Expr& e, const ConstLocalsState& locals) {
+  if (e.kind == Expr::Int)
+    return e.int_lit.value != 0 ? ConstBool::True : ConstBool::False;
+  if (e.kind == Expr::Float) {
+    if (std::isnan(e.float_lit.value))
+      return ConstBool::True;
+    return e.float_lit.value != 0.0 ? ConstBool::True : ConstBool::False;
+  }
+  if (e.kind == Expr::String)
+    return e.string_lit.value.empty() ? ConstBool::False : ConstBool::True;
+  if (e.kind == Expr::Variable) {
+    auto fit = locals.floats.find(e.var.name);
+    if (fit != locals.floats.end()) {
+      if (std::isnan(fit->second))
+        return ConstBool::True;
+      return fit->second != 0.0 ? ConstBool::True : ConstBool::False;
+    }
+    auto it = locals.ints.find(e.var.name);
+    if (it != locals.ints.end())
+      return it->second != 0 ? ConstBool::True : ConstBool::False;
+    return ConstBool::Unknown;
+  }
+  if (e.kind == Expr::Binary && e.bin_op.op == "!" && e.bin_op.left->kind == Expr::Int &&
+      e.bin_op.left->int_lit.value == 0) {
+    ConstBool inner = constBoolFromExpr(*e.bin_op.right, locals);
+    if (inner == ConstBool::Unknown)
+      return ConstBool::Unknown;
+    return inner == ConstBool::True ? ConstBool::False : ConstBool::True;
+  }
+  if (e.kind == Expr::Binary && (e.bin_op.op == "and" || e.bin_op.op == "&&")) {
+    ConstBool l = constBoolFromExpr(*e.bin_op.left, locals);
+    if (l == ConstBool::False)
+      return ConstBool::False;
+    if (l == ConstBool::True) {
+      ConstBool r = constBoolFromExpr(*e.bin_op.right, locals);
+      if (r == ConstBool::Unknown)
+        return ConstBool::True;
+      return r;
+    }
+    return ConstBool::Unknown;
+  }
+  if (e.kind == Expr::Binary && (e.bin_op.op == "or" || e.bin_op.op == "||")) {
+    ConstBool l = constBoolFromExpr(*e.bin_op.left, locals);
+    if (l == ConstBool::True)
+      return ConstBool::True;
+    if (l == ConstBool::False) {
+      ConstBool r = constBoolFromExpr(*e.bin_op.right, locals);
+      if (r == ConstBool::Unknown)
+        return ConstBool::False;
+      return r;
+    }
+    return ConstBool::Unknown;
+  }
+  return ConstBool::Unknown;
+}
+
+static bool exprConstNonNullish(const Expr& e, const ConstLocalsState& locals) {
+  if (e.kind == Expr::Int)
+    return e.int_lit.value != 0;
+  if (e.kind == Expr::Float)
+    return e.float_lit.value != 0.0 && !std::isnan(e.float_lit.value);
+  if (e.kind == Expr::String)
+    return !e.string_lit.value.empty();
+  if (e.kind == Expr::Variable) {
+    auto fit = locals.floats.find(e.var.name);
+    if (fit != locals.floats.end())
+      return fit->second != 0.0 && !std::isnan(fit->second);
+    auto it = locals.ints.find(e.var.name);
+    return it != locals.ints.end() && it->second != 0;
+  }
+  return false;
+}
+
+static std::optional<int64_t> constIntFromExpr(const Expr& e, const ConstLocalsState& locals) {
+  if (e.kind == Expr::Int)
+    return e.int_lit.value;
+  if (e.kind == Expr::Char)
+    return static_cast<int64_t>(e.char_lit.value);
+  if (e.kind == Expr::Variable) {
+    auto it = locals.ints.find(e.var.name);
+    if (it != locals.ints.end())
+      return it->second;
+  }
+  return std::nullopt;
+}
+
+static std::optional<int64_t> enumPatternConstValue(const Pattern& pat,
+                                                   const ObjectRegistry& reg) {
+  if (pat.kind != PatKind::EnumVariant)
+    return std::nullopt;
+  if (pat.variant_value >= 0)
+    return pat.variant_value;
+  int v = reg.enumVariantValue(pat.type_name, pat.variant);
+  if (v < 0)
+    return std::nullopt;
+  return static_cast<int64_t>(v);
+}
+
+static bool patternCertainlyFailsConstInt(const Pattern& pat, int64_t v,
+                                          const ObjectRegistry& reg) {
+  if (pat.kind == PatKind::Literal)
+    return pat.literal != v;
+  if (pat.kind == PatKind::EnumVariant) {
+    auto pv = enumPatternConstValue(pat, reg);
+    if (!pv)
+      return false;
+    return *pv != v;
+  }
+  return false;
+}
+
+static bool isCatchAllPattern(const Pattern& pat) {
+  return pat.kind == PatKind::Wildcard || pat.kind == PatKind::Bind;
+}
+
+static bool patternMatchesConstIntSpecific(const Pattern& pat, int64_t v,
+                                             const ObjectRegistry& reg) {
+  if (pat.kind == PatKind::Literal)
+    return pat.literal == v;
+  if (pat.kind == PatKind::EnumVariant) {
+    auto pv = enumPatternConstValue(pat, reg);
+    return pv && *pv == v;
+  }
+  return false;
+}
+
+static bool patternMatchesConstInt(const Pattern& pat, int64_t v, const ObjectRegistry& reg) {
+  if (patternMatchesConstIntSpecific(pat, v, reg))
+    return true;
+  if (isCatchAllPattern(pat))
+    return true;
+  return false;
+}
+
+static bool rangeForConstEmpty(int64_t start, int64_t end, bool exclusive) {
+  return exclusive ? (start >= end) : (start > end);
+}
+
+static bool isEmptyConstexprLiteral(const Expr& e) {
+  if (e.kind == Expr::String)
+    return e.string_lit.value.empty();
+  if (e.kind == Expr::ArrayLitExpr)
+    return e.array_lit.elements.empty();
+  return false;
+}
+
+static void rejectIntLiteralOutOfRangeForTarget(const Expr& expr, const TypeDesc& target) {
+  if (!isPrimitiveDesc(target) || !isIntegerType(target.primitive))
+    return;
+  if (!intLiteralExprFitsType(expr, target.primitive))
+    throw FarError("integer literal out of range for type " + typeDescName(target));
+}
+
+static void rejectNarrowingAssign(const TypeDesc& from, const TypeDesc& to) {
+  if (!isPrimitiveDesc(from) || !isPrimitiveDesc(to))
+    return;
+  if (isNarrowingIntegerAssign(from.primitive, to.primitive))
+    throw FarError("implicit narrowing from " + typeDescName(from) + " to " + typeDescName(to) +
+                   "; use an explicit cast");
+  if (isFloatType(from.primitive) && isIntegerType(to.primitive))
+    throw FarError("implicit narrowing from " + typeDescName(from) + " to " + typeDescName(to) +
+                   "; use an explicit cast");
+}
+
+static void rejectNarrowingStore(const TypeDesc& from, const TypeDesc& to) {
+  rejectNarrowingAssign(from, to);
+  if (!isPrimitiveDesc(from) || !isPrimitiveDesc(to))
+    return;
+  if (isFloatType(from.primitive) && isFloatType(to.primitive) &&
+      typeInfo(to.primitive).bits < typeInfo(from.primitive).bits)
+    throw FarError("implicit narrowing from " + typeDescName(from) + " to " + typeDescName(to) +
+                   "; use an explicit cast");
+}
+
+static void rejectNarrowingCallArg(const Expr& arg, const TypeDesc& arg_ty, const TypeDesc& param_ty) {
+  rejectIntLiteralOutOfRangeForTarget(arg, param_ty);
+  rejectNarrowingAssign(arg_ty, param_ty);
+}
+
+static std::optional<std::string> enclosingMethodSuffix(const Function* fn) {
+  if (!fn)
+    return std::nullopt;
+  const size_t dollar = fn->name.find('$');
+  if (dollar == std::string::npos || dollar + 1 >= fn->name.size())
+    return std::nullopt;
+  return fn->name.substr(dollar + 1);
+}
+
+static bool foreachConstEmpty(const Expr& iter, const Program* program = nullptr,
+                              const std::unordered_set<std::string>* local_empty = nullptr) {
+  if (iter.kind == Expr::ArrayLitExpr)
+    return iter.array_lit.elements.empty();
+  if (iter.kind == Expr::String)
+    return iter.string_lit.value.empty();
+  if (local_empty && iter.kind == Expr::Variable && local_empty->count(iter.var.name))
+    return true;
+  if (program && iter.kind == Expr::Variable) {
+    for (const auto& stmt : program->comptime_stmts) {
+      if (stmt->kind != Stmt::LetStmt || !stmt->let.is_constexpr || stmt->let.name != iter.var.name ||
+          !stmt->let.value)
+        continue;
+      if (stmt->let.value->kind == Expr::String)
+        return stmt->let.value->string_lit.value.empty();
+      if (stmt->let.value->kind == Expr::ArrayLitExpr)
+        return stmt->let.value->array_lit.elements.empty();
+    }
+  }
+  return false;
+}
+
+static bool containsThrowStmt(const Stmt& stmt) {
+  switch (stmt.kind) {
+    case Stmt::ThrowStmtK:
+      return true;
+    case Stmt::IfStmt:
+      for (const auto& c : stmt.if_stmt.clauses) {
+        for (const auto& s : c.body)
+          if (containsThrowStmt(*s))
+            return true;
+      }
+      for (const auto& s : stmt.if_stmt.else_body)
+        if (containsThrowStmt(*s))
+          return true;
+      return false;
+    case Stmt::WhileStmt:
+      for (const auto& s : stmt.while_stmt.body)
+        if (containsThrowStmt(*s))
+          return true;
+      return false;
+    case Stmt::ForStmt:
+      for (const auto& s : stmt.for_stmt.body)
+        if (containsThrowStmt(*s))
+          return true;
+      return false;
+    case Stmt::TryStmtK:
+      for (const auto& s : stmt.try_stmt.try_body)
+        if (containsThrowStmt(*s))
+          return true;
+      for (const auto& s : stmt.try_stmt.catch_body)
+        if (containsThrowStmt(*s))
+          return true;
+      for (const auto& s : stmt.try_stmt.finally_body)
+        if (containsThrowStmt(*s))
+          return true;
+      return false;
+    case Stmt::MatchStmtK:
+      for (const auto& arm : stmt.match_stmt.arms)
+        for (const auto& s : arm.body)
+          if (containsThrowStmt(*s))
+            return true;
+      return false;
+    case Stmt::UnsafeStmtK:
+      for (const auto& s : stmt.unsafe.body)
+        if (containsThrowStmt(*s))
+          return true;
+      return false;
+    default:
+      return false;
+  }
+}
+
+static bool stmtBlockAlwaysReturns(const std::vector<std::unique_ptr<Stmt>>& stmts,
+                                   const ConstLocalsState& locals);
+
+static bool stmtAlwaysReturns(const Stmt& stmt, const ConstLocalsState& locals) {
+  switch (stmt.kind) {
+    case Stmt::ReturnStmt:
+      return true;
+    case Stmt::IfStmt: {
+      bool chain_matched = false;
+      for (const auto& c : stmt.if_stmt.clauses) {
+        if (chain_matched)
+          break;
+        ConstBool cb = constBoolFromExpr(*c.condition, locals);
+        if (cb == ConstBool::False)
+          continue;
+        if (!stmtBlockAlwaysReturns(c.body, locals))
+          return false;
+        if (cb == ConstBool::True) {
+          chain_matched = true;
+          return true;
+        }
+      }
+      if (chain_matched)
+        return true;
+      if (stmt.if_stmt.else_body.empty())
+        return false;
+      return stmtBlockAlwaysReturns(stmt.if_stmt.else_body, locals);
+    }
+    default:
+      return false;
+  }
+}
+
+static bool stmtBlockAlwaysReturns(const std::vector<std::unique_ptr<Stmt>>& stmts,
+                                   const ConstLocalsState& locals) {
+  for (const auto& s : stmts) {
+    if (stmtAlwaysReturns(*s, locals))
+      return true;
+  }
+  return false;
+}
+
+static bool tryCatchUnreachable(const std::vector<std::unique_ptr<Stmt>>& try_body,
+                                const ConstLocalsState& locals) {
+  for (const auto& s : try_body) {
+    if (containsThrowStmt(*s))
+      return false;
+  }
+  return stmtBlockAlwaysReturns(try_body, locals);
 }
 
 static bool methodArgMatches(TypeDesc arg, TypeDesc expected, TypeDesc recv) {
@@ -521,6 +850,10 @@ static bool exprLooksString(const Expr& e, const std::unordered_map<std::string,
   return false;
 }
 
+static bool exprLooksFloat(const Expr& e) {
+  return e.kind == Expr::Float;
+}
+
 static void inferReturnType(Function& fn) {
   if (fn.return_type_explicit)
     return;
@@ -528,10 +861,16 @@ static void inferReturnType(Function& fn) {
   for (const auto& p : fn.params)
     param_types[p.name] = p.type;
   for (const auto& stmt : *functionBody(fn)) {
-    if (stmt->kind == Stmt::ReturnStmt && stmt->ret.has_value &&
-        exprLooksString(*stmt->ret.value, param_types)) {
-      fn.return_type = TypeDesc::prim(FarTypeId::String);
-      return;
+    if (stmt->kind == Stmt::ReturnStmt && stmt->ret.has_value) {
+      if (exprLooksString(*stmt->ret.value, param_types)) {
+        fn.return_type = TypeDesc::prim(FarTypeId::String);
+        return;
+      }
+      if (exprLooksFloat(*stmt->ret.value)) {
+        fn.return_type = TypeDesc::prim(stmt->ret.value->float_lit.is_float ? FarTypeId::F32
+                                                                           : FarTypeId::F64);
+        return;
+      }
     }
   }
 }
@@ -604,8 +943,16 @@ class TypeChecker {
         continue;
       checkFunction(fn);
     }
-    for (auto& fn : program_.synthetic_functions)
+    for (size_t i = 0; i < program_.synthetic_functions.size(); ++i) {
+      Function& fn = program_.synthetic_functions[i];
+      if (fn.name.rfind("pfor$", 0) == 0)
+        continue;
+      if (fn.type_params.empty()) {
+        inferUntypedParamTypes(fn);
+        inferReturnType(fn);
+      }
       checkFunction(fn);
+    }
   }
 
  private:
@@ -613,11 +960,69 @@ class TypeChecker {
   ObjectRegistry obj_reg_;
   std::unordered_map<std::string, std::vector<const Function*>> fn_overloads_;
   std::unordered_map<std::string, TypeDesc> locals_;
+  ConstLocalsState const_locals_;
+  std::unordered_set<std::string> explicit_locals_;
+  std::unordered_set<std::string> constexpr_empty_locals_;
   const Function* current_fn_ = nullptr;
   const UserTypeDef* current_user_type_ = nullptr;
   int lambda_counter_ = 0;
   int unsafe_depth_ = 0;
   int comptime_depth_ = 0;
+  int check_depth_ = 0;
+  int loop_depth_ = 0;
+
+  void trackConstLocal(const std::string& name, const Expr& value) {
+    if (value.kind == Expr::Int) {
+      const_locals_.ints[name] = value.int_lit.value;
+      const_locals_.floats.erase(name);
+    } else if (value.kind == Expr::Float && !std::isnan(value.float_lit.value)) {
+      const_locals_.floats[name] = value.float_lit.value;
+      const_locals_.ints.erase(name);
+    } else if (value.kind == Expr::EnumVariantExprK) {
+      const_locals_.ints[name] = value.enum_variant.value;
+      const_locals_.floats.erase(name);
+    } else {
+      const_locals_.ints.erase(name);
+      const_locals_.floats.erase(name);
+    }
+  }
+
+  void clearConstLocal(const std::string& name) {
+    const_locals_.ints.erase(name);
+    const_locals_.floats.erase(name);
+  }
+
+  bool assignTargetCanBeNullish(const Expr& target) const {
+    if (target.kind == Expr::Int)
+      return target.int_lit.value == 0;
+    if (target.kind == Expr::Float)
+      return target.float_lit.value == 0.0 || std::isnan(target.float_lit.value);
+    if (target.kind == Expr::Variable) {
+      auto fit = const_locals_.floats.find(target.var.name);
+      if (fit != const_locals_.floats.end())
+        return fit->second == 0.0 || std::isnan(fit->second);
+      auto it = const_locals_.ints.find(target.var.name);
+      if (it != const_locals_.ints.end())
+        return it->second == 0;
+    }
+    return true;
+  }
+
+  void pushCheckDepth() {
+    if (++check_depth_ > 512)
+      throw FarError("typecheck depth exceeded");
+  }
+
+  void popCheckDepth() {
+    if (check_depth_ > 0)
+      --check_depth_;
+  }
+
+  struct CheckDepthGuard {
+    TypeChecker& tc;
+    explicit CheckDepthGuard(TypeChecker& t) : tc(t) { tc.pushCheckDepth(); }
+    ~CheckDepthGuard() { tc.popCheckDepth(); }
+  };
 
   static bool isIntegerScrutinee(const TypeDesc& ty) {
     return isPrimitiveDesc(ty) && isIntegerType(ty.primitive);
@@ -627,8 +1032,9 @@ class TypeChecker {
     for (const auto& stmt : stmts) {
       if (stmt->kind == Stmt::LetStmt && stmt->let.is_constexpr) {
         if (!locals_.count(stmt->let.name)) {
-          TypeDesc ty =
-              stmt->let.explicit_type ? stmt->let.type : TypeDesc::prim(FarTypeId::I64);
+          TypeDesc ty = stmt->let.explicit_type ? stmt->let.type
+                                                : (stmt->let.value ? stmt->let.value->type
+                                                                   : TypeDesc::prim(FarTypeId::I64));
           locals_[stmt->let.name] = ty;
         }
       } else if (stmt->kind == Stmt::ComptimeBlockK) {
@@ -642,6 +1048,7 @@ class TypeChecker {
   }
 
   void checkPattern(Pattern& pat, const TypeDesc& scrut_ty) {
+    CheckDepthGuard depth(*this);
     switch (pat.kind) {
       case PatKind::Wildcard:
         return;
@@ -657,8 +1064,12 @@ class TypeChecker {
         if (v < 0)
           throw FarError("unknown enum variant " + pat.type_name + "." + pat.variant);
         pat.variant_value = v;
-        if (!isIntegerScrutinee(scrut_ty))
-          throw FarError("enum pattern requires integer scrutinee");
+        if (isUserDesc(scrut_ty)) {
+          if (scrut_ty.user_name != pat.type_name)
+            throw FarError("enum pattern type mismatch");
+        } else if (!isIntegerScrutinee(scrut_ty)) {
+          throw FarError("enum pattern requires integer or enum scrutinee");
+        }
         return;
       }
       case PatKind::UnionVariant: {
@@ -678,19 +1089,21 @@ class TypeChecker {
         return;
       }
       case PatKind::TypeTest:
-        if (!isUserDesc(scrut_ty) || scrut_ty.user_name != pat.type_name)
+        if (!isUserDesc(scrut_ty) || !typeDescEquals(scrut_ty, pat.type_test))
           throw FarError("type pattern mismatch");
         return;
       case PatKind::StructDestructure: {
-        const UserTypeDef* td = obj_reg_.lookup(pat.type_name);
+        if (!isUserDesc(scrut_ty))
+          throw FarError("struct pattern type mismatch");
+        const UserTypeDef* td = resolveUserType(scrut_ty, obj_reg_, program_);
         if (!td)
           throw FarError("unknown type '" + pat.type_name + "'");
-        if (!isUserDesc(scrut_ty) || scrut_ty.user_name != pat.type_name)
+        if (scrut_ty.user_name != pat.type_name)
           throw FarError("struct pattern type mismatch");
         for (size_t i = 0; i < pat.fields.size(); ++i) {
           int fidx = static_cast<int>(i);
           if (!pat.field_names.empty()) {
-            fidx = obj_reg_.lookupFieldIndex(TypeDesc::user(pat.type_name), pat.field_names[i]);
+            fidx = obj_reg_.lookupFieldIndex(scrut_ty, pat.field_names[i]);
             if (fidx < 0)
               throw FarError("unknown field '" + pat.field_names[i] + "'");
           } else if (fidx >= static_cast<int>(td->fields.size())) {
@@ -718,13 +1131,18 @@ class TypeChecker {
     if (dollar != std::string::npos)
       current_user_type_ = obj_reg_.lookupMut(fn.name.substr(0, dollar));
     locals_.clear();
+    const_locals_ = {};
+    explicit_locals_.clear();
+    constexpr_empty_locals_.clear();
     for (auto& p : fn.params) {
       if (p.default_value) {
         TypeDesc dv = checkExpr(*p.default_value);
+        rejectIntLiteralOutOfRangeForTarget(*p.default_value, p.type);
         if (!p.type_explicit && !typeDescEquals(p.type, dv))
           p.type = dv;
       }
       locals_[p.name] = p.type;
+      explicit_locals_.insert(p.name);
     }
     injectConstexprGlobals();
     const std::vector<std::unique_ptr<Stmt>>* body = &fn.body;
@@ -732,16 +1150,62 @@ class TypeChecker {
       body = &fn.body_source->body;
     else if (fn.shared_body)
       body = fn.shared_body;
-    for (const auto& stmt : *body)
-      checkStmt(*stmt);
+    checkStmtBlock(*body);
     current_fn_ = nullptr;
     current_user_type_ = nullptr;
   }
 
+  bool stmtAbortsRestOfBlock(const Stmt& stmt) const {
+    if (stmt.kind == Stmt::ReturnStmt || stmt.kind == Stmt::ThrowStmtK)
+      return true;
+    if (stmt.kind == Stmt::IfStmt) {
+      for (const auto& c : stmt.if_stmt.clauses) {
+        ConstBool cb = constBoolFromExpr(*c.condition, const_locals_);
+        if (cb == ConstBool::False)
+          continue;
+        if (cb == ConstBool::True)
+          return stmtBlockAlwaysReturns(c.body, const_locals_);
+      }
+      return false;
+    }
+    if (stmt.kind == Stmt::TryStmtK)
+      return tryCatchUnreachable(stmt.try_stmt.try_body, const_locals_);
+    if (stmt.kind == Stmt::MatchStmtK) {
+      std::optional<int64_t> const_scrut =
+          constIntFromExpr(*stmt.match_stmt.scrutinee, const_locals_);
+      if (!const_scrut)
+        return false;
+      for (const auto& arm : stmt.match_stmt.arms) {
+        if (arm.pat && isCatchAllPattern(*arm.pat))
+          continue;
+        if (arm.pat && patternCertainlyFailsConstInt(*arm.pat, *const_scrut, obj_reg_))
+          continue;
+        if (arm.pat && patternMatchesConstIntSpecific(*arm.pat, *const_scrut, obj_reg_))
+          return stmtBlockAlwaysReturns(arm.body, const_locals_);
+      }
+      for (const auto& arm : stmt.match_stmt.arms) {
+        if (arm.pat && isCatchAllPattern(*arm.pat))
+          return stmtBlockAlwaysReturns(arm.body, const_locals_);
+      }
+    }
+    return false;
+  }
+
+  void checkStmtBlock(const std::vector<std::unique_ptr<Stmt>>& stmts) {
+    for (const auto& stmt : stmts) {
+      checkStmt(*stmt);
+      if (stmtAbortsRestOfBlock(*stmt))
+        break;
+    }
+  }
+
   void checkStmt(Stmt& stmt) {
+    CheckDepthGuard depth(*this);
     switch (stmt.kind) {
       case Stmt::LetStmt: {
         TypeDesc ty = checkExpr(*stmt.let.value);
+        if (stmt.let.explicit_type)
+          rejectIntLiteralOutOfRangeForTarget(*stmt.let.value, stmt.let.type);
         if (stmt.let.explicit_type) {
           if (stmt.let.value->kind == Expr::DictLitExpr && stmt.let.value->dict_lit.entries.empty() &&
               stmt.let.type.form == TypeForm::Dict) {
@@ -752,19 +1216,40 @@ class TypeChecker {
                      stmt.let.type.form == TypeForm::Array) {
             ty = stmt.let.type;
             stmt.let.value->type = ty;
+          } else if (stmt.let.value->kind == Expr::EnumVariantExprK && isUserDesc(stmt.let.type) &&
+                     stmt.let.value->enum_variant.type_name == stmt.let.type.user_name) {
+            ty = stmt.let.type;
+            stmt.let.value->type = ty;
           }
           if (!canAssignTypes(ty, stmt.let.type))
             throw FarError("type mismatch in let: expected " + typeDescName(stmt.let.type) + ", got " +
                            typeDescName(ty));
+          rejectNarrowingAssign(ty, stmt.let.type);
           locals_[stmt.let.name] = stmt.let.type;
+          explicit_locals_.insert(stmt.let.name);
+        } else if (locals_.count(stmt.let.name) && explicit_locals_.count(stmt.let.name)) {
+          TypeDesc existing = locals_.at(stmt.let.name);
+          rejectIntLiteralOutOfRangeForTarget(*stmt.let.value, existing);
+          rejectNarrowingAssign(ty, existing);
+          if (!canAssignTypes(ty, existing))
+            throw FarError("type mismatch in assignment to '" + stmt.let.name + "': expected " +
+                           typeDescName(existing) + ", got " + typeDescName(ty));
+          locals_[stmt.let.name] = existing;
         } else {
+          if (stmt.let.value->kind == Expr::EnumVariantExprK)
+            ty = TypeDesc::user(stmt.let.value->enum_variant.type_name);
           locals_[stmt.let.name] = ty;
         }
+        trackConstLocal(stmt.let.name, *stmt.let.value);
+        if (stmt.let.is_constexpr && stmt.let.value && isEmptyConstexprLiteral(*stmt.let.value))
+          constexpr_empty_locals_.insert(stmt.let.name);
         break;
       }
       case Stmt::ReturnStmt:
         if (stmt.ret.has_value) {
           TypeDesc ty = checkExpr(*stmt.ret.value);
+          rejectIntLiteralOutOfRangeForTarget(*stmt.ret.value, current_fn_->return_type);
+          rejectNarrowingAssign(ty, current_fn_->return_type);
           if (!canAssignTypes(ty, current_fn_->return_type))
             throw FarError(std::string("return type mismatch: expected ") +
                            typeDescName(current_fn_->return_type) + ", got " + typeDescName(ty));
@@ -778,78 +1263,219 @@ class TypeChecker {
       case Stmt::PrintStmt:
         checkExpr(*stmt.print.value);
         break;
-      case Stmt::IfStmt:
+      case Stmt::IfStmt: {
+        bool chain_matched = false;
         for (const auto& c : stmt.if_stmt.clauses) {
+          if (chain_matched)
+            break;
+          auto branch_saved = locals_;
+          auto branch_const = const_locals_;
           checkExpr(*c.condition);
-          for (const auto& s : c.body)
-            checkStmt(*s);
+          ConstBool cb = constBoolFromExpr(*c.condition, const_locals_);
+          if (cb == ConstBool::False) {
+            locals_ = branch_saved;
+            const_locals_ = branch_const;
+            continue;
+          }
+          checkStmtBlock(c.body);
+          locals_ = branch_saved;
+          if (cb != ConstBool::True)
+            const_locals_ = branch_const;
+          if (cb == ConstBool::True)
+            chain_matched = true;
         }
-        for (const auto& s : stmt.if_stmt.else_body)
-          checkStmt(*s);
+        if (!chain_matched) {
+          auto else_saved = locals_;
+          checkStmtBlock(stmt.if_stmt.else_body);
+          locals_ = else_saved;
+        }
         break;
-      case Stmt::WhileStmt:
+      }
+      case Stmt::WhileStmt: {
         checkExpr(*stmt.while_stmt.condition);
-        for (const auto& s : stmt.while_stmt.body)
-          checkStmt(*s);
+        ConstBool cb = constBoolFromExpr(*stmt.while_stmt.condition, const_locals_);
+        if (cb != ConstBool::False) {
+          ++loop_depth_;
+          auto saved = locals_;
+          auto saved_const = const_locals_;
+          checkStmtBlock(stmt.while_stmt.body);
+          locals_ = saved;
+          const_locals_ = saved_const;
+          --loop_depth_;
+        }
         break;
+      }
       case Stmt::ForStmt:
         if (stmt.for_stmt.is_parallel) {
           checkExpr(*stmt.for_stmt.range_start);
           checkExpr(*stmt.for_stmt.range_end);
+          auto range_start = constIntFromExpr(*stmt.for_stmt.range_start, const_locals_);
+          auto range_end = constIntFromExpr(*stmt.for_stmt.range_end, const_locals_);
+          bool skip_body = range_start && range_end &&
+                           rangeForConstEmpty(*range_start, *range_end, stmt.for_stmt.range_exclusive);
+          Function* pfor = findSyntheticByLlvm(program_, stmt.for_stmt.parallel_fn);
+          if (!pfor)
+            throw FarError("internal: missing parallel-for worker");
+          std::unordered_set<std::string> free;
+          for (const auto& s : pfor->body)
+            collectFreeVarsStmt(*s, free);
+          free.erase(stmt.for_stmt.parallel_var);
+          std::vector<std::string> caps;
+          for (const auto& name : free) {
+            if (locals_.count(name))
+              caps.push_back(name);
+            else
+              throw FarError("parallel for references undefined variable '" + name + "'");
+          }
+          if (caps.size() > 4)
+            throw FarError("parallel for captures at most 4 variables");
+          stmt.for_stmt.parallel_captures = caps;
+          pfor->captures = caps;
+          std::vector<Param> params;
+          for (const auto& cap : caps) {
+            Param cp;
+            cp.name = cap;
+            cp.type = locals_.at(cap);
+            params.push_back(std::move(cp));
+          }
+          Param ip;
+          ip.name = stmt.for_stmt.parallel_var;
+          ip.type = TypeDesc::prim(FarTypeId::I64);
+          params.push_back(std::move(ip));
+          pfor->params = std::move(params);
+          pfor->llvm_name = mangleFunction(*pfor);
+          stmt.for_stmt.parallel_fn = pfor->llvm_name;
+          auto saved = locals_;
+          auto saved_const = const_locals_;
+          locals_[stmt.for_stmt.parallel_var] = TypeDesc::prim(FarTypeId::I64);
+          for (const auto& s : pfor->body)
+            checkStmt(*s);
+          locals_ = saved;
+          const_locals_ = saved_const;
+          if (skip_body) {
+            pfor->body.clear();
+            pfor->captures.clear();
+            stmt.for_stmt.parallel_captures.clear();
+          }
           break;
         }
         if (stmt.for_stmt.is_range) {
           checkExpr(*stmt.for_stmt.range_start);
           checkExpr(*stmt.for_stmt.range_end);
+          auto range_start = constIntFromExpr(*stmt.for_stmt.range_start, const_locals_);
+          auto range_end = constIntFromExpr(*stmt.for_stmt.range_end, const_locals_);
+          bool skip_body = range_start && range_end &&
+                           rangeForConstEmpty(*range_start, *range_end, stmt.for_stmt.range_exclusive);
           locals_[stmt.for_stmt.range_var] = defaultIntType();
-          for (const auto& s : stmt.for_stmt.body)
-            checkStmt(*s);
+          if (!skip_body) {
+            ++loop_depth_;
+            {
+              auto saved = locals_;
+              auto saved_const = const_locals_;
+              checkStmtBlock(stmt.for_stmt.body);
+              locals_ = saved;
+              const_locals_ = saved_const;
+            }
+            --loop_depth_;
+          }
           locals_.erase(stmt.for_stmt.range_var);
+          const_locals_.ints.erase(stmt.for_stmt.range_var);
+          const_locals_.floats.erase(stmt.for_stmt.range_var);
           break;
         }
         if (stmt.for_stmt.is_foreach) {
           TypeDesc coll_ty = checkExpr(*stmt.for_stmt.foreach_iter);
+          bool skip_body =
+              foreachConstEmpty(*stmt.for_stmt.foreach_iter, &program_, &constexpr_empty_locals_);
+          if (isPrim(coll_ty, FarTypeId::String)) {
+            if (!skip_body)
+              throw FarError("for-in over non-empty string is not supported yet");
+            break;
+          }
           if (!isIndexable(coll_ty))
             throw FarError("for-in requires an indexable collection (array, list, slice, ...), not " +
                            typeDescName(coll_ty));
           TypeDesc elem = elemTypeOf(coll_ty);
           locals_[stmt.for_stmt.foreach_var] = elem;
-          for (const auto& s : stmt.for_stmt.body)
-            checkStmt(*s);
+          if (!skip_body) {
+            ++loop_depth_;
+            {
+              auto saved = locals_;
+              auto saved_const = const_locals_;
+              for (const auto& s : stmt.for_stmt.body)
+                checkStmt(*s);
+              locals_ = saved;
+              const_locals_ = saved_const;
+            }
+            --loop_depth_;
+          }
           locals_.erase(stmt.for_stmt.foreach_var);
+          const_locals_.ints.erase(stmt.for_stmt.foreach_var);
+          const_locals_.floats.erase(stmt.for_stmt.foreach_var);
           break;
         }
         if (stmt.for_stmt.init)
           checkStmt(*stmt.for_stmt.init);
         if (stmt.for_stmt.cond)
           checkExpr(*stmt.for_stmt.cond);
-        if (stmt.for_stmt.step)
-          checkStmt(*stmt.for_stmt.step);
-        for (const auto& s : stmt.for_stmt.body)
-          checkStmt(*s);
+        ++loop_depth_;
+        {
+          auto saved = locals_;
+          auto saved_const = const_locals_;
+          for (const auto& s : stmt.for_stmt.body)
+            checkStmt(*s);
+          if (stmt.for_stmt.step)
+            checkStmt(*stmt.for_stmt.step);
+          locals_ = saved;
+          const_locals_ = saved_const;
+        }
+        --loop_depth_;
         break;
       case Stmt::YieldStmtK:
         if (!current_fn_->is_generator && !current_fn_->is_coroutine)
           throw FarError("yield only allowed in generator/coroutine functions");
-        if (stmt.yield.has_value)
-          checkExpr(*stmt.yield.value);
+        if (stmt.yield.has_value) {
+          TypeDesc ty = checkExpr(*stmt.yield.value);
+          rejectIntLiteralOutOfRangeForTarget(*stmt.yield.value, current_fn_->return_type);
+          rejectNarrowingAssign(ty, current_fn_->return_type);
+          if (!canAssignTypes(ty, current_fn_->return_type))
+            throw FarError(std::string("yield type mismatch: expected ") +
+                           typeDescName(current_fn_->return_type) + ", got " + typeDescName(ty));
+        }
         break;
       case Stmt::BreakStmt:
+        if (loop_depth_ <= 0)
+          throw FarError("break outside loop");
+        break;
       case Stmt::ContinueStmt:
+        if (loop_depth_ <= 0)
+          throw FarError("continue outside loop");
         break;
       case Stmt::DeferStmtK:
         checkExpr(*stmt.defer.expr);
         break;
-      case Stmt::UnsafeStmtK:
+      case Stmt::UnsafeStmtK: {
         ++unsafe_depth_;
-        for (const auto& s : stmt.unsafe.body)
-          checkStmt(*s);
+        auto saved = locals_;
+        auto saved_const = const_locals_;
+        checkStmtBlock(stmt.unsafe.body);
+        locals_ = saved;
+        const_locals_ = saved_const;
         --unsafe_depth_;
         break;
-      case Stmt::TryStmtK:
-        for (const auto& s : stmt.try_stmt.try_body)
-          checkStmt(*s);
-        if (stmt.try_stmt.has_catch) {
+      }
+      case Stmt::TryStmtK: {
+        auto pre = locals_;
+        auto pre_const = const_locals_;
+        {
+          auto try_saved = locals_;
+          auto try_const = const_locals_;
+          checkStmtBlock(stmt.try_stmt.try_body);
+          locals_ = try_saved;
+          const_locals_ = try_const;
+        }
+        if (stmt.try_stmt.has_catch &&
+            !tryCatchUnreachable(stmt.try_stmt.try_body, const_locals_)) {
           TypeDesc catch_ty = TypeDesc::prim(FarTypeId::I64);
           if (stmt.try_stmt.catch_type_explicit) {
             catch_ty = stmt.try_stmt.catch_type;
@@ -860,27 +1486,107 @@ class TypeChecker {
             }
           }
           stmt.try_stmt.catch_type = catch_ty;
+          auto catch_saved = locals_;
+          auto catch_const = const_locals_;
           locals_[stmt.try_stmt.catch_var] = catch_ty;
-          for (const auto& s : stmt.try_stmt.catch_body)
-            checkStmt(*s);
-          locals_.erase(stmt.try_stmt.catch_var);
+          checkStmtBlock(stmt.try_stmt.catch_body);
+          locals_ = catch_saved;
+          const_locals_ = catch_const;
         }
-        if (stmt.try_stmt.has_finally) {
-          for (const auto& s : stmt.try_stmt.finally_body)
-            checkStmt(*s);
+        {
+          auto fin_saved = locals_;
+          auto fin_const = const_locals_;
+          checkStmtBlock(stmt.try_stmt.finally_body);
+          locals_ = fin_saved;
+          const_locals_ = fin_const;
         }
+        locals_ = pre;
+        const_locals_ = pre_const;
         break;
+      }
       case Stmt::ThrowStmtK:
         checkExpr(*stmt.throw_stmt.value);
         break;
       case Stmt::MatchStmtK: {
         TypeDesc st = checkExpr(*stmt.match_stmt.scrutinee);
+        if (stmt.match_stmt.is_switch) {
+          bool has_default = false;
+          for (const auto& arm : stmt.match_stmt.arms) {
+            if (arm.pat && arm.pat->kind == PatKind::Wildcard)
+              has_default = true;
+          }
+          if (!has_default)
+            throw FarError("switch statement requires a default case");
+        } else if (isIntegerScrutinee(st)) {
+          bool has_wild = false;
+          for (const auto& arm : stmt.match_stmt.arms) {
+            if (arm.pat && (arm.pat->kind == PatKind::Wildcard || arm.pat->kind == PatKind::Bind)) {
+              has_wild = true;
+              break;
+            }
+          }
+          if (!has_wild)
+            throw FarError("non-exhaustive match on integer scrutinee: missing wildcard arm");
+        } else if (isUserDesc(st)) {
+          const UserTypeDef* td = obj_reg_.lookup(st.user_name);
+          if (td && (td->kind == UserTypeKind::Enum || td->kind == UserTypeKind::FlagsEnum)) {
+            bool has_wild = false;
+            std::unordered_set<int64_t> covered;
+            for (const auto& arm : stmt.match_stmt.arms) {
+              if (!arm.pat)
+                continue;
+              if (arm.pat->kind == PatKind::Wildcard || arm.pat->kind == PatKind::Bind) {
+                has_wild = true;
+                break;
+              }
+              if (arm.pat->kind == PatKind::EnumVariant && arm.pat->type_name == st.user_name) {
+                int v = obj_reg_.enumVariantValue(arm.pat->type_name, arm.pat->variant);
+                if (v >= 0)
+                  covered.insert(v);
+              }
+            }
+            if (!has_wild) {
+              for (const auto& v : td->variants) {
+                if (!covered.count(v.value))
+                  throw FarError("non-exhaustive match on " + st.user_name + ": missing variant " +
+                                 v.name);
+              }
+            }
+          }
+        }
+        std::optional<int64_t> const_scrut =
+            constIntFromExpr(*stmt.match_stmt.scrutinee, const_locals_);
+        bool chain_matched = false;
         for (auto& arm : stmt.match_stmt.arms) {
+          if (chain_matched)
+            break;
+          if (const_scrut && arm.pat && isCatchAllPattern(*arm.pat))
+            continue;
+          if (const_scrut && arm.pat &&
+              patternCertainlyFailsConstInt(*arm.pat, *const_scrut, obj_reg_))
+            continue;
           auto saved = locals_;
+          auto saved_const = const_locals_;
           checkPattern(*arm.pat, st);
-          for (const auto& s : arm.body)
-            checkStmt(*s);
+          checkStmtBlock(arm.body);
           locals_ = saved;
+          const_locals_ = saved_const;
+          if (const_scrut && arm.pat &&
+              patternMatchesConstIntSpecific(*arm.pat, *const_scrut, obj_reg_))
+            chain_matched = true;
+        }
+        if (const_scrut && !chain_matched) {
+          for (auto& arm : stmt.match_stmt.arms) {
+            if (!arm.pat || !isCatchAllPattern(*arm.pat))
+              continue;
+            auto saved = locals_;
+            auto saved_const = const_locals_;
+            checkPattern(*arm.pat, st);
+            checkStmtBlock(arm.body);
+            locals_ = saved;
+            const_locals_ = saved_const;
+            break;
+          }
         }
         break;
       }
@@ -891,13 +1597,14 @@ class TypeChecker {
   }
 
   TypeDesc checkExpr(Expr& expr) {
+    CheckDepthGuard depth(*this);
     TypeDesc ty = TypeDesc::prim(FarTypeId::I64);
     switch (expr.kind) {
       case Expr::Int:
         if (isPrim(expr.type, FarTypeId::Bool))
           ty = TypeDesc::prim(FarTypeId::Bool);
         else
-          ty = defaultIntType();
+          ty = inferIntLiteralType(expr.int_lit.value, expr.int_lit.unsigned_decimal);
         break;
       case Expr::Float:
         ty = TypeDesc::prim(expr.float_lit.is_float ? FarTypeId::F32 : FarTypeId::F64);
@@ -916,9 +1623,29 @@ class TypeChecker {
         break;
       }
       case Expr::Binary: {
-        TypeDesc lt = checkExpr(*expr.bin_op.left);
-        TypeDesc rt = checkExpr(*expr.bin_op.right);
         const std::string& op = expr.bin_op.op;
+        TypeDesc lt = checkExpr(*expr.bin_op.left);
+        TypeDesc rt;
+        if (op == "and" || op == "&&") {
+          ConstBool lb = constBoolFromExpr(*expr.bin_op.left, const_locals_);
+          if (lb == ConstBool::False)
+            rt = TypeDesc::prim(FarTypeId::Bool);
+          else
+            rt = checkExpr(*expr.bin_op.right);
+        } else if (op == "or" || op == "||") {
+          ConstBool lb = constBoolFromExpr(*expr.bin_op.left, const_locals_);
+          if (lb == ConstBool::True)
+            rt = TypeDesc::prim(FarTypeId::Bool);
+          else
+            rt = checkExpr(*expr.bin_op.right);
+        } else if (op == "??") {
+          if (exprConstNonNullish(*expr.bin_op.left, const_locals_))
+            rt = lt;
+          else
+            rt = checkExpr(*expr.bin_op.right);
+        } else {
+          rt = checkExpr(*expr.bin_op.right);
+        }
         if ((op == "-" || op == "~") && expr.bin_op.left->kind == Expr::Int &&
             expr.bin_op.left->int_lit.value == 0 && isAggregateDesc(rt))
           ty = TypeDesc::prim(checkUnaryAggregateOp(op, aggregateDescId(rt)));
@@ -944,8 +1671,20 @@ class TypeChecker {
             throwAt(expr, "right operand of 'in' must be a string or indexable collection");
           }
           ty = TypeDesc::prim(FarTypeId::Bool);
-        } else if (op == "and" || op == "or" || op == "&&" || op == "||" || op == "==" || op == "!=" ||
-                 op == "===" || op == "!==" || op == "<" || op == ">" || op == "<=" || op == ">=")
+        } else if (op == "and" || op == "or" || op == "&&" || op == "||") {
+          ty = TypeDesc::prim(FarTypeId::Bool);
+        } else if (op == "!" && expr.bin_op.left->kind == Expr::Int &&
+                   expr.bin_op.left->int_lit.value == 0) {
+          ty = TypeDesc::prim(FarTypeId::Bool);
+        } else if (isUserDesc(lt) && (op == "==" || op == "!=" || op == "===" || op == "!==" || op == "<" ||
+                                        op == ">" || op == "<=" || op == ">=")) {
+          const UserMethod* om = obj_reg_.lookupMethod(lt, userOpMethodName(op));
+          if (om)
+            ty = om->return_type;
+          else
+            ty = TypeDesc::prim(FarTypeId::Bool);
+        } else if (op == "==" || op == "!=" || op == "===" || op == "!==" || op == "<" || op == ">" ||
+                   op == "<=" || op == ">=")
           ty = TypeDesc::prim(FarTypeId::Bool);
         else if (op == "??") {
           try {
@@ -954,8 +1693,36 @@ class TypeChecker {
             throwAt(expr, e.what());
           }
         }
-        else if (op == "&" || op == "|" || op == "^" || op == "<<" || op == ">>" || op == "?.")
+        else if (op == "&" || op == "|" || op == "^" || op == "<<" || op == ">>")
           ty = TypeDesc::prim(FarTypeId::I64);
+        else if (op == "?.") {
+          if (!isUserDesc(lt) && !isOptionDesc(lt) && !isPointerDesc(lt))
+            throwAt(expr, "optional chaining requires object, optional, or pointer type");
+          TypeDesc base_ty = lt;
+          if (isOptionDesc(lt) && !lt.args.empty())
+            base_ty = lt.args[0];
+          else if (isPointerDesc(lt))
+            base_ty = lt.args[0];
+          if (expr.bin_op.right->kind != Expr::String)
+            throwAt(expr, "optional chaining requires a member name");
+          if (isUserDesc(base_ty)) {
+            const UserTypeDef* td = resolveUserType(base_ty, obj_reg_, program_);
+            if (!td)
+              throwAt(expr, "unknown user type");
+            const std::string& member = expr.bin_op.right->string_lit.value;
+            const UserField* uf = lookupUserField(*td, member);
+            if (!uf) {
+              int idx = obj_reg_.lookupFieldIndex(base_ty, member);
+              if (idx < 0)
+                throwAt(expr, "unknown member '" + member + "'");
+              ty = td->fields[static_cast<size_t>(idx)].type;
+            } else {
+              ty = uf->type;
+            }
+          } else {
+            ty = TypeDesc::prim(FarTypeId::I64);
+          }
+        }
         else if (op == "//" &&
                  ((isPrimitiveDesc(lt) && isFloatType(lt.primitive)) ||
                   (isPrimitiveDesc(rt) && isFloatType(rt.primitive))))
@@ -980,8 +1747,60 @@ class TypeChecker {
             !(expr.assign.target->kind == Expr::PrefixExprK &&
               expr.assign.target->prefix.op == "*"))
           throw FarError("assignment requires variable, member, index, or *pointer target");
-        checkExpr(*expr.assign.target);
+        if (expr.assign.op.size() == 3 && expr.assign.op[0] == '?' && expr.assign.op[1] == '?' &&
+            expr.assign.op[2] == '=') {
+          checkExpr(*expr.assign.target);
+          ty = expr.assign.target->type;
+          if (assignTargetCanBeNullish(*expr.assign.target)) {
+            TypeDesc val_ty = checkExpr(*expr.assign.value);
+            TypeDesc target_ty = expr.assign.target->type;
+            if (expr.assign.target->kind == Expr::Variable) {
+              auto it = locals_.find(expr.assign.target->var.name);
+              if (it != locals_.end())
+                target_ty = it->second;
+            }
+            rejectIntLiteralOutOfRangeForTarget(*expr.assign.value, target_ty);
+            if (expr.assign.target->kind == Expr::MemberExpr ||
+                expr.assign.target->kind == Expr::IndexExpr ||
+                (expr.assign.target->kind == Expr::PrefixExprK &&
+                 expr.assign.target->prefix.op == "*"))
+              rejectNarrowingStore(val_ty, target_ty);
+            else
+              rejectNarrowingAssign(val_ty, target_ty);
+            if (!canAssignTypes(val_ty, ty))
+              throwAt(expr, "assignment type mismatch");
+            if (expr.assign.target->kind == Expr::Variable)
+              trackConstLocal(expr.assign.target->var.name, *expr.assign.value);
+          }
+          break;
+        }
         ty = checkExpr(*expr.assign.value);
+        if (expr.assign.target->kind == Expr::Variable &&
+            locals_.find(expr.assign.target->var.name) == locals_.end()) {
+          locals_[expr.assign.target->var.name] = ty;
+          expr.assign.target->type = ty;
+          if (expr.assign.op == "=")
+            trackConstLocal(expr.assign.target->var.name, *expr.assign.value);
+          break;
+        }
+        checkExpr(*expr.assign.target);
+        TypeDesc target_ty = expr.assign.target->type;
+        if (expr.assign.target->kind == Expr::Variable) {
+          auto it = locals_.find(expr.assign.target->var.name);
+          if (it != locals_.end())
+            target_ty = it->second;
+        }
+        rejectIntLiteralOutOfRangeForTarget(*expr.assign.value, target_ty);
+        if (expr.assign.op != "=")
+          rejectNarrowingStore(ty, target_ty);
+        else if (expr.assign.target->kind == Expr::MemberExpr ||
+                 expr.assign.target->kind == Expr::IndexExpr ||
+                 (expr.assign.target->kind == Expr::PrefixExprK &&
+                  expr.assign.target->prefix.op == "*"))
+          rejectNarrowingStore(ty, target_ty);
+        else if (expr.assign.target->kind == Expr::Variable &&
+                 explicit_locals_.count(expr.assign.target->var.name))
+          rejectNarrowingAssign(ty, target_ty);
         if (expr.assign.target->kind == Expr::IndexExpr) {
           TypeDesc arr_ty = expr.assign.target->index.array->type;
           if (arr_ty.form == TypeForm::Dict) {
@@ -992,20 +1811,53 @@ class TypeChecker {
               throwAt(expr, "dict key type mismatch");
             if (!canAssignTypes(ty, val_ty))
               throwAt(expr, "dict value type mismatch");
+          } else if (isUserDesc(arr_ty)) {
+            const UserMethod* im = obj_reg_.lookupMethod(arr_ty, "__index_set");
+            if (!im)
+              throwAt(expr, "type " + arr_ty.user_name + " has no index setter");
+            if (im->params.size() >= 3) {
+              TypeDesc idx_ty = expr.assign.target->index.index->type;
+              if (!canAssignTypes(idx_ty, im->params[1].type))
+                throwAt(expr, "index assignment key type mismatch");
+              if (!canAssignTypes(ty, im->params[2].type))
+                throwAt(expr, "index assignment value type mismatch");
+            }
           } else if (isIndexable(arr_ty) && !canAssignTypes(ty, elemTypeOf(arr_ty)))
             throwAt(expr, "index assignment type mismatch");
+        } else if (!canAssignTypes(ty, target_ty))
+          throwAt(expr, "assignment type mismatch");
+        if (expr.assign.target->kind == Expr::Variable) {
+          if (expr.assign.op == "=")
+            trackConstLocal(expr.assign.target->var.name, *expr.assign.value);
+          else
+            clearConstLocal(expr.assign.target->var.name);
         }
         break;
       }
       case Expr::TernaryExprK: {
         checkExpr(*expr.ternary.cond);
-        TypeDesc a = checkExpr(*expr.ternary.then_br);
-        TypeDesc b = checkExpr(*expr.ternary.else_br);
-        try {
-          ty = unifyTernaryBranches(a, b);
-        } catch (const FarError& e) {
-          throwAt(expr, e.what());
+        auto saved = locals_;
+        auto branch_const = const_locals_;
+        ConstBool cb = constBoolFromExpr(*expr.ternary.cond, const_locals_);
+        if (cb == ConstBool::True) {
+          ty = checkExpr(*expr.ternary.then_br);
+        } else if (cb == ConstBool::False) {
+          ty = checkExpr(*expr.ternary.else_br);
+        } else {
+          TypeDesc a = checkExpr(*expr.ternary.then_br);
+          locals_ = saved;
+          const_locals_ = branch_const;
+          TypeDesc b = checkExpr(*expr.ternary.else_br);
+          locals_ = saved;
+          const_locals_ = branch_const;
+          try {
+            ty = unifyTernaryBranches(a, b);
+          } catch (const FarError& e) {
+            throwAt(expr, e.what());
+          }
         }
+        locals_ = saved;
+        const_locals_ = branch_const;
         break;
       }
       case Expr::PrefixExprK: {
@@ -1019,6 +1871,7 @@ class TypeChecker {
         } else if (expr.prefix.op == "++" || expr.prefix.op == "--") {
           if (expr.prefix.operand->kind != Expr::Variable)
             throwAt(expr, "increment/decrement requires a variable");
+          clearConstLocal(expr.prefix.operand->var.name);
           ty = inner;
         } else {
           ty = inner;
@@ -1030,7 +1883,19 @@ class TypeChecker {
         if ((expr.postfix.op == "++" || expr.postfix.op == "--") &&
             expr.postfix.operand->kind != Expr::Variable)
           throwAt(expr, "increment/decrement requires a variable");
-        ty = inner;
+        if ((expr.postfix.op == "++" || expr.postfix.op == "--") &&
+            expr.postfix.operand->kind == Expr::Variable)
+          clearConstLocal(expr.postfix.operand->var.name);
+        if (expr.postfix.op == "!?") {
+          if (isOptionDesc(inner) && !inner.args.empty())
+            ty = inner.args[0];
+          else if (isPointerDesc(inner))
+            ty = inner.args[0];
+          else
+            throwAt(expr, "force unwrap requires optional or pointer type");
+        } else {
+          ty = inner;
+        }
         break;
       }
       case Expr::TypeUnaryExprK:
@@ -1039,6 +1904,10 @@ class TypeChecker {
                                                    : checkExpr(*expr.type_unary.value);
           if (expr.type_unary.has_type && expr.type_unary.value)
             checkExpr(*expr.type_unary.value);
+          if (isUserDesc(elem) || elem.form == TypeForm::Function)
+            throwAt(expr, "stackalloc does not support type " + typeDescName(elem));
+          if (elemSizeBytes(elem) <= 0)
+            throwAt(expr, "stackalloc element type has unknown size");
           ty = TypeDesc::pointer(elem);
         } else if (expr.type_unary.has_type) {
           if (expr.type_unary.op == "typeof")
@@ -1054,12 +1923,23 @@ class TypeChecker {
         }
         break;
       case Expr::IsExprK: {
-        checkExpr(*expr.is_expr.value);
+        TypeDesc scrut_ty = checkExpr(*expr.is_expr.value);
+        TypeDesc target = expr.is_expr.type;
+        if (isUserDesc(target)) {
+          const UserTypeDef* ut = obj_reg_.lookup(target.user_name);
+          if (!ut)
+            throwAt(expr, "unknown type in 'is' expression");
+        }
+        (void)scrut_ty;
         ty = TypeDesc::prim(FarTypeId::Bool);
         break;
       }
       case Expr::AsExprK: {
-        checkExpr(*expr.as_expr.value);
+        TypeDesc value_ty = checkExpr(*expr.as_expr.value);
+        if (!canCastTypes(value_ty, expr.as_expr.type) &&
+            !typeDescEquals(value_ty, expr.as_expr.type))
+          throwAt(expr, std::string("cannot cast from ") + typeDescName(value_ty) + " to " +
+                             typeDescName(expr.as_expr.type));
         ty = expr.as_expr.type;
         break;
       }
@@ -1101,6 +1981,17 @@ class TypeChecker {
           throw FarError(std::string("cannot cast from ") + typeDescName(expr.cast.value->type));
         if (isAggregateDesc(expr.cast.target) || isAggregateDesc(expr.cast.value->type))
           throw FarError("cannot cast aggregate types");
+        if (isUserDesc(expr.cast.value->type) && isPrimitiveDesc(expr.cast.target)) {
+          const UserTypeDef* ut = obj_reg_.lookup(expr.cast.value->type.user_name);
+          if (ut && (ut->kind == UserTypeKind::Enum || ut->kind == UserTypeKind::FlagsEnum) &&
+              isIntegerType(primitiveOf(expr.cast.target))) {
+            ty = expr.cast.target;
+            break;
+          }
+        }
+        if (!canCastTypes(expr.cast.value->type, expr.cast.target))
+          throw FarError(std::string("cannot cast from ") + typeDescName(expr.cast.value->type) +
+                         " to " + typeDescName(expr.cast.target));
         ty = expr.cast.target;
         break;
       case Expr::TypeConstExpr:
@@ -1177,7 +2068,8 @@ class TypeChecker {
         if (obj_ty.form == TypeForm::Tuple) {
           if (expr.member.member.size() >= 2 && expr.member.member[0] == '.' &&
               expr.member.member.substr(1).find_first_not_of("0123456789") == std::string::npos) {
-            size_t idx = static_cast<size_t>(std::stoll(expr.member.member.substr(1)));
+            size_t idx = static_cast<size_t>(
+                parseIntLiteral(expr.member.member.substr(1), expr.line, expr.col));
             if (idx >= obj_ty.args.size())
               throw FarError("tuple field index out of range");
             ty = obj_ty.args[idx];
@@ -1245,8 +2137,14 @@ class TypeChecker {
                          expr.union_variant.variant);
         if (expr.union_variant.args.size() != uv->fields.size())
           throw FarError("union constructor argument count mismatch");
-        for (auto& a : expr.union_variant.args)
-          checkExpr(*a);
+        if (uv->fields.size() > 8)
+          throw FarError("union variants with more than 8 fields are not supported");
+        for (size_t i = 0; i < expr.union_variant.args.size(); ++i) {
+          TypeDesc at = checkExpr(*expr.union_variant.args[i]);
+          rejectNarrowingCallArg(*expr.union_variant.args[i], at, uv->fields[i].type);
+          if (!canAssignTypes(at, uv->fields[i].type))
+            throwAt(expr, "union constructor argument type mismatch for field '" + uv->fields[i].name + "'");
+        }
         expr.union_variant.value = uv->value;
         ty = TypeDesc::user(td->name);
         break;
@@ -1287,6 +2185,8 @@ class TypeChecker {
       if (locals_.count(name))
         captures.push_back(name);
     }
+    if (captures.size() > 4)
+      throw FarError("closure captures at most 4 variables");
     std::vector<Param> prefixed;
     for (const auto& cap : captures) {
       Param cp;
@@ -1311,6 +2211,10 @@ class TypeChecker {
     lf.llvm_name = mangleFunction(lf);
     program_.synthetic_functions.push_back(std::move(lf));
     Function& stored = program_.synthetic_functions.back();
+    if (stored.type_params.empty()) {
+      inferUntypedParamTypes(stored);
+      inferReturnType(stored);
+    }
     expr.fn_lit.id = stored.lambda_id;
     std::vector<TypeDesc> ptypes;
     for (const auto& p : stored.params) {
@@ -1332,6 +2236,7 @@ class TypeChecker {
       throw FarError(fn_name + "() argument count mismatch");
     for (size_t i = 0; i < expr.method_call.args.size(); ++i) {
       TypeDesc at = checkExpr(*expr.method_call.args[i]);
+      rejectNarrowingCallArg(*expr.method_call.args[i], at, fn->params[i].type);
       if (!canAssignTypes(at, fn->params[i].type))
         throw FarError(fn_name + "() argument type mismatch");
     }
@@ -1354,6 +2259,7 @@ class TypeChecker {
       for (size_t i = 0; i < expr.method_call.args.size(); ++i) {
         TypeDesc at = checkExpr(*expr.method_call.args[i]);
         const Param& p = ctor->params[i + 1];
+        rejectNarrowingCallArg(*expr.method_call.args[i], at, p.type);
         if (!canAssignTypes(at, p.type))
           throw FarError(ut.name + "() constructor argument type mismatch for '" + p.name + "'");
       }
@@ -1365,6 +2271,7 @@ class TypeChecker {
       throw FarError(ut.name + "() expects " + std::to_string(ut.fields.size()) + " argument(s)");
     for (size_t i = 0; i < expr.method_call.args.size(); ++i) {
       TypeDesc at = checkExpr(*expr.method_call.args[i]);
+      rejectNarrowingCallArg(*expr.method_call.args[i], at, ut.fields[i].type);
       if (!canAssignTypes(at, ut.fields[i].type))
         throw FarError(ut.name + "() argument type mismatch for field '" + ut.fields[i].name + "'");
     }
@@ -1625,8 +2532,19 @@ class TypeChecker {
       const size_t nargs = userMethodCallArgCount(*m);
       if (expr.method_call.args.size() != nargs)
         throw FarError(expr.method_call.method + "() argument count mismatch");
-      for (size_t i = 0; i < expr.method_call.args.size(); ++i)
-        checkExpr(*expr.method_call.args[i]);
+      size_t param_base = 0;
+      if (!m->params.empty() && (m->params[0].name == "this" || m->params[0].name == "self"))
+        param_base = 1;
+      for (size_t i = 0; i < expr.method_call.args.size(); ++i) {
+        TypeDesc at = checkExpr(*expr.method_call.args[i]);
+        size_t pidx = param_base + i;
+        if (pidx < m->params.size()) {
+          rejectNarrowingCallArg(*expr.method_call.args[i], at, m->params[pidx].type);
+          if (!canAssignTypes(at, m->params[pidx].type))
+            throw FarError(expr.method_call.method + "() argument type mismatch for '" +
+                           m->params[pidx].name + "'");
+        }
+      }
       return m->return_type;
     }
     if (isCollectionDesc(obj_ty)) {
@@ -1659,7 +2577,9 @@ class TypeChecker {
       FarTypeId sc = aggregateScalar(ctor->ret);
       for (const auto& a : call.args) {
         TypeDesc at = checkExpr(*a.value);
-        if (!canAssignTypes(at, TypeDesc::prim(sc)) &&
+        TypeDesc expect = TypeDesc::prim(sc);
+        rejectNarrowingCallArg(*a.value, at, expect);
+        if (!canAssignTypes(at, expect) &&
             !(sc == FarTypeId::F32 && isPrim(at, FarTypeId::F64)))
           throw FarError(std::string("constructor ") + ctor->name + "() argument type mismatch");
       }
@@ -1674,8 +2594,12 @@ class TypeChecker {
           throw FarError(call.name + " requires type argument");
         if (call.args.size() != static_cast<size_t>(mc->nargs))
           throw FarError(call.name + "() argument count mismatch");
-        for (const auto& a : call.args)
-          checkExpr(*a.value);
+        TypeDesc elem_ty = call.type_args[0];
+        for (const auto& a : call.args) {
+          TypeDesc at = checkExpr(*a.value);
+          if (!canAssignTypes(at, elem_ty))
+            throw FarError(call.name + "() argument type mismatch");
+        }
         if (mc->form == TypeForm::Box)
           return TypeDesc::box(call.type_args[0]);
         if (mc->form == TypeForm::Rc)
@@ -1694,8 +2618,12 @@ class TypeChecker {
           throw FarError(call.name + " requires type argument");
         if (call.args.size() != static_cast<size_t>(cc->nargs))
           throw FarError(call.name + "() argument count mismatch");
-        for (const auto& a : call.args)
-          checkExpr(*a.value);
+        TypeDesc elem_ty = call.type_args[0];
+        for (const auto& a : call.args) {
+          TypeDesc at = checkExpr(*a.value);
+          if (!canAssignTypes(at, elem_ty))
+            throw FarError(call.name + "() argument type mismatch");
+        }
         if (cc->form == TypeForm::Channel)
           return TypeDesc::channel(call.type_args[0]);
         if (cc->form == TypeForm::Atomic)
@@ -1792,6 +2720,20 @@ class TypeChecker {
       checkExpr(*call.args[0].value);
       return TypeDesc::prim(FarTypeId::I64);
     }
+    if (auto suffix = enclosingMethodSuffix(current_fn_); suffix && call.name == *suffix) {
+      if (const BuiltinInfo* builtin = lookupBuiltin(call.name)) {
+        rejectDisallowedGlobalCall(call.name, current_fn_);
+        checkBuiltinArgs(builtin, call.args, [&](Expr& e) {
+          TypeDesc td = checkExpr(e);
+          if (td.form == TypeForm::Array || isCollectionHandle(td))
+            return FarTypeId::Arr;
+          if (isPrimitiveDesc(td))
+            return td.primitive;
+          return FarTypeId::I64;
+        });
+        return TypeDesc::prim(builtin->ret);
+      }
+    }
     if (fn_overloads_.count(call.name)) {
       bool callable = false;
       for (const Function* f : fn_overloads_[call.name]) {
@@ -1846,10 +2788,31 @@ class TypeChecker {
           throw FarError("cannot infer generic type arguments for " + call.name);
         }
         const UserTypeDef* mono = findOrCreateUserMono(program_, obj_reg_, *ut, gargs);
+        if (userTypeHasConstructor(*mono)) {
+          const UserMethod* ctor = lookupUserConstructor(*mono, call.args.size());
+          if (!ctor)
+            throw FarError(call.name + "() has no constructor matching " +
+                           std::to_string(call.args.size()) + " argument(s)");
+          const size_t nargs = userMethodCallArgCount(*ctor);
+          if (call.args.size() != nargs)
+            throw FarError(call.name + "() constructor expects " + std::to_string(nargs) +
+                           " argument(s)");
+          for (size_t i = 0; i < call.args.size(); ++i) {
+            TypeDesc at = checkExpr(*call.args[i].value);
+            const Param& p = ctor->params[i + 1];
+            rejectNarrowingCallArg(*call.args[i].value, at, p.type);
+            if (!canAssignTypes(at, p.type))
+              throw FarError(call.name + "() constructor argument type mismatch for '" + p.name +
+                             "'");
+          }
+          call.resolved_ctor = ctor;
+          return userTypeDesc(ut->name, gargs);
+        }
         if (call.args.size() != mono->fields.size())
           throw FarError(call.name + "() expects " + std::to_string(mono->fields.size()) + " argument(s)");
         for (size_t i = 0; i < call.args.size(); ++i) {
           TypeDesc at = checkExpr(*call.args[i].value);
+          rejectNarrowingCallArg(*call.args[i].value, at, mono->fields[i].type);
           if (!canAssignTypes(at, mono->fields[i].type))
             throw FarError(call.name + "() argument type mismatch");
         }
@@ -1858,8 +2821,13 @@ class TypeChecker {
       if (ut->kind == UserTypeKind::Exception) {
         if (call.args.size() != ut->fields.size())
           throw FarError(call.name + "() expects " + std::to_string(ut->fields.size()) + " argument(s)");
-        for (const auto& a : call.args)
-          checkExpr(*a.value);
+        for (size_t i = 0; i < call.args.size(); ++i) {
+          TypeDesc at = checkExpr(*call.args[i].value);
+          rejectNarrowingCallArg(*call.args[i].value, at, ut->fields[i].type);
+          if (!canAssignTypes(at, ut->fields[i].type))
+            throw FarError(call.name + "() argument type mismatch for field '" + ut->fields[i].name +
+                           "'");
+        }
         return TypeDesc::user(ut->name);
       }
       if (userTypeHasConstructor(*ut)) {
@@ -1873,6 +2841,7 @@ class TypeChecker {
         for (size_t i = 0; i < call.args.size(); ++i) {
           TypeDesc at = checkExpr(*call.args[i].value);
           const Param& p = ctor->params[i + 1];
+          rejectNarrowingCallArg(*call.args[i].value, at, p.type);
           if (!canAssignTypes(at, p.type))
             throw FarError(call.name + "() constructor argument type mismatch for '" + p.name + "'");
         }
@@ -1883,6 +2852,7 @@ class TypeChecker {
         throw FarError(call.name + "() expects " + std::to_string(ut->fields.size()) + " argument(s)");
       for (size_t i = 0; i < call.args.size(); ++i) {
         TypeDesc at = checkExpr(*call.args[i].value);
+        rejectNarrowingCallArg(*call.args[i].value, at, ut->fields[i].type);
         if (!canAssignTypes(at, ut->fields[i].type))
           throw FarError(call.name + "() argument type mismatch for field '" + ut->fields[i].name + "'");
       }
@@ -2002,32 +2972,71 @@ class TypeChecker {
         checkExpr(*a.value);
       return TypeDesc::range();
     }
+    std::vector<TypeDesc> arg_types;
     for (const auto& a : call.args)
-      checkExpr(*a.value);
-    if (annotated.form == TypeForm::Dict && annotated.args.size() == 2)
+      arg_types.push_back(checkExpr(*a.value));
+    auto check_homogeneous = [&](const TypeDesc& elem) {
+      for (size_t i = 0; i < call.args.size(); ++i) {
+        rejectNarrowingCallArg(*call.args[i].value, arg_types[i], elem);
+        if (!canAssignTypes(arg_types[i], elem) && !typeDescEquals(arg_types[i], elem))
+          throw FarError(call.name + "() argument type mismatch");
+      }
+      return elem;
+    };
+    if (annotated.form == TypeForm::Dict && annotated.args.size() == 2) {
+      if (call.args.size() % 2 != 0)
+        throw FarError("Dict() expects key/value pairs");
+      for (size_t i = 0; i + 1 < call.args.size(); i += 2) {
+        rejectNarrowingCallArg(*call.args[i].value, arg_types[i], annotated.args[0]);
+        rejectNarrowingCallArg(*call.args[i + 1].value, arg_types[i + 1], annotated.args[1]);
+        if (!canAssignTypes(arg_types[i], annotated.args[0]))
+          throw FarError("Dict() key type mismatch");
+        if (!canAssignTypes(arg_types[i + 1], annotated.args[1]))
+          throw FarError("Dict() value type mismatch");
+      }
       return annotated;
-    if (annotated.form == TypeForm::List && annotated.args.size() == 1)
+    }
+    if (annotated.form == TypeForm::List && annotated.args.size() == 1) {
+      check_homogeneous(annotated.args[0]);
       return annotated;
-    if (annotated.form == TypeForm::Set && annotated.args.size() == 1)
+    }
+    if (annotated.form == TypeForm::Set && annotated.args.size() == 1) {
+      check_homogeneous(annotated.args[0]);
       return annotated;
-    if (annotated.form == TypeForm::Queue && annotated.args.size() == 1)
+    }
+    if (annotated.form == TypeForm::Queue && annotated.args.size() == 1) {
+      check_homogeneous(annotated.args[0]);
       return annotated;
-    if (annotated.form == TypeForm::Stack && annotated.args.size() == 1)
+    }
+    if (annotated.form == TypeForm::Stack && annotated.args.size() == 1) {
+      check_homogeneous(annotated.args[0]);
       return annotated;
-    if (annotated.form == TypeForm::LinkedList && annotated.args.size() == 1)
+    }
+    if (annotated.form == TypeForm::LinkedList && annotated.args.size() == 1) {
+      check_homogeneous(annotated.args[0]);
       return annotated;
+    }
+    TypeDesc elem = arg_types.empty() ? defaultIntType() : arg_types[0];
+    for (size_t i = 1; i < arg_types.size(); ++i) {
+      if (typeDescEquals(elem, arg_types[i]))
+        continue;
+      if (isPrimitiveDesc(elem) && isPrimitiveDesc(arg_types[i]))
+        elem = promoteNumeric(elem, arg_types[i]);
+      else if (!canAssignTypes(arg_types[i], elem))
+        throw FarError(call.name + "() argument type mismatch");
+    }
     if (call.name == "List")
-      return TypeDesc::list(TypeDesc::prim(FarTypeId::I64));
+      return TypeDesc::list(elem);
     if (call.name == "Dict")
-      return TypeDesc::dict(TypeDesc::prim(FarTypeId::I64), TypeDesc::prim(FarTypeId::I64));
+      return TypeDesc::dict(defaultIntType(), defaultIntType());
     if (call.name == "Set")
-      return TypeDesc::set(TypeDesc::prim(FarTypeId::I64));
+      return TypeDesc::set(elem);
     if (call.name == "Queue")
-      return TypeDesc::queue(TypeDesc::prim(FarTypeId::I64));
+      return TypeDesc::queue(elem);
     if (call.name == "Stack")
-      return TypeDesc::stack(TypeDesc::prim(FarTypeId::I64));
+      return TypeDesc::stack(elem);
     if (call.name == "LinkedList")
-      return TypeDesc::linkedList(TypeDesc::prim(FarTypeId::I64));
+      return TypeDesc::linkedList(elem);
     return TypeDesc::prim(FarTypeId::I64);
   }
 };

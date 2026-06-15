@@ -4,9 +4,18 @@
 #include "error.h"
 #include "types.h"
 
+#include <climits>
 #include <sstream>
 
 namespace far {
+
+TypeDesc inferIntLiteralType(int64_t value, bool unsigned_decimal) {
+  if (unsigned_decimal)
+    return TypeDesc::prim(FarTypeId::U64);
+  if (value >= INT32_MIN && value <= INT32_MAX)
+    return defaultIntType();
+  return TypeDesc::prim(FarTypeId::I64);
+}
 
 TypeDesc TypeDesc::prim(FarTypeId id) {
   TypeDesc td;
@@ -269,11 +278,21 @@ TypeDesc pointeeOf(const TypeDesc& td) {
   throw FarError("type is not a pointer or reference");
 }
 
+TypeDesc resolveSubst(const std::unordered_map<std::string, TypeDesc>& sub, TypeDesc td) {
+  while (td.form == TypeForm::TypeVar) {
+    auto it = sub.find(td.type_var);
+    if (it == sub.end() || typeDescEquals(it->second, td))
+      return td;
+    td = it->second;
+  }
+  return td;
+}
+
 TypeDesc substituteTypeDesc(const TypeDesc& td, const std::unordered_map<std::string, TypeDesc>& sub) {
   if (td.form == TypeForm::TypeVar) {
     auto it = sub.find(td.type_var);
     if (it != sub.end())
-      return it->second;
+      return substituteTypeDesc(it->second, sub);
     return td;
   }
   TypeDesc out = td;
@@ -305,21 +324,32 @@ bool unifyTypeVar(const std::string& name, const TypeDesc& concrete,
 void unifyTypes(const TypeDesc& expected, const TypeDesc& actual,
                 std::unordered_map<std::string, TypeDesc>& out) {
   if (expected.form == TypeForm::TypeVar) {
-    unifyTypeVar(expected.type_var, actual, out);
+    if (!unifyTypeVar(expected.type_var, actual, out))
+      throw FarError("generic type argument mismatch for '" + expected.type_var + "'");
     return;
   }
   if (expected.form == TypeForm::Optional && !expected.args.empty()) {
-    unifyTypes(expected.args[0], actual, out);
+    if (actual.form == TypeForm::Optional && !actual.args.empty())
+      unifyTypes(expected.args[0], actual.args[0], out);
+    else
+      unifyTypes(expected.args[0], actual, out);
     return;
   }
   if (expected.form == TypeForm::User && actual.form == TypeForm::User) {
-    if (expected.user_name == actual.user_name && expected.args.size() == actual.args.size()) {
-      for (size_t i = 0; i < expected.args.size(); ++i)
-        unifyTypes(expected.args[i], actual.args[i], out);
-    }
+    if (expected.user_name != actual.user_name ||
+        expected.args.size() != actual.args.size())
+      throw FarError("generic type mismatch: " + typeDescName(expected) + " vs " +
+                     typeDescName(actual));
+    for (size_t i = 0; i < expected.args.size(); ++i)
+      unifyTypes(expected.args[i], actual.args[i], out);
     return;
   }
-  (void)actual;
+  if (typeDescEquals(expected, actual))
+    return;
+  if (canAssignTypes(actual, expected))
+    return;
+  throw FarError("generic type mismatch: cannot unify " + typeDescName(expected) + " with " +
+                 typeDescName(actual));
 }
 
 bool isPrimitiveDesc(const TypeDesc& td) { return td.form == TypeForm::Primitive; }
@@ -534,7 +564,8 @@ bool canAssignTypes(const TypeDesc& from, const TypeDesc& to) {
     return canAssignTypes(from.args[0], to.args[0]);
   if (to.form == TypeForm::Optional && !to.args.empty())
     return canAssignTypes(from, to.args[0]) ||
-           (isPrimitiveDesc(from) && from.primitive == FarTypeId::I64);
+           (from.form == TypeForm::Optional && !from.args.empty() &&
+            canAssignTypes(from.args[0], to.args[0]));
   if (from.form == TypeForm::Function && to.form == TypeForm::Function)
     return typeDescEquals(from, to);
   if (from.form == TypeForm::User && to.form == TypeForm::User)
@@ -546,7 +577,7 @@ bool canAssignTypes(const TypeDesc& from, const TypeDesc& to) {
       !to.args.empty())
     return canAssignTypes(from.args[0], to.args[0]);
   if (isPointerDesc(from) && isPointerDesc(to))
-    return canAssignTypes(from.args[0], to.args[0]) || typeDescEquals(from.args[0], to.args[0]);
+    return typeDescEquals(from.args[0], to.args[0]);
   if (isBorrowRefDesc(from) && isBorrowRefDesc(to))
     return typeDescEquals(from.args[0], to.args[0]);
   if (isMemoryHandleDesc(from) && isMemoryHandleDesc(to))
@@ -555,6 +586,24 @@ bool canAssignTypes(const TypeDesc& from, const TypeDesc& to) {
     return from.form == to.form && typeDescEquals(from.args[0], to.args[0]);
   if (isPrimitiveDesc(from) && isPrimitiveDesc(to))
     return canAssign(from.primitive, to.primitive);
+  return false;
+}
+
+bool canCastTypes(const TypeDesc& from, const TypeDesc& to) {
+  if (canAssignTypes(from, to))
+    return true;
+  if (!isPrimitiveDesc(from) || !isPrimitiveDesc(to))
+    return false;
+  FarTypeId fs = from.primitive;
+  FarTypeId ts = to.primitive;
+  if (fs == FarTypeId::Bool || ts == FarTypeId::Bool)
+    return isIntegerType(fs) || isIntegerType(ts) || fs == FarTypeId::Bool || ts == FarTypeId::Bool;
+  if (isFloatType(fs) && (isIntegerType(ts) || isFloatType(ts) || ts == FarTypeId::Char))
+    return true;
+  if (isIntegerType(fs) && (isFloatType(ts) || isIntegerType(ts) || ts == FarTypeId::Char))
+    return true;
+  if (fs == FarTypeId::Char || ts == FarTypeId::Char)
+    return isIntegerType(fs) || isIntegerType(ts) || fs == FarTypeId::Char || ts == FarTypeId::Char;
   return false;
 }
 
@@ -567,22 +616,77 @@ uint16_t typeTag(const TypeDesc& td) {
 }
 
 int elemSizeBytes(const TypeDesc& td) {
-  TypeDesc e = isPrimitiveDesc(td) ? td : td.args[0];
-  if (!isPrimitiveDesc(e))
+  if (isPrimitiveDesc(td)) {
+    FarTypeId p = td.primitive;
+    if (isAggregateType(p))
+      return typeInfo(p).bits / 8;
+    if (p == FarTypeId::I8 || p == FarTypeId::U8 || p == FarTypeId::Bool)
+      return 1;
+    if (p == FarTypeId::I16 || p == FarTypeId::U16 || p == FarTypeId::Char || p == FarTypeId::F16)
+      return 2;
+    if (p == FarTypeId::I32 || p == FarTypeId::U32 || p == FarTypeId::F32)
+      return 4;
+    if (p == FarTypeId::F64 || p == FarTypeId::I64 || p == FarTypeId::U64 || p == FarTypeId::String ||
+        p == FarTypeId::Ptr || p == FarTypeId::Ref || p == FarTypeId::Any)
+      return 8;
     return 8;
-  FarTypeId p = e.primitive;
-  if (isAggregateType(p))
-    return typeInfo(p).bits / 8;
-  if (p == FarTypeId::I8 || p == FarTypeId::U8 || p == FarTypeId::Bool)
-    return 1;
-  if (p == FarTypeId::I16 || p == FarTypeId::U16 || p == FarTypeId::Char)
-    return 2;
-  if (p == FarTypeId::I32 || p == FarTypeId::U32 || p == FarTypeId::F32)
-    return 4;
-  if (p == FarTypeId::F64 || p == FarTypeId::I64 || p == FarTypeId::U64 || p == FarTypeId::String ||
-      p == FarTypeId::Ptr || p == FarTypeId::Ref || p == FarTypeId::Any)
+  }
+  switch (td.form) {
+    case TypeForm::Array:
+    case TypeForm::FixedArray:
+    case TypeForm::List:
+    case TypeForm::Slice:
+    case TypeForm::Optional:
+    case TypeForm::Result:
+      return td.args.empty() ? 8 : elemSizeBytes(td.args[0]);
+    case TypeForm::Tuple: {
+      int sum = 0;
+      for (const auto& a : td.args)
+        sum += elemSizeBytes(a);
+      return sum > 0 ? sum : 8;
+    }
+    case TypeForm::User:
+      return 8;
+    default:
+      return 8;
+  }
+}
+
+int elemAlignBytes(const TypeDesc& td) {
+  if (isPrimitiveDesc(td)) {
+    FarTypeId p = td.primitive;
+    if (isAggregateType(p))
+      return typeInfo(p).bits / 8;
+    if (p == FarTypeId::I8 || p == FarTypeId::U8 || p == FarTypeId::Bool)
+      return 1;
+    if (p == FarTypeId::I16 || p == FarTypeId::U16 || p == FarTypeId::Char || p == FarTypeId::F16)
+      return 2;
+    if (p == FarTypeId::I32 || p == FarTypeId::U32 || p == FarTypeId::F32)
+      return 4;
     return 8;
-  return 8;
+  }
+  switch (td.form) {
+    case TypeForm::Array:
+    case TypeForm::FixedArray:
+    case TypeForm::List:
+    case TypeForm::Slice:
+    case TypeForm::Optional:
+    case TypeForm::Result:
+      return td.args.empty() ? 8 : elemAlignBytes(td.args[0]);
+    case TypeForm::Tuple: {
+      int max_a = 1;
+      for (const auto& a : td.args) {
+        int aa = elemAlignBytes(a);
+        if (aa > max_a)
+          max_a = aa;
+      }
+      return max_a;
+    }
+    case TypeForm::User:
+      return 8;
+    default:
+      return 8;
+  }
 }
 
 bool isHashableType(const TypeDesc& td) {

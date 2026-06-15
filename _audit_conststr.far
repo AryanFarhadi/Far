@@ -1,0 +1,5 @@
+﻿constexpr S = ""
+fun main() {
+  for c in S { x = undefined_should_skip }
+  return 0
+}

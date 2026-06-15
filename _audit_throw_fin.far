@@ -1,0 +1,9 @@
+fun test_throw_finally() -> i64 {
+  try {
+    throw 1
+  } finally {
+    print(2)
+  }
+  return 0
+}
+fun main() { print(test_throw_finally()); return 0 }

@@ -39,4 +39,6 @@ std::string extractSourceLine(const std::string& source, int line);
 void printDiagnostic(std::ostream& out, const FarError& err);
 void printDiagnostic(std::ostream& out, const std::exception& err);
 
+int64_t parseIntLiteral(const std::string& text, int line, int col, bool* unsigned_decimal = nullptr);
+
 }  // namespace far

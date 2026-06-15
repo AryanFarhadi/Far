@@ -1,0 +1,6 @@
+﻿import math
+fun main() {
+  x = math.nan()
+  print(x ?? 42)
+  return 0
+}

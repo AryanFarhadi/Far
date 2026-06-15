@@ -66,10 +66,10 @@ fun t09_rc_clone() -> i64 {
 fun t10_arena_reset() -> i64 {
   a = Arena(256)
   p1 = a.alloc(8)
-  unsafe { *p1 = 11 }
+  unsafe { *p1 = i8(11) }
   a.reset()
   p2 = a.alloc(8)
-  unsafe { *p2 = 22 }
+  unsafe { *p2 = i8(22) }
   return eq(*p2, 22)
 }
 fun t11_pool_reuse() -> i64 {

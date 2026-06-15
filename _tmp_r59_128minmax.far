@@ -1,0 +1,6 @@
+﻿fun main() {
+  print(i128.min)
+  print(i128.max)
+  print(u128.min)
+  return 0
+}

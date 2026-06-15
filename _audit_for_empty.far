@@ -1,0 +1,5 @@
+fun test_for_empty() -> i64 {
+  for i in 0..<0 { x = undefined_for_empty }
+  return 0
+}
+fun main() { print(test_for_empty()); return 0 }

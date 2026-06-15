@@ -1,0 +1,4 @@
+﻿fun main() {
+  print(comptime (u32(4294967295) + u32(1)))
+  return 0
+}

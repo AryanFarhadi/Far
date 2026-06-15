@@ -1,0 +1,2 @@
+constexpr X = comptime (1 << 63)
+fun main() { print(X); return 0 }

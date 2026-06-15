@@ -1,0 +1,5 @@
+fun main() {
+  x = comptime (63 << 1)
+  print(x)
+  return 0
+}

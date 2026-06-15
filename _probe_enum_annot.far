@@ -1,0 +1,6 @@
+enum E { A, B }
+fun main() {
+  x: E = E.A
+  print(x)
+  return 0
+}

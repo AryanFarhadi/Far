@@ -1,0 +1,7 @@
+fun test() -> i64 {
+  switch 1 {
+    case 1: return 1
+    default: return undefined_skip
+  }
+}
+fun main() { print(test()); return 0 }

@@ -1,0 +1,9 @@
+fun test_catch_dead() -> i64 {
+  try {
+    return 1
+  } catch (e) {
+    x = undefined_catch_dead
+  }
+  return 0
+}
+fun main() { print(test_catch_dead()); return 0 }

@@ -1,0 +1,1 @@
+﻿fun main() { s="hi"; print(s[0]); return 0 }

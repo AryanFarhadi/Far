@@ -1,0 +1,8 @@
+fun test() -> i64 {
+  x = 1
+  switch x {
+    case 1: return 1
+    default: return undefined_rt
+  }
+}
+fun main() { print(test()); return 0 }

@@ -1,0 +1,5 @@
+﻿fun main() {
+  x: f16 = -1.0f
+  if (x < 0.0f) { print(0) } else { print(1) }
+  return 0
+}

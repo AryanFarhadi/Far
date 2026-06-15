@@ -1,0 +1,1 @@
+fun main() { x: f16 = 1.0f; x += 0.5f; return 0 }

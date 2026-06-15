@@ -1,0 +1,33 @@
+﻿import math
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(id: i64, r: i64) -> i64 { if (r != 0) { print(id); return id } return 0 }
+fun t01_u64_max_lit() -> i64 { max: u64 = 18446744073709551615; return eq(max + 1, 0) }
+fun t03_comptime_u32_shr() -> i64 { v = comptime (1 >> 32); return eq(v, 0) }
+fun t04_break_in_finally() -> i64 {
+  i = 0
+  while (i < 3) {
+    try { i = i + 1; if (i == 2) { break } } finally { print(i) }
+  }
+  return eq(i, 2)
+}
+fun t05_continue_in_try() -> i64 {
+  sum = 0; i = 0
+  while (i < 5) {
+    i = i + 1
+    try { if (i == 3) { continue }; sum = sum + i } catch (e) { sum = sum + 100 } finally { }
+  }
+  return eq(sum, 12)
+}
+fun t06_f16_neg() -> i64 { x: f16 = -1.0f; if (x < 0.0f) { return 0 }; return 1 }
+fun t07_narrow_i32() -> i64 { x: i32 = 2147483647; y = x + 1; return eq(y, -2147483648) }
+fun t08_constexpr_local_arr_len() -> i64 { constexpr A = []; return eq(len(A), 0) }
+fun main() {
+  r = run(1, t01_u64_max_lit()); if (r != 0) { return r }
+  r = run(3, t03_comptime_u32_shr()); if (r != 0) { return r }
+  r = run(4, t04_break_in_finally()); if (r != 0) { return r }
+  r = run(5, t05_continue_in_try()); if (r != 0) { return r }
+  r = run(6, t06_f16_neg()); if (r != 0) { return r }
+  r = run(7, t07_narrow_i32()); if (r != 0) { return r }
+  r = run(8, t08_constexpr_local_arr_len()); if (r != 0) { return r }
+  print(0); return 0
+}

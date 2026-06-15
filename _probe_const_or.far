@@ -1,0 +1,6 @@
+﻿fun test_or() -> i64 {
+  a = 1
+  if (a || undefined_or_rhs) { return 1 }
+  return 0
+}
+fun main() { print(test_or()); return 0 }

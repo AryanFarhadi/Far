@@ -1,11 +1,11 @@
 fun main() {
-  a: short = 100
+  a: short = short(100)
   b: int = 200
   c: long = 300
-  d: byte = 255
-  e: ushort = 400
-  f: uint = 500
-  g: ulong = 600
+  d: byte = byte(255)
+  e: ushort = ushort(400)
+  f: uint = uint(500)
+  g: ulong = ulong(600)
   h: float = float(1.5f)
   i: double = 2.5
   k: str = "ok"
@@ -18,4 +18,4 @@ fun main() {
   if (len(k) != 2) { return 7 }
   print(0)
   return 0
-}
+}

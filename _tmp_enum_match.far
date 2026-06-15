@@ -1,0 +1,13 @@
+enum Color { Red, Green, Blue }
+fun main() {
+  s = Color.Green
+  r = 0
+  match s {
+    Color.Red => r = 1
+    Color.Green => r = 2
+    Color.Blue => r = 3
+    _ => r = 9
+  }
+  print(r)
+  return 0
+}

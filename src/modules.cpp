@@ -145,7 +145,7 @@ static bool functionSignaturesEqual(const Function& a, const Function& b) {
     if (mangleType(a.params[i].type) != mangleType(b.params[i].type))
       return false;
   }
-  return true;
+  return mangleType(a.return_type) == mangleType(b.return_type);
 }
 
 static bool isStdlibModuleName(const std::string& module_name) {
@@ -217,6 +217,28 @@ static bool hasMatchingOverload(const Program& program, const Function& fn) {
   return false;
 }
 
+static bool importerOwnsSymbolName(const Program& into, const std::string& name) {
+  for (const auto& fn : into.functions) {
+    if (fn.name == name && fn.module_name.empty())
+      return true;
+  }
+  for (const auto& td : into.user_types) {
+    if (td.name == name && td.module_name.empty())
+      return true;
+  }
+  return false;
+}
+
+static void ensureImportAlias(Program& into, const ImportDecl& imp, const std::string& module_name) {
+  if (imp.alias.empty())
+    return;
+  if (importerOwnsSymbolName(into, imp.alias))
+    throw FarError("import alias '" + imp.alias + "' shadows an existing symbol in this module");
+  auto it = into.module_aliases.find(imp.alias);
+  if (it != into.module_aliases.end() && it->second.module_name != module_name)
+    throw FarError("import alias '" + imp.alias + "' already bound to another module");
+}
+
 static void mergeFunction(Program& into, Function fn, const ImportDecl& imp, const std::string& module_name) {
   if (isStdlibModuleName(module_name))
     return;
@@ -227,25 +249,43 @@ static void mergeFunction(Program& into, Function fn, const ImportDecl& imp, con
   fn.name = importLocalName(imp, fn.name);
   fn.link_public = imp.alias.empty();
   if (!imp.alias.empty()) {
+    ensureImportAlias(into, imp, module_name);
     into.module_aliases[imp.alias].module_name = module_name;
     into.module_aliases[imp.alias].symbols[fn.name] = fn.name;
   }
   into.functions.push_back(std::move(fn));
 }
 
+static bool hasMatchingType(const Program& program, const UserTypeDef& td,
+                            const std::string& module_name) {
+  for (const auto& t : program.user_types) {
+    if (t.module_name == module_name && t.name == td.name)
+      return true;
+  }
+  return false;
+}
+
 static void mergeType(Program& into, UserTypeDef td, const ImportDecl& imp, const std::string& module_name) {
   if (!importWantsSymbol(imp, td.name))
     return;
-  if (!imp.alias.empty() && !isStdlibTypeModule(stdlibModuleFlatName(module_name))) {
-    into.module_aliases[imp.alias].module_name = module_name;
-    into.module_aliases[imp.alias].symbols[td.name] = td.name;
+  const std::string local_name = importLocalName(imp, td.name);
+  for (const auto& t : into.user_types) {
+    if (t.module_name == module_name && t.name == local_name)
+      return;
   }
+  if (!imp.alias.empty() && !isStdlibTypeModule(stdlibModuleFlatName(module_name))) {
+    ensureImportAlias(into, imp, module_name);
+    into.module_aliases[imp.alias].module_name = module_name;
+    into.module_aliases[imp.alias].symbols[local_name] = td.name;
+  }
+  td.name = local_name;
   into.user_types.push_back(std::move(td));
 }
 
 static void bindModuleAlias(Program& into, const ImportDecl& imp, const std::string& module_name) {
   if (imp.alias.empty())
     return;
+  ensureImportAlias(into, imp, module_name);
   ModuleAlias& bind = into.module_aliases[imp.alias];
   bind.module_name = module_name;
   const std::string flat = stdlibModuleFlatName(module_name);

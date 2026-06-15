@@ -1,0 +1,7 @@
+﻿fun main() {
+  x = comptime (u64(3) * u64(2))
+  print(x)
+  y: u64 = comptime (u64(3) * u64(2))
+  print(y)
+  return 0
+}

@@ -1,0 +1,15 @@
+﻿fun main() {
+  sum = 0
+  i = 0
+  while (i < 5) {
+    i = i + 1
+    try {
+      if (i == 3) { continue }
+      sum = sum + i
+    } catch (e) {
+      sum = sum + 100
+    }
+  }
+  print(sum)
+  return 0
+}

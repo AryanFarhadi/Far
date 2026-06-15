@@ -1,0 +1,8 @@
+fun main() {
+  d: Dict<i64,i64> = Dict<i64,i64>()
+  d.set(5, 0)
+  v = d.get(99)
+  if (v == 0 && !d.contains_key(99)) { print(0); return 0 }
+  print(1)
+  return 1
+}

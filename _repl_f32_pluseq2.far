@@ -1,0 +1,6 @@
+﻿fun main() {
+  x: f32 = 1.0f
+  x += 0.5f
+  print(x)
+  return 0
+}

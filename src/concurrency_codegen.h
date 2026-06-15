@@ -23,7 +23,7 @@ std::string emitConcMethod(ConcCodegenCtx ctx, const MethodCall& call, const Typ
                            const std::string& recv_val);
 void emitConcDrop(ConcCodegenCtx ctx, TypeForm form, const std::string& handle);
 std::string emitParallelFor(ConcCodegenCtx ctx, const std::string& fn_sym, const std::string& start,
-                            const std::string& end);
+                            const std::string& end, const std::string& closure = "");
 std::string emitActorMethod(ConcCodegenCtx ctx, const MethodCall& call, const std::string& recv_val);
 std::string emitActorConstruct(ConcCodegenCtx ctx, const std::string& handler_sym, const std::string& init_val);
 

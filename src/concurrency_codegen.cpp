@@ -91,10 +91,12 @@ std::string emitConcMethod(ConcCodegenCtx ctx, const MethodCall& call, const Typ
       break;
     }
     case ConcMethodId::Submit: {
-      std::string fn = ctx.emit_expr(*call.args[0]);
+      std::string fn_i64 = ctx.emit_expr(*call.args[0]);
+      std::string fn_ptr = ctx.fresh("fnp");
       std::string arg = ctx.emit_expr(*call.args[1]);
-      ctx.out << "  %" << tmp << " = call i64 @far_threadpool_submit(i64 " << recv_val << ", i8* "
-              << fn << ", i64 " << arg << ")\n";
+      ctx.out << "  %" << fn_ptr << " = inttoptr i64 " << fn_i64 << " to i8*\n";
+      ctx.out << "  %" << tmp << " = call i64 @far_threadpool_submit(i64 " << recv_val << ", i8* %"
+              << fn_ptr << ", i64 " << arg << ")\n";
       break;
     }
     case ConcMethodId::Shutdown:
@@ -138,16 +140,24 @@ void emitConcDrop(ConcCodegenCtx ctx, TypeForm form, const std::string& handle) 
     case TypeForm::Channel:
       ctx.out << "  call void @far_channel_drop(i64 " << handle << ")\n";
       break;
+    case TypeForm::Task:
+      ctx.out << "  call void @far_await(i64 " << handle << ")\n";
+      break;
     default:
       break;
   }
 }
 
 std::string emitParallelFor(ConcCodegenCtx ctx, const std::string& fn_sym, const std::string& start,
-                            const std::string& end) {
+                            const std::string& end, const std::string& closure) {
   std::string tmp = ctx.fresh("pfor");
-  ctx.out << "  %" << tmp << " = call i64 @far_parallel_for(i8* bitcast (i64 (i64)* @" << fn_sym
-          << " to i8*), i64 " << start << ", i64 " << end << ")\n";
+  if (closure.empty()) {
+    ctx.out << "  %" << tmp << " = call i64 @far_parallel_for(i8* bitcast (i64 (i64)* @" << fn_sym
+            << " to i8*), i64 " << start << ", i64 " << end << ")\n";
+  } else {
+    ctx.out << "  %" << tmp << " = call i64 @far_parallel_for_cl(i64 " << closure << ", i64 " << start
+            << ", i64 " << end << ")\n";
+  }
   return "%" + tmp;
 }
 

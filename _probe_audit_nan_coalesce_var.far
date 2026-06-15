@@ -1,0 +1,6 @@
+fun main() {
+  z: f64 = 0.0
+  x: f64 = 1.0 / z
+  print(x ?? 42.0)
+  return 0
+}

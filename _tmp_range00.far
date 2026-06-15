@@ -1,0 +1,5 @@
+﻿fun test() -> i64 {
+  for i in 0..0 { print(i) }
+  return 0
+}
+fun main() { test(); return 0 }

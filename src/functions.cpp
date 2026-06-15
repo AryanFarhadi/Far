@@ -3,6 +3,7 @@
 #include "error.h"
 #include "generics.h"
 #include "type_desc.h"
+#include "types.h"
 
 #include <sstream>
 
@@ -165,6 +166,17 @@ static BindResult tryBind(const Function& fn, const Call& call,
                      typeDescName(v->type);
           return br;
         }
+        if (isPrimitiveDesc(elem) && isPrimitiveDesc(v->type) &&
+            isNarrowingIntegerAssign(v->type.primitive, elem.primitive)) {
+          br.error = "implicit narrowing from " + typeDescName(v->type) + " to " + typeDescName(elem) +
+                     " in call to '" + fn.name + "'; use an explicit cast";
+          return br;
+        }
+        if (isPrimitiveDesc(elem) && isIntegerType(elem.primitive) &&
+            !intLiteralExprFitsType(*v, elem.primitive)) {
+          br.error = "integer literal out of range for variadic parameter in call to '" + fn.name + "'";
+          return br;
+        }
       }
       continue;
     }
@@ -178,6 +190,18 @@ static BindResult tryBind(const Function& fn, const Call& call,
       br.error = "argument type mismatch in call to '" + fn.name + "': parameter '" +
                  fn.params[i].name + "' expected " + typeDescName(expect) + ", got " +
                  typeDescName(got);
+      return br;
+    }
+    if (isPrimitiveDesc(got) && isPrimitiveDesc(expect) &&
+        isNarrowingIntegerAssign(got.primitive, expect.primitive)) {
+      br.error = "implicit narrowing from " + typeDescName(got) + " to " + typeDescName(expect) +
+                 " in call to '" + fn.name + "'; use an explicit cast";
+      return br;
+    }
+    if (isPrimitiveDesc(expect) && isIntegerType(expect.primitive) &&
+        !intLiteralExprFitsType(*br.args[i], expect.primitive)) {
+      br.error = "integer literal out of range for parameter '" + fn.params[i].name + "' in call to '" +
+                 fn.name + "'";
       return br;
     }
   }
@@ -226,7 +250,7 @@ bool inferGenericArgs(const Function& tmpl, const Call& call,
   }
   out.clear();
   for (const auto& tp : tmpl.type_params)
-    out.push_back(sub.at(tp.name));
+    out.push_back(resolveSubst(sub, sub.at(tp.name)));
   return true;
 }
 

@@ -1,0 +1,2 @@
+constexpr X = comptime -9223372036854775808
+fun main() { print(X); return 0 }

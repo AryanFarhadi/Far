@@ -1,0 +1,8 @@
+fun test_switch_runtime() -> i64 {
+  x = 1
+  switch x {
+    default: return 0
+    case 1: return 1
+  }
+}
+fun main() { print(test_switch_runtime()); return 0 }

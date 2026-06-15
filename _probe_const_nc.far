@@ -1,0 +1,5 @@
+﻿fun test_nc() -> i64 {
+  x = 1
+  return x ?? undefined_nc
+}
+fun main() { print(test_nc()); return 0 }

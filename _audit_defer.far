@@ -1,0 +1,8 @@
+fun test_defer_dead() -> i64 {
+  flag = 0
+  if (flag) {
+    defer print(99)
+  }
+  return 0
+}
+fun main() { print(test_defer_dead()); return 0 }

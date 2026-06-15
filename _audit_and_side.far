@@ -1,0 +1,6 @@
+fun test_and_side() -> i64 {
+  x = 0
+  if (x && (x = 1)) { return 1 }
+  return x
+}
+fun main() { print(test_and_side()); return 0 }

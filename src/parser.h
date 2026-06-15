@@ -36,6 +36,13 @@ private:
   std::vector<TypeParam> current_type_params_;
   std::string current_namespace_;
   std::unordered_set<std::string> macro_names_;
+  int parse_depth_ = 0;
+  bool pending_type_closing_gt_ = false;
+
+  void pushParseDepth(int line, int col);
+  bool matchTypeClosingGt();
+  void expectTypeClosingGt();
+  void popParseDepth();
 
   Visibility parseVisibility();
   MacroDef parseMacroDecl();

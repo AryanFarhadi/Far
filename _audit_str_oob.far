@@ -1,0 +1,5 @@
+fun test_str_idx_oob() -> i64 {
+  s = "ab"
+  return int(s[99])
+}
+fun main() { print(test_str_idx_oob()); return 0 }

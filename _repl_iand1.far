@@ -1,0 +1,4 @@
+﻿fun main() {
+  if (1 && undefined_in_and) { return 1 }
+  return 0
+}

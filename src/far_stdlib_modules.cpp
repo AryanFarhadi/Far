@@ -499,6 +499,7 @@ public class math {
   public static fun round(x: f64) -> f64 { return round(x) }
   public static fun trunc(x: f64) -> f64 { return trunc(x) }
   public static fun fabs(x: f64) -> f64 { return fabs(x) }
+  public static fun nan() -> f64 { return nan() }
   public static fun fmod(x: f64, y: f64) -> f64 { return fmod(x, y) }
   public static fun copysign(x: f64, y: f64) -> f64 { return copysign(x, y) }
   public static fun pi() -> f64 { return pi() }

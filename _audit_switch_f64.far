@@ -1,0 +1,8 @@
+fun test_switch_type() -> i64 {
+  x: f64 = 1.0
+  switch x {
+    case 1: return 1
+    default: return 0
+  }
+}
+fun main() { print(test_switch_type()); return 0 }

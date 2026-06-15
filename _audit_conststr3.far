@@ -1,0 +1,6 @@
+﻿constexpr S: string = ""
+fun main() {
+  for c in S { x = 1 }
+  print(len(S))
+  return 0
+}

@@ -1,0 +1,1 @@
+﻿fun main() { print(u64(18446744073709551615)); print(u64.max); return 0 }

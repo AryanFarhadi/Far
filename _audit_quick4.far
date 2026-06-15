@@ -1,0 +1,1 @@
+﻿fun main() { x: f32 = f64(1.5); print(x); return 0 }

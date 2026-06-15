@@ -1,0 +1,4 @@
+﻿fun main() {
+  try { throw 1 } finally { print(1) }
+  return 0
+}

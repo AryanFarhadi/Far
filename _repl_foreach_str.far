@@ -1,0 +1,4 @@
+﻿fun main() {
+  for c in "" { y = undefined_str_foreach }
+  return 0
+}

@@ -1,0 +1,6 @@
+﻿constexpr N = 0
+fun main() {
+  print(N)
+  print(typeof(N))
+  return 0
+}

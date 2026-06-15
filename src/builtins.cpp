@@ -64,6 +64,7 @@ static const BuiltinInfo kBuiltins[] = {
     B1("fabs", "far_fabs", D, D),
     B2("fmod", "far_fmod", D, D, D),
     B2("copysign", "far_copysign", D, D, D),
+    B0("nan", "far_nan", D),
 
     // constants
     B0("pi", "far_pi", D),

@@ -1,0 +1,1 @@
+fun main() { print(comptime (0.0/0.0 ?? 42.0)); return 0 }

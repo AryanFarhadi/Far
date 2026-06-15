@@ -1,0 +1,9 @@
+fun test() -> i64 {
+  try {
+    throw 1
+  } catch (e) {
+    return 2
+  }
+  return 0
+}
+fun main() { print(test()); return 0 }

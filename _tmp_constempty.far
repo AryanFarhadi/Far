@@ -1,0 +1,5 @@
+﻿constexpr EMPTY = []
+fun main() {
+  for x in EMPTY { y = undefined }
+  return 0
+}

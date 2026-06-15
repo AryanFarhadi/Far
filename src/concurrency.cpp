@@ -164,6 +164,7 @@ void declareConcurrencyRuntime(std::ostringstream& out) {
   out << "declare i64 @far_lfqueue_pop(i64)\n";
   out << "declare void @far_lfqueue_drop(i64)\n";
   out << "declare i64 @far_parallel_for(i8*, i64, i64)\n";
+  out << "declare i64 @far_parallel_for_cl(i64, i64, i64)\n";
   out << "declare i64 @far_actor_spawn(i8*, i64)\n";
   out << "declare void @far_actor_tell(i64, i64)\n";
   out << "declare i64 @far_actor_ask(i64, i64)\n";

@@ -22,6 +22,7 @@ const EnumVariant* lookupVariant(const UserTypeDef& td, const std::string& name)
 
 void declarePatternRuntime(std::ostringstream& out) {
   out << "declare i64 @far_union_new(i64, i64, i64, i64, i64, i64, i64, i64, i64)\n";
+  out << "declare void @far_union_drop(i64)\n";
   out << "declare i64 @far_union_tag(i64)\n";
   out << "declare i64 @far_union_field(i64, i64)\n";
 }

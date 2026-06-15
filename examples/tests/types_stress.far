@@ -16,7 +16,7 @@ fun fib_typed(n: i32) -> i32 {
   if (n < 2) {
     return n
   }
-  return fib_typed(n - 1) + fib_typed(n - 2)
+  return fib_typed(i32(n - 1)) + fib_typed(i32(n - 2))
 }
 fun clamp_u8(x: i32) -> u8 {
   if (x < 0) {
@@ -28,12 +28,12 @@ fun clamp_u8(x: i32) -> u8 {
   return u8(x)
 }
 fun main() {
-  print(sum_typed(50))
-  print(fib_typed(10))
+  print(sum_typed(i32(50)))
+  print(fib_typed(i32(10)))
   print(clamp_u8(-10))
   print(clamp_u8(500))
   print(clamp_u8(128))
-  print(math.twice(50))
+  print(math.twice(i64(50)))
   print(math.twice(i32(21)))
   arr = [u8(1), u8(2), u8(3)]
   print(len(arr))

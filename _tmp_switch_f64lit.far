@@ -1,0 +1,4 @@
+﻿fun main() {
+  switch 1.0 { case 1: print(1); default: print(0) }
+  return 0
+}

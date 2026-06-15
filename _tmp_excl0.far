@@ -1,0 +1,7 @@
+﻿fun test() -> i64 {
+  start = 0
+  end = 0
+  for i in start..<end { x = undefined_exclusive }
+  return 0
+}
+fun main() { test(); return 0 }

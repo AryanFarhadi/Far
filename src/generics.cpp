@@ -45,10 +45,21 @@ bool typeSatisfiesTrait(const TypeDesc& ty, const std::string& trait_name, const
   for (const auto& req : trait->methods) {
     bool found = false;
     for (const auto& m : td->methods) {
-      if (m.name == req.name) {
-        found = true;
-        break;
+      if (m.name != req.name)
+        continue;
+      if (m.params.size() != req.params.size())
+        continue;
+      bool params_ok = true;
+      for (size_t i = 0; i < req.params.size(); ++i) {
+        if (!typeDescEquals(m.params[i].type, req.params[i].type)) {
+          params_ok = false;
+          break;
+        }
       }
+      if (!params_ok || !typeDescEquals(m.return_type, req.return_type))
+        continue;
+      found = true;
+      break;
     }
     if (!found)
       return false;
@@ -77,11 +88,27 @@ bool inferUserTypeArgs(const UserTypeDef& tmpl, const Call& call,
     for (size_t i = 0; i < tmpl.type_params.size(); ++i)
       sub[tmpl.type_params[i].name] = call.type_args[i];
   } else {
-    if (call.args.size() != tmpl.fields.size())
+    size_t expected_args = tmpl.fields.size();
+    const UserMethod* ctor = nullptr;
+    if (userTypeHasConstructor(tmpl)) {
+      ctor = lookupUserConstructor(tmpl, call.args.size());
+      if (!ctor) {
+        for (const auto& m : tmpl.methods) {
+          if (m.is_constructor && userMethodCallArgCount(m) == call.args.size()) {
+            ctor = &m;
+            break;
+          }
+        }
+      }
+      if (ctor)
+        expected_args = userMethodCallArgCount(*ctor);
+    }
+    if (call.args.size() != expected_args)
       return false;
-    for (size_t i = 0; i < tmpl.fields.size(); ++i) {
+    for (size_t i = 0; i < call.args.size(); ++i) {
       TypeDesc arg_t = type_of_expr(*call.args[i].value);
-      unifyTypes(tmpl.fields[i].type, arg_t, sub);
+      TypeDesc param_ty = ctor ? ctor->params[i + 1].type : tmpl.fields[i].type;
+      unifyTypes(param_ty, arg_t, sub);
     }
     for (const auto& tp : tmpl.type_params) {
       if (!sub.count(tp.name))
@@ -90,7 +117,7 @@ bool inferUserTypeArgs(const UserTypeDef& tmpl, const Call& call,
   }
   out.clear();
   for (const auto& tp : tmpl.type_params)
-    out.push_back(sub.at(tp.name));
+    out.push_back(resolveSubst(sub, sub.at(tp.name)));
   return true;
 }
 
@@ -211,12 +238,19 @@ const UserTypeDef* findOrCreateUserMono(Program& program, ObjectRegistry& reg, c
 const UserTypeDef* resolveUserType(const TypeDesc& ty, ObjectRegistry& reg, Program& program) {
   if (!isUserDesc(ty))
     return nullptr;
-  if (ty.args.empty())
-    return reg.lookup(ty.user_name);
+  const UserTypeDef* tmpl = reg.lookup(ty.user_name);
+  if (ty.args.empty()) {
+    if (tmpl && !tmpl->type_params.empty())
+      throw FarError("type '" + ty.user_name + "' requires type arguments");
+    return tmpl;
+  }
+  if (!tmpl)
+    throw FarError("unknown type '" + ty.user_name + "'");
+  if (tmpl && !tmpl->type_params.empty() && ty.args.size() != tmpl->type_params.size())
+    throw FarError("wrong number of type arguments for '" + ty.user_name + "'");
   const UserTypeDef* mono = reg.lookup(userTypeKey(ty));
   if (mono)
     return mono;
-  const UserTypeDef* tmpl = reg.lookup(ty.user_name);
   if (!tmpl || tmpl->type_params.empty())
     return tmpl;
   return findOrCreateUserMono(program, reg, *tmpl, ty.args);

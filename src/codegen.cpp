@@ -1,6 +1,7 @@
 #include "codegen.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "target.h"
 
@@ -47,6 +48,7 @@ namespace far {
 static const char* I64 = "i64";
 static const char* F64 = "double";
 static const char* F32 = "float";
+static const char* F16 = "half";
 
 static const char* llvmAbiType(FarTypeId id) { return typeInfo(id).llvm; }
 
@@ -91,6 +93,14 @@ static const char* slotLlvmTypeDesc(const TypeDesc& td) {
 static bool usesFloatStorage(FarTypeId id) { return isFloatType(id); }
 
 
+
+static bool isUnsignedTypeDesc(const TypeDesc& td) {
+  return isPrimitiveDesc(td) && isIntegerType(td.primitive) && !typeInfo(td.primitive).is_signed;
+}
+
+static bool binOpUsesUnsigned(const TypeDesc& lt, const TypeDesc& rt) {
+  return isUnsignedTypeDesc(lt) || isUnsignedTypeDesc(rt);
+}
 
 static const std::unordered_map<std::string, std::string> cmpOps = {
 
@@ -217,6 +227,7 @@ public:
     out_ << "declare void @far_print_f64(double)\n";
 
     out_ << "declare i8* @far_i64_to_str(i64)\n";
+    out_ << "declare i8* @far_u64_to_str(i64)\n";
     out_ << "declare i64 @far_str_to_i64(i8*)\n";
     out_ << "declare double @far_str_to_f64(i8*)\n";
 
@@ -296,6 +307,17 @@ private:
   std::string pending_ret_flag_;
   std::string pending_ret_val_;
   bool pending_ret_init_ = false;
+  const Return* pending_ret_deferred_ = nullptr;
+
+  std::string pending_jump_kind_;
+  bool pending_jump_init_ = false;
+  std::string pending_break_label_;
+  std::string pending_continue_label_;
+
+  std::string pending_throw_flag_;
+  std::string pending_throw_tag_;
+  std::string pending_throw_val_;
+  bool pending_throw_init_ = false;
 
   std::unordered_map<std::string, const Function*> fn_by_llvm_;
   std::unordered_map<std::string, std::vector<const Function*>> fn_by_name_;
@@ -317,6 +339,10 @@ private:
   }
 
   static std::string formatDoubleLiteral(double value) {
+    if (std::isnan(value))
+      return std::signbit(value) ? "0xFFF8000000000000" : "0x7FF8000000000000";
+    if (std::isinf(value))
+      return value > 0.0 ? "0x7FF0000000000000" : "0xFFF0000000000000";
     std::ostringstream ss;
     ss << std::setprecision(17) << value;
     std::string lit = ss.str();
@@ -372,20 +398,29 @@ private:
       if (to == FarTypeId::F32) {
         std::string src = val;
         if (from != FarTypeId::F32 && from != FarTypeId::F64) {
-          std::string conv = fresh();
-          out_ << "  %" << conv << " = sitofp " << I64 << " " << val << " to " << F64 << "\n";
-          src = "%" + conv;
+          src = emitIntToF64(from, val);
         }
         std::string tmp = fresh();
         out_ << "  %" << tmp << " = fptrunc " << F64 << " " << src << " to " << F32 << "\n";
         return "%" + tmp;
       }
-      if (!isFloatType(from)) {
-        std::string tmp = fresh();
-        out_ << "  %" << tmp << " = sitofp " << I64 << " " << val << " to " << F64 << "\n";
-        return "%" + tmp;
-      }
+      if (!isFloatType(from))
+        return emitIntToF64(from, val);
       return val;
+    }
+    if (isIntegerType(to) && isFloatType(from)) {
+      std::string src = val;
+      if (from == FarTypeId::F32) {
+        std::string ext = fresh();
+        out_ << "  %" << ext << " = fpext " << F32 << " " << val << " to " << F64 << "\n";
+        src = "%" + ext;
+      }
+      std::string tmp = fresh();
+      if (isIntegerType(to) && !typeInfo(to).is_signed)
+        out_ << "  %" << tmp << " = fptoui " << F64 << " " << src << " to " << I64 << "\n";
+      else
+        out_ << "  %" << tmp << " = fptosi " << F64 << " " << src << " to " << I64 << "\n";
+      return "%" + tmp;
     }
     if (to == FarTypeId::Bool) {
       std::string tmp = fresh();
@@ -407,16 +442,38 @@ private:
     return "%" + tmp;
   }
 
+  std::string emitIntToF64(FarTypeId from, const std::string& val) {
+    std::string tmp = fresh();
+    if (isIntegerType(from) && !typeInfo(from).is_signed)
+      out_ << "  %" << tmp << " = uitofp " << I64 << " " << val << " to " << F64 << "\n";
+    else
+      out_ << "  %" << tmp << " = sitofp " << I64 << " " << val << " to " << F64 << "\n";
+    return "%" + tmp;
+  }
+
+  std::string emitIntToF64Desc(const TypeDesc& from, const std::string& val) {
+    if (isPrimitiveDesc(from))
+      return emitIntToF64(from.primitive, val);
+    return emitIntToF64(FarTypeId::I64, val);
+  }
+
+  std::string emitF64ToInt(FarTypeId to, const std::string& val) {
+    std::string tmp = fresh();
+    if (isIntegerType(to) && !typeInfo(to).is_signed)
+      out_ << "  %" << tmp << " = fptoui " << F64 << " " << val << " to " << I64 << "\n";
+    else
+      out_ << "  %" << tmp << " = fptosi " << F64 << " " << val << " to " << I64 << "\n";
+    return "%" + tmp;
+  }
+
   std::string emitCastValue(FarTypeId from, FarTypeId to, const std::string& val) {
     if (from == to)
       return val;
     if (isFloatType(to)) {
       std::string src = val;
-      if (!isFloatType(from)) {
-        std::string tmp = fresh();
-        out_ << "  %" << tmp << " = sitofp " << I64 << " " << val << " to " << F64 << "\n";
-        src = "%" + tmp;
-      } else if (from == FarTypeId::F32) {
+      if (!isFloatType(from))
+        src = emitIntToF64(from, val);
+      else if (from == FarTypeId::F32) {
         if (!val.empty() && val[0] == '%')
           src = val;
         else {
@@ -424,6 +481,21 @@ private:
           out_ << "  %" << tmp << " = fpext " << F32 << " " << val << " to " << F64 << "\n";
           src = "%" + tmp;
         }
+      } else if (from == FarTypeId::F16) {
+        if (!val.empty() && val[0] == '%')
+          src = val;
+        else {
+          std::string tmp = fresh();
+          out_ << "  %" << tmp << " = fpext " << F16 << " " << val << " to " << F64 << "\n";
+          src = "%" + tmp;
+        }
+      }
+      if (to == FarTypeId::F16) {
+        std::string tmp = fresh();
+        out_ << "  %" << tmp << " = fptrunc " << F64 << " " << src << " to " << F16 << "\n";
+        std::string as_d = fresh();
+        out_ << "  %" << as_d << " = fpext " << F16 << " %" << tmp << " to " << F64 << "\n";
+        return "%" + as_d;
       }
       if (to == FarTypeId::F32) {
         std::string tmp = fresh();
@@ -444,10 +516,17 @@ private:
           out_ << "  %" << tmp << " = fpext " << F32 << " " << val << " to " << F64 << "\n";
           src = "%" + tmp;
         }
+      } else if (from == FarTypeId::F16) {
+        if (!val.empty() && val[0] == '%')
+          src = val;
+        else {
+          std::string tmp = fresh();
+          out_ << "  %" << tmp << " = fpext " << F16 << " " << val << " to " << F64 << "\n";
+          src = "%" + tmp;
+        }
       }
-      std::string as_i = fresh();
-      out_ << "  %" << as_i << " = fptosi " << F64 << " " << src << " to " << I64 << "\n";
-      return emitCastValue(FarTypeId::I64, to, "%" + as_i);
+      std::string as_i = emitF64ToInt(to, src);
+      return emitCastValue(FarTypeId::I64, to, as_i);
     }
     if (to == FarTypeId::Bool) {
       std::string tmp = fresh();
@@ -500,6 +579,8 @@ private:
       out_ << "  %" << str << " = call i8* @far_f64_to_str(double %" << promoted << ")\n";
     } else if (isPrimTy(from, FarTypeId::F64)) {
       out_ << "  %" << str << " = call i8* @far_f64_to_str(double " << val << ")\n";
+    } else if (isPrimitiveDesc(from) && isIntegerType(from.primitive) && !typeInfo(from.primitive).is_signed) {
+      out_ << "  %" << str << " = call i8* @far_u64_to_str(" << I64 << " " << val << ")\n";
     } else {
       out_ << "  %" << str << " = call i8* @far_i64_to_str(" << I64 << " " << val << ")\n";
     }
@@ -617,6 +698,17 @@ private:
 
       if (terminated) return;
 
+      if (++stmt_depth_ > 512)
+        throw FarError("codegen statement depth exceeded");
+      struct StmtDepthGuard {
+        Ctx* self;
+        explicit StmtDepthGuard(Ctx* c) : self(c) {}
+        ~StmtDepthGuard() {
+          if (self && self->stmt_depth_ > 0)
+            --self->stmt_depth_;
+        }
+      } depth_guard(this);
+
       switch (stmt.kind) {
 
         case Stmt::LetStmt: emitLet(stmt.let); break;
@@ -676,18 +768,31 @@ private:
       Ctx c(gen_, env_, return_type_);
       c.try_stack_ = try_stack_;
       c.defer_stack_ = defer_stack_;
+      c.defer_scope_base_ = defer_stack_.size();
       c.loop_stack_ = loop_stack_;
       c.autodrop_frames_ = autodrop_frames_;
       c.autodrop_scope_base_ =
           c.autodrop_frames_.empty() ? 0 : c.autodrop_frames_.back().size();
       c.terminated = terminated;
+      c.stmt_depth_ = stmt_depth_;
+      c.emit_depth_ = emit_depth_;
+      c.emitting_finally_for_ = emitting_finally_for_;
+      c.const_int_locals_ = const_int_locals_;
+      c.const_float_locals_ = const_float_locals_;
+      c.constexpr_empty_locals_ = constexpr_empty_locals_;
+      c.explicit_typed_ = explicit_typed_;
       return c;
     }
 
     void runBody(const std::vector<std::unique_ptr<Stmt>>& body) {
       pushScope();
-      for (const auto& stmt : body)
+      for (const auto& stmt : body) {
         emitStmt(*stmt);
+        if (terminated || stmtAbortsRestOfBlock(*stmt)) {
+          terminated = true;
+          break;
+        }
+      }
       if (!terminated) {
         flushDefers();
         flushAllAutoDrops();
@@ -698,6 +803,15 @@ private:
       gen_->pending_ret_init_ = false;
       gen_->pending_ret_flag_.clear();
       gen_->pending_ret_val_.clear();
+      gen_->pending_jump_init_ = false;
+      gen_->pending_jump_kind_.clear();
+      gen_->pending_break_label_.clear();
+      gen_->pending_continue_label_.clear();
+      gen_->pending_throw_init_ = false;
+      gen_->pending_throw_flag_.clear();
+      gen_->pending_throw_tag_.clear();
+      gen_->pending_throw_val_.clear();
+      gen_->pending_ret_deferred_ = nullptr;
     }
 
   private:
@@ -706,14 +820,22 @@ private:
 
     std::unordered_map<std::string, VarInfo> env_;
 
+    std::unordered_map<std::string, int64_t> const_int_locals_;
+    std::unordered_map<std::string, double> const_float_locals_;
+    std::unordered_set<std::string> explicit_typed_;
+    std::unordered_set<std::string> constexpr_empty_locals_;
+
     std::vector<LoopLabels> loop_stack_;
 
     TypeDesc return_type_ = TypeDesc::prim(FarTypeId::I64);
 
     std::vector<const Expr*> defer_stack_;
+    size_t defer_scope_base_ = 0;
     struct AutoDrop {
       std::string name;
       TypeForm form;
+      bool actor = false;
+      bool union_handle = false;
     };
     std::vector<std::vector<AutoDrop>> autodrop_frames_;
     size_t autodrop_scope_base_ = 0;
@@ -724,6 +846,7 @@ private:
       std::string catch_label;
       std::string finally_label;
       std::string after_label;
+      std::string continue_label;
       std::string catch_var;
       TypeDesc catch_type = TypeDesc::prim(FarTypeId::I64);
       int64_t catch_type_tag = 0;
@@ -731,8 +854,13 @@ private:
       bool has_catch = false;
       bool has_finally = false;
       size_t stack_index = 0;
+      int contained_in_finally_of = -1;
     };
     std::vector<TryLabels> try_stack_;
+    int emitting_finally_for_ = -1;
+
+    int emit_depth_ = 0;
+    int stmt_depth_ = 0;
 
     void ensurePendingReturn() {
       if (gen_->pending_ret_init_)
@@ -740,20 +868,69 @@ private:
       gen_->pending_ret_flag_ = gen_->fresh("pretflag");
       gen_->pending_ret_val_ = gen_->fresh("pretval");
       const char* ret_ty = llvmAbiTypeDesc(return_type_);
-      gen_->out_ << "  %" << gen_->pending_ret_flag_ << " = alloca i1\n";
+      gen_->hoisted_allocas_ << "  %" << gen_->pending_ret_flag_ << " = alloca i1\n";
+      gen_->hoisted_allocas_ << "  %" << gen_->pending_ret_val_ << " = alloca " << ret_ty << "\n";
       gen_->out_ << "  store i1 false, i1* %" << gen_->pending_ret_flag_ << "\n";
-      gen_->out_ << "  %" << gen_->pending_ret_val_ << " = alloca " << ret_ty << "\n";
       gen_->pending_ret_init_ = true;
     }
 
-    void mergeChild(Ctx& child) {
-      if (!child.terminated)
-        child.flushDefers();
-      env_ = child.env_;
+    void emitAutoDrop(const AutoDrop& ad, const std::string& val) {
+      if (ad.actor) {
+        gen_->out_ << "  call void @far_actor_stop(i64 " << val << ")\n";
+      } else if (ad.union_handle) {
+        gen_->out_ << "  call void @far_union_drop(i64 " << val << ")\n";
+      } else {
+        TypeDesc drop_ty;
+        drop_ty.form = ad.form;
+        if (isMemoryHandleDesc(drop_ty))
+          emitMemDrop(memCtx(), ad.form, val);
+        else if (isConcurrencyHandleDesc(drop_ty))
+          emitConcDrop(concCtx(), ad.form, val);
+      }
+    }
+
+    void flushBranchAutoDrops(Ctx& child, const std::unordered_map<std::string, VarInfo>& pre) {
+      if (child.autodrop_frames_.empty())
+        return;
+      const auto& added = child.autodrop_frames_.back();
+      for (size_t i = child.autodrop_scope_base_; i < added.size(); ++i) {
+        if (pre.count(added[i].name))
+          continue;
+        if (child.env_.find(added[i].name) == child.env_.end())
+          continue;
+        std::string val = child.loadVar(added[i].name);
+        emitAutoDrop(added[i], val);
+        child.storeSlotValue(added[i].name, "0");
+      }
+    }
+
+    void mergeChild(Ctx& child, const std::unordered_map<std::string, VarInfo>* pre = nullptr) {
+      child.flushScopeDefers();
+      if (pre)
+        flushBranchAutoDrops(child, *pre);
+      if (pre) {
+        auto merged = child.env_;
+        env_ = *pre;
+        for (const auto& name : child.assigned_) {
+          if (pre->count(name))
+            env_[name] = merged.at(name);
+        }
+      } else {
+        env_ = child.env_;
+        const_int_locals_ = child.const_int_locals_;
+        const_float_locals_ = child.const_float_locals_;
+      }
+      for (const auto& name : child.assigned_) {
+        const_int_locals_.erase(name);
+        const_float_locals_.erase(name);
+      }
+      defer_stack_ = std::move(child.defer_stack_);
       if (!autodrop_frames_.empty() && !child.autodrop_frames_.empty()) {
         const auto& added = child.autodrop_frames_.back();
-        for (size_t i = child.autodrop_scope_base_; i < added.size(); ++i)
-          autodrop_frames_.back().push_back(added[i]);
+        for (size_t i = child.autodrop_scope_base_; i < added.size(); ++i) {
+          if (!pre || pre->count(added[i].name))
+            autodrop_frames_.back().push_back(added[i]);
+        }
       }
     }
 
@@ -768,15 +945,24 @@ private:
 
     std::string innermostFinallyLabel() const {
       for (auto it = try_stack_.rbegin(); it != try_stack_.rend(); ++it) {
-        if (it->has_finally)
-          return it->finally_label;
+        if (!it->has_finally)
+          continue;
+        if (emitting_finally_for_ >= 0 &&
+            it->stack_index == static_cast<size_t>(emitting_finally_for_))
+          continue;
+        return it->finally_label;
       }
       return {};
     }
 
-    void setPendingReturn(const Return& ret) {
+    void setPendingReturn(const Return& ret, bool defer_eval = false) {
       ensurePendingReturn();
       gen_->out_ << "  store i1 true, i1* %" << gen_->pending_ret_flag_ << "\n";
+      if (defer_eval) {
+        gen_->pending_ret_deferred_ = &ret;
+        return;
+      }
+      gen_->pending_ret_deferred_ = nullptr;
       const char* ret_ty = llvmAbiTypeDesc(return_type_);
       if (!ret.has_value) {
         std::string zero =
@@ -794,6 +980,21 @@ private:
     void emitReturnFromPending() {
       ensurePendingReturn();
       const char* ret_ty = llvmAbiTypeDesc(return_type_);
+      if (gen_->pending_ret_deferred_) {
+        const Return& ret = *gen_->pending_ret_deferred_;
+        if (!ret.has_value) {
+          std::string zero =
+              (isPrimitiveDesc(return_type_) && isFloatType(return_type_.primitive)) ? "0.0" : "0";
+          gen_->out_ << "  store " << ret_ty << " " << zero << ", " << ret_ty << "* %"
+                     << gen_->pending_ret_val_ << "\n";
+        } else {
+          std::string value = emitExpr(*ret.value);
+          std::string abi = gen_->internalToAbiDesc(ret.value->type, return_type_, value);
+          gen_->out_ << "  store " << ret_ty << " " << abi << ", " << ret_ty << "* %"
+                     << gen_->pending_ret_val_ << "\n";
+        }
+        gen_->pending_ret_deferred_ = nullptr;
+      }
       flushDefers();
       flushAllAutoDrops();
       std::string val = gen_->fresh("pretload");
@@ -803,10 +1004,130 @@ private:
       terminated = true;
     }
 
+    bool routePendingControlThroughOuterFinally(const TryLabels& labels) {
+      for (size_t i = labels.stack_index; i > 0;) {
+        --i;
+        if (!try_stack_[i].has_finally)
+          continue;
+        if (labels.contained_in_finally_of == static_cast<int>(i)) {
+          if (!labels.continue_label.empty()) {
+            gen_->out_ << "  br label %" << labels.continue_label << "\n";
+            return true;
+          }
+          continue;
+        }
+        gen_->out_ << "  br label %" << try_stack_[i].finally_label << "\n";
+        return true;
+      }
+      return false;
+    }
+
+    void emitDispatchPendingThrowToCatch(const TryLabels& labels) {
+      std::string tag = gen_->fresh("pthtagc");
+      std::string val = gen_->fresh("pthvalc");
+      gen_->out_ << "  %" << tag << " = load " << I64 << ", " << I64 << "* %" << gen_->pending_throw_tag_
+                 << "\n";
+      gen_->out_ << "  %" << val << " = load " << I64 << ", " << I64 << "* %" << gen_->pending_throw_val_
+                 << "\n";
+      gen_->out_ << "  call void @far_store_caught(i64 %" << tag << ", i64 %" << val << ")\n";
+      gen_->out_ << "  br label %" << labels.resume_label << "\n";
+      terminated = true;
+    }
+
     void emitFinallyEpilogue(const TryLabels& labels) {
+      if (gen_->pending_throw_init_) {
+        std::string flag = gen_->fresh("pthf");
+        gen_->out_ << "  %" << flag << " = load i1, i1* %" << gen_->pending_throw_flag_ << "\n";
+        std::string throw_path = gen_->fresh("pthrow");
+        std::string nxt = gen_->fresh("pthnext");
+        gen_->out_ << "  br i1 %" << flag << ", label %" << throw_path << ", label %" << nxt << "\n";
+        gen_->out_ << throw_path << ":\n";
+        if (labels.has_catch)
+          emitDispatchPendingThrowToCatch(labels);
+        else {
+          emitTrySuccess(errCtx());
+          bool routed = false;
+          if (labels.contained_in_finally_of >= 0 && !labels.continue_label.empty()) {
+            gen_->out_ << "  br label %" << labels.continue_label << "\n";
+            routed = true;
+          } else {
+            for (size_t i = labels.stack_index; i > 0;) {
+              --i;
+              if (!try_stack_[i].has_finally)
+                continue;
+              if (labels.contained_in_finally_of == static_cast<int>(i)) {
+                if (!labels.continue_label.empty()) {
+                  gen_->out_ << "  br label %" << labels.continue_label << "\n";
+                  routed = true;
+                  break;
+                }
+                continue;
+              }
+              gen_->out_ << "  br label %" << try_stack_[i].finally_label << "\n";
+              terminated = true;
+              routed = true;
+              break;
+            }
+          }
+          if (!routed) {
+            flushDefers();
+            flushAllAutoDrops();
+            emitThrowFromPending();
+          }
+        }
+        gen_->out_ << nxt << ":\n";
+        if (!gen_->pending_jump_init_ && !gen_->pending_ret_init_) {
+          gen_->out_ << "  br label %" << labels.after_label << "\n";
+          return;
+        }
+      }
+      if (gen_->pending_jump_init_) {
+        std::string kind = gen_->fresh("pjload");
+        gen_->out_ << "  %" << kind << " = load i8, i8* %" << gen_->pending_jump_kind_ << "\n";
+        const bool has_break = !gen_->pending_break_label_.empty();
+        const bool has_continue = !gen_->pending_continue_label_.empty();
+        if (has_break && has_continue) {
+          std::string brk = gen_->fresh("pjbrk");
+          std::string cont = gen_->fresh("pjcont");
+          std::string nxt = gen_->fresh("pjnext");
+          gen_->out_ << "  switch i8 %" << kind << ", label %" << nxt << " [ i8 2, label %" << brk
+                     << " i8 3, label %" << cont << " ]\n";
+          gen_->out_ << brk << ":\n";
+          if (!routePendingControlThroughOuterFinally(labels))
+            gen_->out_ << "  br label %" << gen_->pending_break_label_ << "\n";
+          gen_->out_ << cont << ":\n";
+          if (!routePendingControlThroughOuterFinally(labels))
+            gen_->out_ << "  br label %" << gen_->pending_continue_label_ << "\n";
+          gen_->out_ << nxt << ":\n";
+        } else if (has_break) {
+          std::string brk = gen_->fresh("pjbrk");
+          std::string nxt = gen_->fresh("pjnext");
+          gen_->out_ << "  switch i8 %" << kind << ", label %" << nxt << " [ i8 2, label %" << brk
+                     << " ]\n";
+          gen_->out_ << brk << ":\n";
+          if (!routePendingControlThroughOuterFinally(labels))
+            gen_->out_ << "  br label %" << gen_->pending_break_label_ << "\n";
+          gen_->out_ << nxt << ":\n";
+        } else if (has_continue) {
+          std::string cont = gen_->fresh("pjcont");
+          std::string nxt = gen_->fresh("pjnext");
+          gen_->out_ << "  switch i8 %" << kind << ", label %" << nxt << " [ i8 3, label %" << cont
+                     << " ]\n";
+          gen_->out_ << cont << ":\n";
+          if (!routePendingControlThroughOuterFinally(labels))
+            gen_->out_ << "  br label %" << gen_->pending_continue_label_ << "\n";
+          gen_->out_ << nxt << ":\n";
+        }
+        if (!gen_->pending_ret_init_) {
+          gen_->out_ << "  br label %" << labels.after_label << "\n";
+          return;
+        }
+      }
       if (!gen_->pending_ret_init_) {
         if (!terminated)
           gen_->out_ << "  br label %" << labels.after_label << "\n";
+        else
+          gen_->out_ << "  unreachable\n";
         return;
       }
       std::string flag = gen_->fresh("pfl");
@@ -815,9 +1136,20 @@ private:
       std::string done = labels.after_label;
       gen_->out_ << "  br i1 %" << flag << ", label %" << ret_path << ", label %" << done << "\n";
       gen_->out_ << ret_path << ":\n";
+      if (labels.contained_in_finally_of >= 0 && !labels.continue_label.empty()) {
+        gen_->out_ << "  br label %" << labels.continue_label << "\n";
+        return;
+      }
       for (size_t i = labels.stack_index; i > 0;) {
         --i;
         if (try_stack_[i].has_finally) {
+          if (labels.contained_in_finally_of == static_cast<int>(i)) {
+            if (!labels.continue_label.empty()) {
+              gen_->out_ << "  br label %" << labels.continue_label << "\n";
+              return;
+            }
+            continue;
+          }
           gen_->out_ << "  br label %" << try_stack_[i].finally_label << "\n";
           return;
         }
@@ -832,6 +1164,18 @@ private:
       gen_->out_ << "  unreachable\n";
     }
 
+    void emitUncaughtThrowFromPending() {
+      flushDefers();
+      flushAllAutoDrops();
+      emitTrySuccess(errCtx());
+      emitThrowFromPending();
+    }
+
+    void emitUncaughtRethrow() {
+      emitTrySuccess(errCtx());
+      emitRethrowCaught();
+    }
+
     void pushScope() { autodrop_frames_.push_back({}); }
 
     void popScope() {
@@ -839,12 +1183,7 @@ private:
         return;
       for (const auto& ad : autodrop_frames_.back()) {
         std::string val = loadVar(ad.name);
-        TypeDesc drop_ty;
-        drop_ty.form = ad.form;
-        if (isMemoryHandleDesc(drop_ty))
-          emitMemDrop(memCtx(), ad.form, val);
-        else if (isConcurrencyHandleDesc(drop_ty))
-          emitConcDrop(concCtx(), ad.form, val);
+        emitAutoDrop(ad, val);
         storeSlotValue(ad.name, "0");
       }
       autodrop_frames_.pop_back();
@@ -855,10 +1194,17 @@ private:
         popScope();
     }
 
-    void flushDefers() {
-      for (auto it = defer_stack_.rbegin(); it != defer_stack_.rend(); ++it)
-        emitExpr(**it);
+    void flushDefersFrom(size_t base) {
+      while (defer_stack_.size() > base) {
+        const Expr* e = defer_stack_.back();
+        defer_stack_.pop_back();
+        emitExpr(*e);
+      }
     }
+
+    void flushScopeDefers() { flushDefersFrom(defer_scope_base_); }
+
+    void flushDefers() { flushDefersFrom(0); }
 
     MemCodegenCtx memCtx() {
       return MemCodegenCtx{gen_->out_, [&](const std::string& p) { return gen_->fresh(p); },
@@ -918,25 +1264,132 @@ private:
       assigned_.insert(name);
     }
 
+    std::string narrowIntToDesc(const TypeDesc& target_ty, const std::string& val) {
+      if (isPrimitiveDesc(target_ty) && isIntegerType(target_ty.primitive) &&
+          typeInfo(target_ty.primitive).bits < 64)
+        return gen_->emitCastValueDesc(TypeDesc::prim(FarTypeId::I64), target_ty, val);
+      return val;
+    }
+
 
 
     void emitLet(const Let& let) {
 
       std::string value = emitExpr(*let.value);
 
-      TypeDesc ty = let.explicit_type ? let.type : (let.value ? let.value->type : let.type);
+      TypeDesc ty;
+      auto existing = env_.find(let.name);
+      if (existing != env_.end() && !let.explicit_type && explicit_typed_.count(let.name))
+        ty = existing->second.type;
+      else
+        ty = let.explicit_type ? let.type : (let.value ? let.value->type : let.type);
+      if (let.value)
+        value = coerceToType(*let.value, ty, value);
+      value = narrowIntToDesc(ty, value);
       storeVar(let.name, value, ty);
-      if ((isMemoryHandleDesc(ty) || isConcurrencyHandleDesc(ty)) && !autodrop_frames_.empty())
-        autodrop_frames_.back().push_back({let.name, ty.form});
+      if (let.explicit_type)
+        explicit_typed_.insert(let.name);
+      if (let.value)
+        trackConstLocal(let.name, *let.value);
+      if (let.is_constexpr && let.value && let.value->kind == Expr::String &&
+          let.value->string_lit.value.empty())
+        constexpr_empty_locals_.insert(let.name);
+      else if (let.is_constexpr && let.value && let.value->kind == Expr::ArrayLitExpr &&
+               let.value->array_lit.elements.empty())
+        constexpr_empty_locals_.insert(let.name);
+      if (!autodrop_frames_.empty()) {
+        if (isMemoryHandleDesc(ty) || isConcurrencyHandleDesc(ty))
+          autodrop_frames_.back().push_back({let.name, ty.form});
+        else if (isUserDesc(ty)) {
+          const UserTypeDef* ut = gen_->obj_reg_.lookup(ty.user_name);
+          if (ut && ut->kind == UserTypeKind::Actor)
+            autodrop_frames_.back().push_back({let.name, TypeForm::User, true});
+          else if (ut && ut->kind == UserTypeKind::Union)
+            autodrop_frames_.back().push_back({let.name, TypeForm::User, false, true});
+        }
+      }
 
     }
 
 
 
+    void completeTryForControlToFinally(const std::string& /*finally_label*/) {
+      // try depth is decremented once at try.after, not when entering finally
+    }
+
+    void ensurePendingJump() {
+      if (gen_->pending_jump_init_)
+        return;
+      gen_->pending_jump_kind_ = gen_->fresh("pjump");
+      gen_->hoisted_allocas_ << "  %" << gen_->pending_jump_kind_ << " = alloca i8\n";
+      gen_->pending_jump_init_ = true;
+    }
+
+    void setPendingBreak(const std::string& label) {
+      ensurePendingJump();
+      gen_->pending_break_label_ = label;
+      gen_->out_ << "  store i8 2, i8* %" << gen_->pending_jump_kind_ << "\n";
+    }
+
+    void setPendingContinue(const std::string& label) {
+      ensurePendingJump();
+      gen_->pending_continue_label_ = label;
+      gen_->out_ << "  store i8 3, i8* %" << gen_->pending_jump_kind_ << "\n";
+    }
+
+    void ensurePendingThrow() {
+      if (gen_->pending_throw_init_)
+        return;
+      gen_->pending_throw_flag_ = gen_->fresh("pthrowflag");
+      gen_->pending_throw_tag_ = gen_->fresh("pthrowtag");
+      gen_->pending_throw_val_ = gen_->fresh("pthrowval");
+      gen_->hoisted_allocas_ << "  %" << gen_->pending_throw_flag_ << " = alloca i1\n";
+      gen_->hoisted_allocas_ << "  %" << gen_->pending_throw_tag_ << " = alloca " << I64 << "\n";
+      gen_->hoisted_allocas_ << "  %" << gen_->pending_throw_val_ << " = alloca " << I64 << "\n";
+      gen_->pending_throw_init_ = true;
+    }
+
+    void setPendingThrow(int64_t tag, const std::string& val) {
+      ensurePendingThrow();
+      gen_->out_ << "  store i1 true, i1* %" << gen_->pending_throw_flag_ << "\n";
+      gen_->out_ << "  store " << I64 << " " << tag << ", " << I64 << "* %" << gen_->pending_throw_tag_
+                 << "\n";
+      gen_->out_ << "  store " << I64 << " " << val << ", " << I64 << "* %" << gen_->pending_throw_val_
+                 << "\n";
+    }
+
+    void setPendingThrowValues(const std::string& tag_val, const std::string& val_val) {
+      ensurePendingThrow();
+      gen_->out_ << "  store i1 true, i1* %" << gen_->pending_throw_flag_ << "\n";
+      gen_->out_ << "  store " << I64 << " " << tag_val << ", " << I64 << "* %" << gen_->pending_throw_tag_
+                 << "\n";
+      gen_->out_ << "  store " << I64 << " " << val_val << ", " << I64 << "* %" << gen_->pending_throw_val_
+                 << "\n";
+    }
+
+    void emitThrowFromPending() {
+      ensurePendingThrow();
+      std::string tag = gen_->fresh("pthtag");
+      std::string val = gen_->fresh("pthval");
+      gen_->out_ << "  %" << tag << " = load " << I64 << ", " << I64 << "* %" << gen_->pending_throw_tag_
+                 << "\n";
+      gen_->out_ << "  %" << val << " = load " << I64 << ", " << I64 << "* %" << gen_->pending_throw_val_
+                 << "\n";
+      gen_->out_ << "  call void @far_throw(i64 %" << tag << ", i64 %" << val << ")\n";
+      gen_->out_ << "  unreachable\n";
+      terminated = true;
+    }
+
+    void completeTryForReturnToFinally(const std::string& finally_label) {
+      completeTryForControlToFinally(finally_label);
+    }
+
     void emitReturn(const Return& ret) {
       std::string finally = innermostFinallyLabel();
       if (!finally.empty()) {
-        setPendingReturn(ret);
+        completeTryForReturnToFinally(finally);
+        setPendingReturn(ret, true);
+        flushScopeDefers();
         gen_->out_ << "  br label %" << finally << "\n";
         terminated = true;
         return;
@@ -1007,9 +1460,7 @@ private:
       std::string value = emitExpr(expr);
       if (isPrimitiveDesc(ty) && isFloatType(ty.primitive))
         return value;
-      std::string tmp = gen_->fresh();
-      gen_->out_ << "  %" << tmp << " = sitofp " << I64 << " " << value << " to " << F64 << "\n";
-      return "%" + tmp;
+      return gen_->emitIntToF64Desc(ty, value);
     }
 
     std::string emitExprAsString(const Expr& expr) {
@@ -1032,6 +1483,8 @@ private:
         gen_->out_ << "  %" << str << " = call i8* @far_f64_to_str(double %" << promoted << ")\n";
       } else if (isPrimTy(ty, FarTypeId::F64)) {
         gen_->out_ << "  %" << str << " = call i8* @far_f64_to_str(double " << value << ")\n";
+      } else if (isPrimitiveDesc(ty)) {
+        return gen_->emitNumericToString(ty, value);
       } else {
         gen_->out_ << "  %" << str << " = call i8* @far_i64_to_str(" << I64 << " " << value << ")\n";
       }
@@ -1060,12 +1513,21 @@ private:
         std::string fval = gen_->fresh();
         gen_->out_ << "  %" << fval << " = fptrunc " << F64 << " " << value << " to " << F32 << "\n";
         gen_->out_ << "  call void @far_print_f32(float %" << fval << ")\n";
+      } else if (isPrimTy(ty, FarTypeId::F16)) {
+        std::string fval = gen_->fresh();
+        gen_->out_ << "  %" << fval << " = fptrunc " << F64 << " " << value << " to " << F32 << "\n";
+        gen_->out_ << "  call void @far_print_f32(float %" << fval << ")\n";
       } else if (isPrimTy(ty, FarTypeId::F64)) {
         gen_->out_ << "  call void @far_print_f64(double " << value << ")\n";
       } else if (exprPrintsAsBool(*print.value)) {
         emitPrintBoolValue(gen_->out_, [&](const std::string& p) { return gen_->fresh(p); }, value);
       } else if (isAggregateDesc(ty)) {
         emitAggregatePrint(aggCtx(), aggregateDescId(ty), value);
+      } else if (isPrimitiveDesc(ty) && isIntegerType(ty.primitive) && !typeInfo(ty.primitive).is_signed) {
+        std::string str = gen_->emitNumericToString(ty, value);
+        std::string ptr = gen_->fresh("sp");
+        gen_->out_ << "  %" << ptr << " = inttoptr " << I64 << " " << str << " to i8*\n";
+        gen_->out_ << "  call void @far_print_str(i8* %" << ptr << ")\n";
       } else {
         gen_->out_ << "  call void @far_print_i64(" << I64 << " " << value << ")\n";
       }
@@ -1076,7 +1538,11 @@ private:
     std::string emitIsNullish(const Expr& expr, const std::string& val) {
       std::string is_n = gen_->fresh();
       if (isPrimitiveDesc(exprType(expr)) && isFloatType(exprType(expr).primitive)) {
-        gen_->out_ << "  %" << is_n << " = fcmp oeq " << F64 << " " << val << ", 0.0\n";
+        std::string is_nan = gen_->fresh();
+        gen_->out_ << "  %" << is_nan << " = fcmp uno " << F64 << " " << val << ", " << val << "\n";
+        std::string is_zero = gen_->fresh();
+        gen_->out_ << "  %" << is_zero << " = fcmp oeq " << F64 << " " << val << ", 0.0\n";
+        gen_->out_ << "  %" << is_n << " = or i1 %" << is_nan << ", %" << is_zero << "\n";
       } else {
         gen_->out_ << "  %" << is_n << " = icmp eq " << I64 << " " << val << ", 0\n";
       }
@@ -1085,11 +1551,21 @@ private:
 
     std::string emitBranchCond(const Expr& expr) {
       std::string value = emitExpr(expr);
+      return emitTruthyCond(exprType(expr), value);
+    }
+
+    std::string emitTruthyCond(const TypeDesc& ty, const std::string& val) {
       std::string cond = gen_->fresh("cond");
-      if (isPrimitiveDesc(exprType(expr)) && isFloatType(exprType(expr).primitive)) {
-        gen_->out_ << "  %" << cond << " = fcmp one " << F64 << " " << value << ", 0.0\n";
+      if (isPrimitiveDesc(ty) && isFloatType(ty.primitive)) {
+        std::string cmp_val = val;
+        if (isPrimTy(ty, FarTypeId::F32)) {
+          std::string ext = gen_->fresh("f32td");
+          gen_->out_ << "  %" << ext << " = fpext " << F32 << " " << val << " to " << F64 << "\n";
+          cmp_val = "%" + ext;
+        }
+        gen_->out_ << "  %" << cond << " = fcmp une " << F64 << " " << cmp_val << ", 0.0\n";
       } else {
-        gen_->out_ << "  %" << cond << " = icmp ne " << I64 << " " << value << ", 0\n";
+        gen_->out_ << "  %" << cond << " = icmp ne " << I64 << " " << val << ", 0\n";
       }
       return "%" + cond;
     }
@@ -1126,7 +1602,16 @@ private:
 
 
 
-        ensureSlot(name, TypeDesc::prim(FarTypeId::I64));
+        TypeDesc merged_ty = TypeDesc::prim(FarTypeId::I64);
+        if (then_ctx.env_.count(name))
+          merged_ty = then_ctx.env_.at(name).type;
+        else if (else_ctx.env_.count(name))
+          merged_ty = else_ctx.env_.at(name).type;
+        else if (pre.count(name))
+          merged_ty = pre.at(name).type;
+
+        ensureSlot(name, merged_ty);
+        env_[name].type = merged_ty;
 
         std::string slot = env_[name].slot;
 
@@ -1180,9 +1665,334 @@ private:
 
       for (const auto& [k, v] : else_ctx.env_) env_[k] = v;
 
+      for (const auto& n : then_ctx.assigned_) {
+        const_int_locals_.erase(n);
+        const_float_locals_.erase(n);
+      }
+      for (const auto& n : else_ctx.assigned_) {
+        const_int_locals_.erase(n);
+        const_float_locals_.erase(n);
+      }
+
     }
 
 
+
+    enum class ConstBool { Unknown, False, True };
+
+    void trackConstLocal(const std::string& name, const Expr& value) {
+      if (value.kind == Expr::Int) {
+        const_int_locals_[name] = value.int_lit.value;
+        const_float_locals_.erase(name);
+      } else if (value.kind == Expr::Float && !std::isnan(value.float_lit.value)) {
+        const_float_locals_[name] = value.float_lit.value;
+        const_int_locals_.erase(name);
+      } else if (value.kind == Expr::EnumVariantExprK) {
+        const_int_locals_[name] = value.enum_variant.value;
+        const_float_locals_.erase(name);
+      } else {
+        const_int_locals_.erase(name);
+        const_float_locals_.erase(name);
+      }
+    }
+
+    ConstBool constBoolFromExpr(const Expr& e) const {
+      if (e.kind == Expr::Int)
+        return e.int_lit.value != 0 ? ConstBool::True : ConstBool::False;
+      if (e.kind == Expr::Float) {
+        if (std::isnan(e.float_lit.value))
+          return ConstBool::True;
+        return e.float_lit.value != 0.0 ? ConstBool::True : ConstBool::False;
+      }
+      if (e.kind == Expr::String)
+        return e.string_lit.value.empty() ? ConstBool::False : ConstBool::True;
+      if (e.kind == Expr::Variable) {
+        auto fit = const_float_locals_.find(e.var.name);
+        if (fit != const_float_locals_.end()) {
+          if (std::isnan(fit->second))
+            return ConstBool::True;
+          return fit->second != 0.0 ? ConstBool::True : ConstBool::False;
+        }
+        auto it = const_int_locals_.find(e.var.name);
+        if (it != const_int_locals_.end())
+          return it->second != 0 ? ConstBool::True : ConstBool::False;
+        return ConstBool::Unknown;
+      }
+      if (e.kind == Expr::Binary && e.bin_op.op == "!" && e.bin_op.left->kind == Expr::Int &&
+          e.bin_op.left->int_lit.value == 0) {
+        ConstBool inner = constBoolFromExpr(*e.bin_op.right);
+        if (inner == ConstBool::Unknown)
+          return ConstBool::Unknown;
+        return inner == ConstBool::True ? ConstBool::False : ConstBool::True;
+      }
+      if (e.kind == Expr::Binary && (e.bin_op.op == "and" || e.bin_op.op == "&&")) {
+        ConstBool l = constBoolFromExpr(*e.bin_op.left);
+        if (l == ConstBool::False)
+          return ConstBool::False;
+        if (l == ConstBool::True) {
+          ConstBool r = constBoolFromExpr(*e.bin_op.right);
+          if (r == ConstBool::Unknown)
+            return ConstBool::True;
+          return r;
+        }
+        return ConstBool::Unknown;
+      }
+      if (e.kind == Expr::Binary && (e.bin_op.op == "or" || e.bin_op.op == "||")) {
+        ConstBool l = constBoolFromExpr(*e.bin_op.left);
+        if (l == ConstBool::True)
+          return ConstBool::True;
+        if (l == ConstBool::False) {
+          ConstBool r = constBoolFromExpr(*e.bin_op.right);
+          if (r == ConstBool::Unknown)
+            return ConstBool::False;
+          return r;
+        }
+        return ConstBool::Unknown;
+      }
+      return ConstBool::Unknown;
+    }
+
+    std::optional<int64_t> constIntFromExpr(const Expr& e) const {
+      if (e.kind == Expr::Int)
+        return e.int_lit.value;
+      if (e.kind == Expr::Char)
+        return static_cast<int64_t>(e.char_lit.value);
+      if (e.kind == Expr::Variable) {
+        auto it = const_int_locals_.find(e.var.name);
+        if (it != const_int_locals_.end())
+          return it->second;
+      }
+      return std::nullopt;
+    }
+
+    bool patternCertainlyFailsConstInt(const Pattern& pat, int64_t v) const {
+      if (pat.kind == PatKind::Literal)
+        return pat.literal != v;
+      if (pat.kind == PatKind::EnumVariant) {
+        int64_t pv = pat.variant_value;
+        if (pv < 0)
+          pv = gen_->obj_reg_.enumVariantValue(pat.type_name, pat.variant);
+        if (pv < 0)
+          return false;
+        return pv != v;
+      }
+      return false;
+    }
+
+    static bool isCatchAllPattern(const Pattern& pat) {
+      return pat.kind == PatKind::Wildcard || pat.kind == PatKind::Bind;
+    }
+
+    bool patternMatchesConstIntSpecific(const Pattern& pat, int64_t v) const {
+      if (pat.kind == PatKind::Literal)
+        return pat.literal == v;
+      if (pat.kind == PatKind::EnumVariant) {
+        int64_t pv = pat.variant_value;
+        if (pv < 0)
+          pv = gen_->obj_reg_.enumVariantValue(pat.type_name, pat.variant);
+        if (pv < 0)
+          return false;
+        return pv == v;
+      }
+      return false;
+    }
+
+    bool patternMatchesConstInt(const Pattern& pat, int64_t v) const {
+      if (patternMatchesConstIntSpecific(pat, v))
+        return true;
+      if (isCatchAllPattern(pat))
+        return true;
+      return false;
+    }
+
+    static std::vector<size_t> matchArmOrder(const MatchStmt& m) {
+      std::vector<size_t> order;
+      for (size_t i = 0; i < m.arms.size(); ++i) {
+        if (m.arms[i].pat && !isCatchAllPattern(*m.arms[i].pat))
+          order.push_back(i);
+      }
+      for (size_t i = 0; i < m.arms.size(); ++i) {
+        if (m.arms[i].pat && isCatchAllPattern(*m.arms[i].pat))
+          order.push_back(i);
+      }
+      return order;
+    }
+
+    void emitMatchFromArm(const std::vector<size_t>& order, size_t start, const MatchStmt& m, const std::string& scrut, const TypeDesc& sty,
+                          const std::unordered_map<std::string, VarInfo>& pre, const std::string& done_label,
+                          const std::string& fail_label) {
+      std::string next_label;
+      for (size_t oi = start; oi < order.size(); ++oi) {
+        const auto& arm = m.arms[order[oi]];
+        std::string body_label = gen_->fresh("matchbody");
+        next_label = (oi + 1 < order.size()) ? gen_->fresh("matchnext") : fail_label;
+        PatTestResult tr = emitPatternTest(patCtx(), *arm.pat, scrut, sty);
+        if (!tr.always)
+          gen_->out_ << "  br i1 " << tr.cond << ", label %" << body_label << ", label %" << next_label << "\n";
+        else
+          gen_->out_ << "  br label %" << body_label << "\n";
+        gen_->out_ << body_label << ":\n";
+        Ctx body_ctx = fork();
+        body_ctx.env_ = pre;
+        for (const auto& b : tr.binds)
+          body_ctx.storeVar(b.name, b.value, b.type);
+        for (const auto& s : arm.body)
+          body_ctx.emitStmt(*s);
+        mergeChild(body_ctx, &pre);
+        if (!body_ctx.terminated)
+          gen_->out_ << "  br label %" << done_label << "\n";
+        if (next_label != fail_label)
+          gen_->out_ << next_label << ":\n";
+      }
+      gen_->out_ << fail_label << ":\n";
+      gen_->out_ << "  call void @far_panic(i64 0)\n";
+      gen_->out_ << "  unreachable\n";
+    }
+
+    void emitMatch(const MatchStmt& m) {
+      std::optional<int64_t> const_scrut = constIntFromExpr(*m.scrutinee);
+      std::string scrut =
+          const_scrut ? std::to_string(*const_scrut) : emitExpr(*m.scrutinee);
+      TypeDesc sty = exprType(*m.scrutinee);
+      std::string done_label = gen_->fresh("matchdone");
+      std::string fail_label = gen_->fresh("matchfail");
+      auto pre = env_;
+
+      if (const_scrut) {
+        for (size_t i = 0; i < m.arms.size(); ++i) {
+          const auto& arm = m.arms[i];
+          if (arm.pat && isCatchAllPattern(*arm.pat))
+            continue;
+          if (arm.pat && patternCertainlyFailsConstInt(*arm.pat, *const_scrut))
+            continue;
+          if (arm.pat && patternMatchesConstIntSpecific(*arm.pat, *const_scrut)) {
+            PatTestResult tr = emitPatternTest(patCtx(), *arm.pat, scrut, sty);
+            Ctx body_ctx = fork();
+            body_ctx.env_ = pre;
+            for (const auto& b : tr.binds)
+              body_ctx.storeVar(b.name, b.value, b.type);
+            for (const auto& s : arm.body)
+              body_ctx.emitStmt(*s);
+            mergeChild(body_ctx, &pre);
+            if (body_ctx.terminated)
+              terminated = true;
+            if (!body_ctx.terminated) {
+              gen_->out_ << "  br label %" << done_label << "\n";
+              gen_->out_ << done_label << ":\n";
+            }
+            return;
+          }
+        }
+        for (size_t i = 0; i < m.arms.size(); ++i) {
+          const auto& arm = m.arms[i];
+          if (!arm.pat || !isCatchAllPattern(*arm.pat))
+            continue;
+          PatTestResult tr = emitPatternTest(patCtx(), *arm.pat, scrut, sty);
+          Ctx body_ctx = fork();
+          body_ctx.env_ = pre;
+          for (const auto& b : tr.binds)
+            body_ctx.storeVar(b.name, b.value, b.type);
+          for (const auto& s : arm.body)
+            body_ctx.emitStmt(*s);
+          mergeChild(body_ctx, &pre);
+          if (body_ctx.terminated)
+            terminated = true;
+          if (!body_ctx.terminated) {
+            gen_->out_ << "  br label %" << done_label << "\n";
+            gen_->out_ << done_label << ":\n";
+          }
+          return;
+        }
+        gen_->out_ << "  call void @far_panic(i64 0)\n";
+        gen_->out_ << "  unreachable\n";
+        gen_->out_ << done_label << ":\n";
+        return;
+      }
+
+      auto arm_order = matchArmOrder(m);
+      emitMatchFromArm(arm_order, 0, m, scrut, sty, pre, done_label, fail_label);
+      gen_->out_ << done_label << ":\n";
+    }
+
+    static bool rangeForConstEmpty(int64_t start, int64_t end, bool exclusive) {
+      return exclusive ? (start >= end) : (start > end);
+    }
+
+    bool exprConstNonNullish(const Expr& e) const {
+      if (e.kind == Expr::Int)
+        return e.int_lit.value != 0;
+      if (e.kind == Expr::Float)
+        return e.float_lit.value != 0.0 && !std::isnan(e.float_lit.value);
+      if (e.kind == Expr::String)
+        return !e.string_lit.value.empty();
+      if (e.kind == Expr::Variable) {
+        auto fit = const_float_locals_.find(e.var.name);
+        if (fit != const_float_locals_.end())
+          return fit->second != 0.0 && !std::isnan(fit->second);
+        auto it = const_int_locals_.find(e.var.name);
+        return it != const_int_locals_.end() && it->second != 0;
+      }
+      return false;
+    }
+
+    bool foreachConstEmpty(const Expr& iter) {
+      if (iter.kind == Expr::ArrayLitExpr)
+        return iter.array_lit.elements.empty();
+      if (iter.kind == Expr::String)
+        return iter.string_lit.value.empty();
+      if (iter.kind == Expr::Variable) {
+        if (constexpr_empty_locals_.count(iter.var.name))
+          return true;
+        for (const auto& stmt : gen_->program_.comptime_stmts) {
+          if (stmt->kind != Stmt::LetStmt || !stmt->let.is_constexpr || stmt->let.name != iter.var.name ||
+              !stmt->let.value)
+            continue;
+          if (stmt->let.value->kind == Expr::String)
+            return stmt->let.value->string_lit.value.empty();
+          if (stmt->let.value->kind == Expr::ArrayLitExpr)
+            return stmt->let.value->array_lit.elements.empty();
+        }
+      }
+      return false;
+    }
+
+    void emitIfFromClause(size_t start, const If& ifs, const std::unordered_map<std::string, VarInfo>& pre,
+                          const std::string& end_label) {
+      std::string else_label = ifs.else_body.empty() ? "" : gen_->fresh("if.else");
+      std::string next_label;
+      for (size_t i = start; i < ifs.clauses.size(); ++i) {
+        const auto& clause = ifs.clauses[i];
+        std::string cond = emitBranchCond(*clause.condition);
+        std::string body_label = gen_->fresh("if.body");
+        if (i + 1 < ifs.clauses.size())
+          next_label = gen_->fresh("if.next");
+        else if (!ifs.else_body.empty())
+          next_label = else_label;
+        else
+          next_label = end_label;
+        gen_->out_ << "  br i1 " << cond << ", label %" << body_label << ", label %" << next_label << "\n";
+        gen_->out_ << body_label << ":\n";
+        Ctx body_ctx = fork();
+        body_ctx.env_ = pre;
+        for (const auto& s : clause.body)
+          body_ctx.emitStmt(*s);
+        mergeChild(body_ctx, &pre);
+        if (!body_ctx.terminated)
+          gen_->out_ << "  br label %" << end_label << "\n";
+        if (next_label != end_label && next_label != else_label)
+          gen_->out_ << next_label << ":\n";
+      }
+      if (!ifs.else_body.empty()) {
+        gen_->out_ << else_label << ":\n";
+        Ctx else_ctx = fork();
+        else_ctx.env_ = pre;
+        for (const auto& s : ifs.else_body)
+          else_ctx.emitStmt(*s);
+        mergeChild(else_ctx, &pre);
+        if (!else_ctx.terminated)
+          gen_->out_ << "  br label %" << end_label << "\n";
+      }
+    }
 
     void emitIf(const If& ifs) {
 
@@ -1190,85 +2000,52 @@ private:
 
       auto pre = env_;
 
-
-
       std::string end_label = gen_->fresh("endif");
 
-      std::string next_label;
-
-
-
       for (size_t i = 0; i < ifs.clauses.size(); ++i) {
-
-        const auto& clause = ifs.clauses[i];
-
-        std::string cond = emitBranchCond(*clause.condition);
-
-        std::string body_label = gen_->fresh("if.body");
-
-        next_label = (i + 1 < ifs.clauses.size() || !ifs.else_body.empty())
-
-                         ? gen_->fresh("if.next")
-
-                         : end_label;
-
-        gen_->out_ << "  br i1 " << cond << ", label %" << body_label << ", label %" << next_label << "\n";
-
-
-
-        gen_->out_ << body_label << ":\n";
-
-        Ctx body_ctx = fork();
-
-        body_ctx.env_ = pre;
-
-        for (const auto& s : clause.body)
-
-          body_ctx.emitStmt(*s);
-
-        mergeChild(body_ctx);
-
-        if (!body_ctx.terminated)
-
-          gen_->out_ << "  br label %" << end_label << "\n";
-
-        if (next_label != end_label)
-
-          gen_->out_ << next_label << ":\n";
-
+        ConstBool cb = constBoolFromExpr(*ifs.clauses[i].condition);
+        if (cb == ConstBool::False)
+          continue;
+        if (cb == ConstBool::True) {
+          Ctx body_ctx = fork();
+          body_ctx.env_ = pre;
+          for (const auto& s : ifs.clauses[i].body)
+            body_ctx.emitStmt(*s);
+          mergeChild(body_ctx, &pre);
+          if (body_ctx.terminated)
+            terminated = true;
+          if (!body_ctx.terminated) {
+            gen_->out_ << "  br label %" << end_label << "\n";
+            gen_->out_ << end_label << ":\n";
+          }
+          return;
+        }
+        emitIfFromClause(i, ifs, pre, end_label);
+        gen_->out_ << end_label << ":\n";
+        return;
       }
-
-
 
       if (!ifs.else_body.empty()) {
-
         Ctx else_ctx = fork();
-
         else_ctx.env_ = pre;
-
         for (const auto& s : ifs.else_body)
-
           else_ctx.emitStmt(*s);
-
-        mergeChild(else_ctx);
-
-        if (!else_ctx.terminated)
-
+        mergeChild(else_ctx, &pre);
+        if (!else_ctx.terminated) {
           gen_->out_ << "  br label %" << end_label << "\n";
-
-        env_ = else_ctx.env_;
-
+          gen_->out_ << end_label << ":\n";
+        }
+        return;
       }
-
-
-
-      gen_->out_ << end_label << ":\n";
 
     }
 
 
 
     void emitWhile(const While& wh) {
+
+      if (constBoolFromExpr(*wh.condition) == ConstBool::False)
+        return;
 
       std::string cond_label = gen_->fresh("while.cond");
 
@@ -1314,7 +2091,140 @@ private:
 
 
 
+    static bool containsThrowStmt(const Stmt& stmt) {
+      switch (stmt.kind) {
+        case Stmt::ThrowStmtK:
+          return true;
+        case Stmt::IfStmt:
+          for (const auto& c : stmt.if_stmt.clauses)
+            for (const auto& s : c.body)
+              if (containsThrowStmt(*s))
+                return true;
+          for (const auto& s : stmt.if_stmt.else_body)
+            if (containsThrowStmt(*s))
+              return true;
+          return false;
+        case Stmt::WhileStmt:
+          for (const auto& s : stmt.while_stmt.body)
+            if (containsThrowStmt(*s))
+              return true;
+          return false;
+        case Stmt::ForStmt:
+          for (const auto& s : stmt.for_stmt.body)
+            if (containsThrowStmt(*s))
+              return true;
+          return false;
+        case Stmt::TryStmtK:
+          for (const auto& s : stmt.try_stmt.try_body)
+            if (containsThrowStmt(*s))
+              return true;
+          for (const auto& s : stmt.try_stmt.catch_body)
+            if (containsThrowStmt(*s))
+              return true;
+          for (const auto& s : stmt.try_stmt.finally_body)
+            if (containsThrowStmt(*s))
+              return true;
+          return false;
+        case Stmt::MatchStmtK:
+          for (const auto& arm : stmt.match_stmt.arms)
+            for (const auto& s : arm.body)
+              if (containsThrowStmt(*s))
+                return true;
+          return false;
+        case Stmt::UnsafeStmtK:
+          for (const auto& s : stmt.unsafe.body)
+            if (containsThrowStmt(*s))
+              return true;
+          return false;
+        default:
+          return false;
+      }
+    }
+
+    bool stmtAlwaysReturns(const Stmt& stmt) const {
+      switch (stmt.kind) {
+        case Stmt::ReturnStmt:
+          return true;
+        case Stmt::IfStmt: {
+          bool chain_matched = false;
+          for (const auto& c : stmt.if_stmt.clauses) {
+            if (chain_matched)
+              break;
+            ConstBool cb = constBoolFromExpr(*c.condition);
+            if (cb == ConstBool::False)
+              continue;
+            if (!stmtBlockAlwaysReturns(c.body))
+              return false;
+            if (cb == ConstBool::True) {
+              chain_matched = true;
+              return true;
+            }
+          }
+          if (chain_matched)
+            return true;
+          if (stmt.if_stmt.else_body.empty())
+            return false;
+          return stmtBlockAlwaysReturns(stmt.if_stmt.else_body);
+        }
+        default:
+          return false;
+      }
+    }
+
+    bool stmtBlockAlwaysReturns(const std::vector<std::unique_ptr<Stmt>>& stmts) const {
+      for (const auto& s : stmts) {
+        if (stmtAlwaysReturns(*s))
+          return true;
+      }
+      return false;
+    }
+
+    bool stmtAbortsRestOfBlock(const Stmt& stmt) const {
+      if (stmt.kind == Stmt::ReturnStmt || stmt.kind == Stmt::ThrowStmtK)
+        return true;
+      if (stmt.kind == Stmt::IfStmt) {
+        for (const auto& c : stmt.if_stmt.clauses) {
+          ConstBool cb = constBoolFromExpr(*c.condition);
+          if (cb == ConstBool::False)
+            continue;
+          if (cb == ConstBool::True)
+            return stmtBlockAlwaysReturns(c.body);
+        }
+        return false;
+      }
+      if (stmt.kind == Stmt::TryStmtK)
+        return tryCatchUnreachable(stmt.try_stmt.try_body);
+      if (stmt.kind == Stmt::MatchStmtK) {
+        std::optional<int64_t> const_scrut = constIntFromExpr(*stmt.match_stmt.scrutinee);
+        if (!const_scrut)
+          return false;
+        for (const auto& arm : stmt.match_stmt.arms) {
+          if (arm.pat && isCatchAllPattern(*arm.pat))
+            continue;
+          if (arm.pat && patternCertainlyFailsConstInt(*arm.pat, *const_scrut))
+            continue;
+          if (arm.pat && patternMatchesConstIntSpecific(*arm.pat, *const_scrut))
+            return stmtBlockAlwaysReturns(arm.body);
+        }
+        for (const auto& arm : stmt.match_stmt.arms) {
+          if (arm.pat && isCatchAllPattern(*arm.pat))
+            return stmtBlockAlwaysReturns(arm.body);
+        }
+      }
+      return false;
+    }
+
+    bool tryCatchUnreachable(const std::vector<std::unique_ptr<Stmt>>& try_body) const {
+      for (const auto& s : try_body) {
+        if (containsThrowStmt(*s))
+          return false;
+      }
+      return stmtBlockAlwaysReturns(try_body);
+    }
+
     void emitTry(const TryStmt& tr) {
+      bool emit_catch = tr.has_catch && !tryCatchUnreachable(tr.try_body);
+
       TryLabels labels;
       labels.resume_label = gen_->fresh("try.resume");
       labels.body_label = gen_->fresh("try.body");
@@ -1325,10 +2235,14 @@ private:
       labels.catch_type = tr.catch_type;
       labels.catch_type_tag = tr.catch_type_tag;
       labels.catch_type_explicit = tr.catch_type_explicit;
-      labels.has_catch = tr.has_catch;
+      labels.has_catch = emit_catch;
       labels.has_finally = tr.has_finally;
       labels.stack_index = try_stack_.size();
-      if (tr.has_catch)
+      if (emitting_finally_for_ >= 0)
+        labels.contained_in_finally_of = emitting_finally_for_;
+      if (emitting_finally_for_ >= 0)
+        labels.continue_label = gen_->fresh("try.cont");
+      if (emit_catch)
         ensureSlot(tr.catch_var, tr.catch_type);
 
       std::string unwind_slot = gen_->fresh("tryunw");
@@ -1344,13 +2258,22 @@ private:
       emitTryEnter(errCtx(), resume_var, labels.resume_label, labels.body_label);
 
       gen_->out_ << labels.body_label << ":\n";
+      if (gen_->pending_ret_init_)
+        gen_->out_ << "  store i1 false, i1* %" << gen_->pending_ret_flag_ << "\n";
+      if (gen_->pending_throw_init_)
+        gen_->out_ << "  store i1 false, i1* %" << gen_->pending_throw_flag_ << "\n";
+      if (gen_->pending_jump_init_)
+        gen_->out_ << "  store i8 0, i8* %" << gen_->pending_jump_kind_ << "\n";
+      bool try_body_terminated = false;
       {
         Ctx body_ctx = fork();
         for (const auto& s : tr.try_body)
           body_ctx.emitStmt(*s);
+        try_body_terminated = body_ctx.terminated;
         mergeChild(body_ctx);
+        if (try_body_terminated && !emit_catch && !tr.has_finally)
+          terminated = true;
         if (!body_ctx.terminated) {
-          emitTrySuccess(errCtx());
           gen_->out_ << "  br label %"
                      << (tr.has_finally ? labels.finally_label : labels.after_label) << "\n";
         }
@@ -1358,7 +2281,9 @@ private:
 
       gen_->out_ << labels.resume_label << ":\n";
       gen_->out_ << "  store i1 true, i1* %" << unwind_slot << "\n";
-      if (tr.has_catch) {
+      if (gen_->pending_throw_init_)
+        gen_->out_ << "  store i1 false, i1* %" << gen_->pending_throw_flag_ << "\n";
+      if (emit_catch) {
         std::string caught = emitCaughtValueGlobal(errCtx());
         if (tr.catch_type_explicit && tr.catch_type_tag != 0) {
           std::string ok = gen_->fresh("tagok");
@@ -1366,7 +2291,14 @@ private:
           std::string cmp = emitCaughtMatches(errCtx(), tr.catch_type_tag);
           gen_->out_ << "  br i1 " << cmp << ", label %" << ok << ", label %" << mismatch << "\n";
           gen_->out_ << mismatch << ":\n";
-          emitRethrowCaught();
+          if (tr.has_finally) {
+            std::string tag = emitCaughtTagGlobal(errCtx());
+            std::string val = emitCaughtValueGlobal(errCtx());
+            setPendingThrowValues(tag, val);
+            gen_->out_ << "  br label %" << labels.finally_label << "\n";
+          } else {
+            emitRethrowCaught();
+          }
           gen_->out_ << ok << ":\n";
         }
         storeVar(tr.catch_var, caught, tr.catch_type);
@@ -1378,35 +2310,58 @@ private:
           gen_->out_ << "  br label %"
                      << (tr.has_finally ? labels.finally_label : labels.after_label) << "\n";
         }
-      } else if (tr.has_finally) {
-        gen_->out_ << "  br label %" << labels.finally_label << "\n";
       } else {
-        emitRethrowCaught();
+        emitUncaughtRethrow();
       }
 
       if (tr.has_finally) {
         gen_->out_ << labels.finally_label << ":\n";
+        int prev_finally = emitting_finally_for_;
+        emitting_finally_for_ = static_cast<int>(labels.stack_index);
         Ctx fin_ctx = fork();
         for (const auto& s : tr.finally_body)
           fin_ctx.emitStmt(*s);
         mergeChild(fin_ctx);
-        if (!fin_ctx.terminated) {
+        emitting_finally_for_ = prev_finally;
+        bool pending_ctrl = gen_->pending_ret_init_ || gen_->pending_throw_init_ ||
+                            gen_->pending_jump_init_;
+        if (emit_catch) {
+          if (!fin_ctx.terminated || pending_ctrl)
+            emitFinallyEpilogue(labels);
+        } else if (pending_ctrl) {
+          emitFinallyEpilogue(labels);
+        } else if (!fin_ctx.terminated) {
           std::string unw = gen_->fresh("tryunl");
           gen_->out_ << "  %" << unw << " = load i1, i1* %" << unwind_slot << "\n";
-          if (!tr.has_catch) {
-            std::string rethrow_path = gen_->fresh("tryrethrow");
-            std::string done = labels.after_label;
-            gen_->out_ << "  br i1 %" << unw << ", label %" << rethrow_path << ", label %" << done
-                       << "\n";
-            gen_->out_ << rethrow_path << ":\n";
-            emitRethrowCaught();
-          } else {
-            emitFinallyEpilogue(labels);
-          }
+          std::string rethrow_path = gen_->fresh("tryrethrow");
+          std::string done = labels.after_label;
+          gen_->out_ << "  br i1 %" << unw << ", label %" << rethrow_path << ", label %" << done
+                     << "\n";
+          gen_->out_ << rethrow_path << ":\n";
+          emitUncaughtRethrow();
         }
       }
 
       gen_->out_ << labels.after_label << ":\n";
+      emitTrySuccess(errCtx());
+      if (try_body_terminated && !emit_catch && !tr.has_finally) {
+        gen_->out_ << "  unreachable\n";
+      } else if (terminated && !tr.has_finally) {
+        gen_->out_ << "  unreachable\n";
+      } else if (labels.contained_in_finally_of >= 0) {
+        gen_->out_ << "  br label %" << labels.continue_label << "\n";
+      } else if (try_stack_.size() > 1 && !tr.has_finally) {
+        const TryLabels& outer = try_stack_[try_stack_.size() - 2];
+        std::string next = outer.has_finally ? outer.finally_label : outer.after_label;
+        gen_->out_ << "  br label %" << next << "\n";
+      } else if (tr.has_finally && !emit_catch && labels.contained_in_finally_of < 0 &&
+                 try_stack_.size() <= 1) {
+        gen_->out_ << "  unreachable\n";
+      }
+      if (tr.has_finally)
+        terminated = false;
+      if (labels.contained_in_finally_of >= 0)
+        gen_->out_ << labels.continue_label << ":\n";
       try_stack_.pop_back();
     }
 
@@ -1414,42 +2369,6 @@ private:
       return PatCodegenCtx{
           gen_->out_, [&](const std::string& hint) { return gen_->fresh(hint); },
           [&](const Expr& e) { return emitExpr(e); }, &gen_->obj_reg_};
-    }
-
-    void emitMatch(const MatchStmt& m) {
-      std::string scrut = emitExpr(*m.scrutinee);
-      TypeDesc sty = exprType(*m.scrutinee);
-      std::string end_label = gen_->fresh("matchend");
-      auto pre = env_;
-      std::string next_label;
-
-      for (size_t i = 0; i < m.arms.size(); ++i) {
-        const auto& arm = m.arms[i];
-        std::string body_label = gen_->fresh("matchbody");
-        next_label = (i + 1 < m.arms.size()) ? gen_->fresh("matchnext") : end_label;
-
-        PatTestResult tr = emitPatternTest(patCtx(), *arm.pat, scrut, sty);
-        if (!tr.always)
-          gen_->out_ << "  br i1 " << tr.cond << ", label %" << body_label << ", label %" << next_label << "\n";
-        else
-          gen_->out_ << "  br label %" << body_label << "\n";
-
-        gen_->out_ << body_label << ":\n";
-        Ctx body_ctx = fork();
-        body_ctx.env_ = pre;
-        for (const auto& b : tr.binds)
-          body_ctx.storeVar(b.name, b.value, b.type);
-        for (const auto& s : arm.body)
-          body_ctx.emitStmt(*s);
-        mergeChild(body_ctx);
-        if (!body_ctx.terminated)
-          gen_->out_ << "  br label %" << end_label << "\n";
-
-        if (next_label != end_label)
-          gen_->out_ << next_label << ":\n";
-      }
-
-      gen_->out_ << end_label << ":\n";
     }
 
     void emitThrowStmt(const ThrowStmt& th) {
@@ -1461,12 +2380,31 @@ private:
         if (ut && ut->kind == UserTypeKind::Exception)
           tag = ut->type_tag;
       }
+      if (emitting_finally_for_ >= 0) {
+        flushScopeDefers();
+        setPendingThrow(tag, val);
+        terminated = true;
+        return;
+      }
+      std::string finally = innermostFinallyLabel();
+      if (!finally.empty()) {
+        completeTryForControlToFinally(finally);
+        setPendingThrow(tag, val);
+        flushScopeDefers();
+        gen_->out_ << "  br label %" << finally << "\n";
+        terminated = true;
+        return;
+      }
+      flushDefers();
       emitThrow(errCtx(), tag, val);
       gen_->out_ << "  unreachable\n";
       terminated = true;
     }
 
     void emitForEach(const For& fo) {
+      if (foreachConstEmpty(*fo.foreach_iter))
+        return;
+
       TypeDesc coll_ty = exprType(*fo.foreach_iter);
       TypeDesc elem_ty = elemTypeOf(coll_ty);
       std::string coll = emitExpr(*fo.foreach_iter);
@@ -1519,6 +2457,11 @@ private:
     }
 
     void emitRangeFor(const For& fo) {
+      std::optional<int64_t> cs = constIntFromExpr(*fo.range_start);
+      std::optional<int64_t> ce = constIntFromExpr(*fo.range_end);
+      if (cs && ce && rangeForConstEmpty(*cs, *ce, fo.range_exclusive))
+        return;
+
       std::string start = emitExpr(*fo.range_start);
       std::string end = emitExpr(*fo.range_end);
       storeVar(fo.range_var, start, defaultIntType());
@@ -1601,6 +2544,11 @@ private:
     void emitFor(const For& fo) {
 
       if (fo.is_parallel) {
+        std::optional<int64_t> cs = constIntFromExpr(*fo.range_start);
+        std::optional<int64_t> ce = constIntFromExpr(*fo.range_end);
+        if (cs && ce && rangeForConstEmpty(*cs, *ce, fo.range_exclusive))
+          return;
+
         std::string start = emitExpr(*fo.range_start);
         std::string end = emitExpr(*fo.range_end);
         if (!fo.range_exclusive) {
@@ -1608,7 +2556,30 @@ private:
           gen_->out_ << "  %" << adj << " = add " << I64 << " " << end << ", 1\n";
           end = "%" + adj;
         }
-        emitParallelFor(concCtx(), fo.parallel_fn, start, end);
+        std::string closure;
+        if (!fo.parallel_captures.empty()) {
+          auto it = gen_->fn_by_llvm_.find(fo.parallel_fn);
+          if (it == gen_->fn_by_llvm_.end() || !it->second)
+            throw FarError("internal: missing parallel-for worker");
+          const Function* pfor = it->second;
+          std::string ptr = fnPointerBitcastLlvm(pfor->llvm_name, pfor);
+          int64_t ncaps = static_cast<int64_t>(fo.parallel_captures.size());
+          std::string c0 = "0", c1 = "0", c2 = "0", c3 = "0";
+          if (ncaps > 0)
+            c0 = loadVar(fo.parallel_captures[0]);
+          if (ncaps > 1)
+            c1 = loadVar(fo.parallel_captures[1]);
+          if (ncaps > 2)
+            c2 = loadVar(fo.parallel_captures[2]);
+          if (ncaps > 3)
+            c3 = loadVar(fo.parallel_captures[3]);
+          std::string cl = gen_->fresh("pforcl");
+          gen_->out_ << "  %" << cl << " = call " << I64 << " @far_closure_new(i8* " << ptr << ", " << I64
+                     << " " << ncaps << ", " << I64 << " " << c0 << ", " << I64 << " " << c1 << ", " << I64
+                     << " " << c2 << ", " << I64 << " " << c3 << ")\n";
+          closure = "%" + cl;
+        }
+        emitParallelFor(concCtx(), fo.parallel_fn, start, end, closure);
         return;
       }
 
@@ -1631,6 +2602,12 @@ private:
       std::string step_label = gen_->fresh("for.step");
 
       std::string end_label = gen_->fresh("for.end");
+
+      if (fo.cond && constBoolFromExpr(*fo.cond) == ConstBool::False) {
+        gen_->out_ << "  br label %" << end_label << "\n";
+        gen_->out_ << end_label << ":\n";
+        return;
+      }
 
       loop_stack_.push_back({end_label, step_label});
 
@@ -1670,6 +2647,7 @@ private:
 
       gen_->out_ << step_label << ":\n";
 
+      bool step_terminated = false;
       if (fo.step) {
 
         Ctx step_ctx = fork();
@@ -1677,10 +2655,11 @@ private:
         step_ctx.emitStmt(*fo.step);
 
         mergeChild(step_ctx);
+        step_terminated = step_ctx.terminated;
 
       }
 
-      if (!terminated)
+      if (!step_terminated)
 
         gen_->out_ << "  br label %" << cond_label << "\n";
 
@@ -1700,6 +2679,17 @@ private:
 
         throw FarError("break outside loop");
 
+      flushScopeDefers();
+
+      std::string finally = innermostFinallyLabel();
+      if (!finally.empty()) {
+        completeTryForControlToFinally(finally);
+        setPendingBreak(loop_stack_.back().break_label);
+        gen_->out_ << "  br label %" << finally << "\n";
+        terminated = true;
+        return;
+      }
+
       gen_->out_ << "  br label %" << loop_stack_.back().break_label << "\n";
 
       terminated = true;
@@ -1713,6 +2703,17 @@ private:
       if (loop_stack_.empty())
 
         throw FarError("continue outside loop");
+
+      flushScopeDefers();
+
+      std::string finally = innermostFinallyLabel();
+      if (!finally.empty()) {
+        completeTryForControlToFinally(finally);
+        setPendingContinue(loop_stack_.back().continue_label);
+        gen_->out_ << "  br label %" << finally << "\n";
+        terminated = true;
+        return;
+      }
 
       gen_->out_ << "  br label %" << loop_stack_.back().continue_label << "\n";
 
@@ -1777,6 +2778,12 @@ private:
           emitCollectionStore(collCtx(), arr_ty, arr, idx, value);
           return value;
         }
+        if (isUserDesc(arr_ty) && gen_->obj_reg_.lookupMethod(arr_ty, "__index_set")) {
+          std::string sym = userMangleMethod(userTypeKey(arr_ty), "__index_set");
+          gen_->out_ << "  call i64 @" << sym << "(i64 " << arr << ", i64 " << idx << ", i64 " << value
+                     << ")\n";
+          return value;
+        }
         gen_->out_ << "  call void @far_array_set(i64 " << arr << ", i64 " << idx << ", i64 " << value
                    << ")\n";
         return value;
@@ -1828,6 +2835,7 @@ private:
         return emitExpr(*a.target);
       }
       std::string rhs;
+      TypeDesc target_ty = exprType(*a.target);
       if (a.op == "=") {
         rhs = emitExpr(*a.value);
       } else {
@@ -1839,27 +2847,32 @@ private:
         std::string tmp = gen_->fresh();
         const std::string& cop = it->second;
         bool rhs_ready = false;
-        TypeDesc target_ty = exprType(*a.target);
         TypeDesc value_ty = a.value ? exprType(*a.value) : TypeDesc::prim(FarTypeId::I64);
         bool use_float = (isPrimitiveDesc(target_ty) && isFloatType(target_ty.primitive)) ||
                          (isPrimitiveDesc(value_ty) && isFloatType(value_ty.primitive));
         if (use_float && (cop == "+" || cop == "-" || cop == "*" || cop == "/" || cop == "%")) {
           std::string l = cur;
           std::string r = right;
-          if (!(isPrimitiveDesc(target_ty) && isFloatType(target_ty.primitive))) {
-            std::string conv = gen_->fresh();
-            gen_->out_ << "  %" << conv << " = sitofp " << I64 << " " << cur << " to " << F64 << "\n";
-            l = "%" + conv;
-          }
-          if (!(isPrimitiveDesc(value_ty) && isFloatType(value_ty.primitive))) {
-            std::string conv = gen_->fresh();
-            gen_->out_ << "  %" << conv << " = sitofp " << I64 << " " << right << " to " << F64 << "\n";
-            r = "%" + conv;
-          }
+          if (!(isPrimitiveDesc(target_ty) && isFloatType(target_ty.primitive)))
+            l = gen_->emitIntToF64Desc(target_ty, cur);
+          if (!(isPrimitiveDesc(value_ty) && isFloatType(value_ty.primitive)))
+            r = gen_->emitIntToF64Desc(value_ty, right);
           static const std::unordered_map<std::string, std::string> fops = {
-              {"+", "fadd"}, {"-", "fsub"}, {"*", "fmul"}, {"/", "fdiv"}, {"%", "frem"}};
-          gen_->out_ << "  %" << tmp << " = " << fops.at(cop) << " " << F64 << " " << l << ", " << r << "\n";
-          rhs = "%" + tmp;
+              {"+", "fadd"}, {"-", "fsub"}, {"*", "fmul"}};
+          if (cop == "/") {
+            std::string res = gen_->fresh();
+            gen_->out_ << "  %" << res << " = call " << F64 << " @far_f64_div_checked(" << F64 << " " << l
+                       << ", " << F64 << " " << r << ")\n";
+            rhs = "%" + res;
+          } else if (cop == "%") {
+            std::string res = gen_->fresh();
+            gen_->out_ << "  %" << res << " = call " << F64 << " @far_f64_rem_checked(" << F64 << " " << l
+                       << ", " << F64 << " " << r << ")\n";
+            rhs = "%" + res;
+          } else {
+            gen_->out_ << "  %" << tmp << " = " << fops.at(cop) << " " << F64 << " " << l << ", " << r << "\n";
+            rhs = "%" + tmp;
+          }
           rhs_ready = true;
         } else if (cop == "+") {
           if (isPrimTy(target_ty, FarTypeId::String) || isPrimTy(value_ty, FarTypeId::String) ||
@@ -1877,22 +2890,41 @@ private:
             gen_->out_ << "  %" << as_i64 << " = ptrtoint i8* %" << res << " to " << I64 << "\n";
             rhs = "%" + as_i64;
             rhs_ready = true;
+          } else if (!isUnsignedTypeDesc(target_ty)) {
+            rhs = emitGuardedSignedAdd(cur, right);
+            rhs_ready = true;
           } else {
             gen_->out_ << "  %" << tmp << " = add " << I64 << " " << cur << ", " << right << "\n";
           }
-        } else if (cop == "-")
-          gen_->out_ << "  %" << tmp << " = sub " << I64 << " " << cur << ", " << right << "\n";
-        else if (cop == "*")
-          gen_->out_ << "  %" << tmp << " = mul " << I64 << " " << cur << ", " << right << "\n";
-        else if (cop == "/")
-          gen_->out_ << "  %" << tmp << " = sdiv " << I64 << " " << cur << ", " << right << "\n";
-        else if (cop == "//") {
-          std::string q = gen_->fresh();
-          std::string r = gen_->fresh();
-          gen_->out_ << "  %" << q << " = sdiv " << I64 << " " << cur << ", " << right << "\n";
-          gen_->out_ << "  %" << r << " = srem " << I64 << " " << cur << ", " << right << "\n";
+        } else if (cop == "-") {
+          if (!isUnsignedTypeDesc(target_ty)) {
+            rhs = emitGuardedSignedSub(cur, right);
+            rhs_ready = true;
+          } else {
+            gen_->out_ << "  %" << tmp << " = sub " << I64 << " " << cur << ", " << right << "\n";
+          }
+        } else if (cop == "*") {
+          if (!isUnsignedTypeDesc(target_ty)) {
+            rhs = emitGuardedSignedMul(cur, right);
+            rhs_ready = true;
+          } else {
+            gen_->out_ << "  %" << tmp << " = mul " << I64 << " " << cur << ", " << right << "\n";
+          }
+        } else if (cop == "/") {
+          if (isUnsignedTypeDesc(target_ty))
+            rhs = emitGuardedUdiv(cur, right);
+          else
+            rhs = emitGuardedSdiv(cur, right);
+          rhs_ready = true;
+        } else if (cop == "//") {
+          if (isUnsignedTypeDesc(target_ty)) {
+            rhs = emitGuardedUdiv(cur, right);
+            rhs_ready = true;
+          } else {
+          std::string q = emitGuardedSdiv(cur, right);
+          std::string rem = emitGuardedSrem(cur, right);
           std::string r_ne = gen_->fresh();
-          gen_->out_ << "  %" << r_ne << " = icmp ne " << I64 << " %" << r << ", 0\n";
+          gen_->out_ << "  %" << r_ne << " = icmp ne " << I64 << " " << rem << ", 0\n";
           std::string a_neg = gen_->fresh();
           std::string b_neg = gen_->fresh();
           gen_->out_ << "  %" << a_neg << " = icmp slt " << I64 << " " << cur << ", 0\n";
@@ -1902,12 +2934,17 @@ private:
           std::string need = gen_->fresh();
           gen_->out_ << "  %" << need << " = and i1 %" << r_ne << ", %" << signs << "\n";
           std::string q_adj = gen_->fresh();
-          gen_->out_ << "  %" << q_adj << " = sub " << I64 << " %" << q << ", 1\n";
+          gen_->out_ << "  %" << q_adj << " = sub " << I64 << " " << q << ", 1\n";
           gen_->out_ << "  %" << tmp << " = select i1 %" << need << ", " << I64 << " %" << q_adj << ", " << I64
-                     << " %" << q << "\n";
-        } else if (cop == "%")
-          gen_->out_ << "  %" << tmp << " = srem " << I64 << " " << cur << ", " << right << "\n";
-        else if (cop == "**")
+                     << " " << q << "\n";
+          }
+        } else if (cop == "%") {
+          if (isUnsignedTypeDesc(target_ty))
+            rhs = emitGuardedUrem(cur, right);
+          else
+            rhs = emitGuardedSrem(cur, right);
+          rhs_ready = true;
+        } else if (cop == "**")
           gen_->out_ << "  %" << tmp << " = call " << I64 << " @far_ipow(" << I64 << " " << cur << ", " << I64
                      << " " << right << ")\n";
         else if (cop == "&")
@@ -1916,16 +2953,39 @@ private:
           gen_->out_ << "  %" << tmp << " = or " << I64 << " " << cur << ", " << right << "\n";
         else if (cop == "^")
           gen_->out_ << "  %" << tmp << " = xor " << I64 << " " << cur << ", " << right << "\n";
-        else if (cop == "<<")
-          gen_->out_ << "  %" << tmp << " = shl " << I64 << " " << cur << ", " << right << "\n";
-        else if (cop == ">>")
-          gen_->out_ << "  %" << tmp << " = ashr " << I64 << " " << cur << ", " << right << "\n";
+        else if (cop == "<<") {
+          rhs = emitGuardedShl(cur, right);
+          rhs_ready = true;
+        }
+        else if (cop == ">>") {
+          TypeDesc tgt_ty = exprType(*a.target);
+          rhs = emitGuardedShr(cur, right, isUnsignedTypeDesc(tgt_ty));
+          rhs_ready = true;
+        }
         else
           throw FarError("unsupported compound assignment");
         if (!rhs_ready)
           rhs = "%" + tmp;
+        if (a.op != "=" && use_float) {
+          if (isPrimitiveDesc(target_ty) &&
+              (target_ty.primitive == FarTypeId::F32 || target_ty.primitive == FarTypeId::F16))
+            rhs = gen_->emitCastValueDesc(TypeDesc::prim(FarTypeId::F64), target_ty, rhs);
+          else if (!(isPrimitiveDesc(target_ty) && isFloatType(target_ty.primitive)))
+            rhs = gen_->emitCastValueDesc(TypeDesc::prim(FarTypeId::F64), target_ty, rhs);
+        }
       }
-      emitStoreTarget(*a.target, rhs, exprType(*a.target));
+      if (a.op == "=")
+        rhs = coerceToType(*a.value, target_ty, rhs);
+      rhs = narrowIntToDesc(target_ty, rhs);
+      emitStoreTarget(*a.target, rhs, target_ty);
+      if (a.target->kind == Expr::Variable) {
+        if (a.op == "=")
+          trackConstLocal(a.target->var.name, *a.value);
+        else {
+          const_int_locals_.erase(a.target->var.name);
+          const_float_locals_.erase(a.target->var.name);
+        }
+      }
       return rhs;
     }
 
@@ -1937,21 +2997,30 @@ private:
         const char* llvm_ty = slotLlvmTypeDesc(op_ty);
         bool is_float = isPrimitiveDesc(op_ty) && isFloatType(op_ty.primitive);
         std::string cur = loadVar(p.operand->var.name);
-        std::string tmp = gen_->fresh();
+        std::string result;
         if (is_float) {
+          std::string tmp = gen_->fresh();
           if (p.op == "++")
             gen_->out_ << "  %" << tmp << " = fadd " << F64 << " " << cur << ", 1.0\n";
           else
             gen_->out_ << "  %" << tmp << " = fsub " << F64 << " " << cur << ", 1.0\n";
-        } else {
+          result = "%" + tmp;
+        } else if (isUnsignedTypeDesc(op_ty)) {
+          std::string tmp = gen_->fresh();
           if (p.op == "++")
             gen_->out_ << "  %" << tmp << " = add " << I64 << " " << cur << ", 1\n";
           else
             gen_->out_ << "  %" << tmp << " = sub " << I64 << " " << cur << ", 1\n";
+          result = "%" + tmp;
+        } else {
+          result = (p.op == "++") ? emitGuardedSignedAdd(cur, "1") : emitGuardedSignedSub(cur, "1");
         }
         (void)llvm_ty;
-        storeSlotValue(p.operand->var.name, "%" + tmp);
-        return "%" + tmp;
+        storeVar(p.operand->var.name, narrowIntToDesc(op_ty, result), op_ty);
+        assigned_.insert(p.operand->var.name);
+        const_int_locals_.erase(p.operand->var.name);
+        const_float_locals_.erase(p.operand->var.name);
+        return result;
       }
       if (p.op == "~") {
         std::string val = emitExpr(*p.operand);
@@ -1982,23 +3051,47 @@ private:
         TypeDesc op_ty = exprType(*p.operand);
         bool is_float = isPrimitiveDesc(op_ty) && isFloatType(op_ty.primitive);
         std::string cur = loadVar(p.operand->var.name);
-        std::string tmp = gen_->fresh();
+        std::string result;
         if (is_float) {
+          std::string tmp = gen_->fresh();
           if (p.op == "++")
             gen_->out_ << "  %" << tmp << " = fadd " << F64 << " " << cur << ", 1.0\n";
           else
             gen_->out_ << "  %" << tmp << " = fsub " << F64 << " " << cur << ", 1.0\n";
-        } else {
+          result = "%" + tmp;
+        } else if (isUnsignedTypeDesc(op_ty)) {
+          std::string tmp = gen_->fresh();
           if (p.op == "++")
             gen_->out_ << "  %" << tmp << " = add " << I64 << " " << cur << ", 1\n";
           else
             gen_->out_ << "  %" << tmp << " = sub " << I64 << " " << cur << ", 1\n";
+          result = "%" + tmp;
+        } else {
+          result = (p.op == "++") ? emitGuardedSignedAdd(cur, "1") : emitGuardedSignedSub(cur, "1");
         }
-        storeSlotValue(p.operand->var.name, "%" + tmp);
+        storeVar(p.operand->var.name, narrowIntToDesc(op_ty, result), op_ty);
+        assigned_.insert(p.operand->var.name);
+        const_int_locals_.erase(p.operand->var.name);
+        const_float_locals_.erase(p.operand->var.name);
         return cur;
       }
       if (p.op == "!?") {
         std::string val = emitExpr(*p.operand);
+        TypeDesc ty = exprType(*p.operand);
+        if (isOptionDesc(ty)) {
+          std::string tmp = gen_->fresh("unwrap");
+          gen_->out_ << "  %" << tmp << " = call i64 @far_option_unwrap(i64 " << val << ")\n";
+          return "%" + tmp;
+        }
+        std::string is_n = gen_->fresh("nulchk");
+        gen_->out_ << "  %" << is_n << " = icmp eq " << I64 << " " << val << ", 0\n";
+        std::string ok = gen_->fresh("nulok");
+        std::string bad = gen_->fresh("nulbad");
+        gen_->out_ << "  br i1 %" << is_n << ", label %" << bad << ", label %" << ok << "\n";
+        gen_->out_ << bad << ":\n";
+        gen_->out_ << "  call void @far_panic(i64 0)\n";
+        gen_->out_ << "  unreachable\n";
+        gen_->out_ << ok << ":\n";
         return val;
       }
       throw FarError("unknown postfix operator '" + p.op + "'");
@@ -2010,7 +3103,7 @@ private:
         return val;
       if (canAssignTypes(from, target))
         return gen_->emitCastValueDesc(from, target, val);
-      return val;
+      throw FarError("cannot coerce " + typeDescName(from) + " to " + typeDescName(target));
     }
 
     void emitExprToSlot(const Expr& expr, const TypeDesc& result_ty, const std::string& slot, const char* st,
@@ -2026,6 +3119,15 @@ private:
 
     void emitTernaryToSlot(const TernaryExpr& t, const TypeDesc& result_ty, const std::string& slot, const char* st,
                            const std::string& done) {
+      ConstBool cb = constBoolFromExpr(*t.cond);
+      if (cb == ConstBool::True) {
+        emitExprToSlot(*t.then_br, result_ty, slot, st, done);
+        return;
+      }
+      if (cb == ConstBool::False) {
+        emitExprToSlot(*t.else_br, result_ty, slot, st, done);
+        return;
+      }
       std::string cond = emitBranchCond(*t.cond);
       std::string then_label = gen_->fresh("then");
       std::string else_label = gen_->fresh("else");
@@ -2053,7 +3155,8 @@ private:
 
     std::string compileTimeTypeTag(const TypeDesc& td) {
       if (isUserDesc(td)) {
-        const UserTypeDef* ut = gen_->obj_reg_.lookup(td.user_name);
+        const UserTypeDef* ut =
+            resolveUserType(td, gen_->obj_reg_, const_cast<Program&>(gen_->program_));
         if (ut)
           return std::to_string(ut->type_tag);
       }
@@ -2079,8 +3182,9 @@ private:
         return std::to_string(elemSizeBytes(t.value->type));
       }
       if (t.op == "alignof") {
-        (void)t;
-        return "8";
+        if (t.has_type)
+          return std::to_string(elemAlignBytes(t.type_arg));
+        return std::to_string(elemAlignBytes(t.value->type));
       }
       if (t.op == "stackalloc") {
         if (!t.has_type || !t.value)
@@ -2092,12 +3196,31 @@ private:
     }
 
     std::string emitIsExpr(const IsExpr& is) {
-      bool match = typeDescEquals(exprType(*is.value), is.type) ||
-                   canAssignTypes(exprType(*is.value), is.type);
-      return match ? "1" : "0";
+      std::string val = emitExpr(*is.value);
+      TypeDesc val_ty = exprType(*is.value);
+      (void)val;
+      if (isUserDesc(is.type)) {
+        const UserTypeDef* ut = gen_->obj_reg_.lookup(is.type.user_name);
+        if (!ut)
+          return "0";
+        if (typeDescEquals(val_ty, is.type))
+          return "1";
+        return "0";
+      }
+      return typeDescEquals(val_ty, is.type) ? "1" : "0";
     }
 
     std::string emitExpr(const Expr& expr) {
+      if (++emit_depth_ > 512)
+        throw FarError("codegen expression depth exceeded");
+      struct EmitDepthGuard {
+        Ctx* self;
+        explicit EmitDepthGuard(Ctx* c) : self(c) {}
+        ~EmitDepthGuard() {
+          if (self && self->emit_depth_ > 0)
+            --self->emit_depth_;
+        }
+      } depth_guard(this);
       switch (expr.kind) {
         case Expr::Int:
           return std::to_string(expr.int_lit.value);
@@ -2163,7 +3286,11 @@ private:
         case Expr::MemberExpr: {
           TypeDesc obj_ty = exprType(*expr.member.object);
           if (obj_ty.form == TypeForm::Tuple) {
-            size_t idx = static_cast<size_t>(std::stoll(expr.member.member.substr(1)));
+            int64_t raw_idx =
+                parseIntLiteral(expr.member.member.substr(1), expr.line, expr.col);
+            if (raw_idx < 0 || static_cast<size_t>(raw_idx) >= obj_ty.args.size())
+              throw FarError("tuple field index out of range");
+            size_t idx = static_cast<size_t>(raw_idx);
             std::string obj_val = emitExpr(*expr.member.object);
             std::string tmp = gen_->fresh("tupf");
             gen_->out_ << "  %" << tmp << " = call i64 @far_tarray_get(i64 " << obj_val << ", i64 " << idx
@@ -2191,6 +3318,8 @@ private:
           const Function* lf = it->second.back();
           std::string ptr = fnPointerBitcastLlvm(lf->llvm_name, lf);
           int64_t ncaps = static_cast<int64_t>(expr.fn_lit.captures.size());
+          if (expr.fn_lit.captures.size() > 4)
+            throw FarError("closure captures at most 4 variables");
           std::string c0 = "0", c1 = "0", c2 = "0", c3 = "0";
           if (ncaps > 0)
             c0 = loadVar(expr.fn_lit.captures[0]);
@@ -2305,7 +3434,7 @@ private:
       std::string arr = emitExpr(*idx.array);
       std::string index = emitExpr(*idx.index);
       if (isUserDesc(arr_ty)) {
-        std::string sym = userMangleMethod(arr_ty.user_name, "__index_get");
+        std::string sym = userMangleMethod(userTypeKey(arr_ty), "__index_get");
         std::string tmp = gen_->fresh("idx");
         gen_->out_ << "  %" << tmp << " = call i64 @" << sym << "(i64 " << arr << ", i64 " << index << ")\n";
         return "%" + tmp;
@@ -2454,7 +3583,7 @@ private:
         if (om) {
           std::string obj = emitExpr(*op.left);
           std::string rval = emitExpr(*op.right);
-          std::string sym = userMangleMethod(lt.user_name, om->name);
+          std::string sym = userMangleMethod(userTypeKey(lt), om->name);
           std::string tmp = gen_->fresh("uop");
           gen_->out_ << "  %" << tmp << " = call i64 @" << sym << "(i64 " << obj << ", i64 " << rval << ")\n";
           return "%" + tmp;
@@ -2462,6 +3591,14 @@ private:
       }
 
       if (op.op == "??") {
+        if (exprConstNonNullish(*op.left))
+          return coerceToType(*op.left, result_ty, emitExpr(*op.left));
+        if (op.left->kind == Expr::Int && op.left->int_lit.value == 0)
+          return coerceToType(*op.right, result_ty, emitExpr(*op.right));
+        if (op.left->kind == Expr::Float && op.left->float_lit.value == 0.0)
+          return coerceToType(*op.right, result_ty, emitExpr(*op.right));
+        if (op.left->kind == Expr::String && op.left->string_lit.value.empty())
+          return coerceToType(*op.right, result_ty, emitExpr(*op.right));
         const char* st = slotLlvmTypeDesc(result_ty);
         std::string slot = gen_->fresh("ncslot");
         gen_->hoisted_allocas_ << "  %" << slot << " = alloca " << st << "\n";
@@ -2532,9 +3669,12 @@ private:
         else if (op.op == "^")
           gen_->out_ << "  %" << tmp << " = xor " << I64 << " " << left << ", " << right << "\n";
         else if (op.op == "<<")
-          gen_->out_ << "  %" << tmp << " = shl " << I64 << " " << left << ", " << right << "\n";
-        else
-          gen_->out_ << "  %" << tmp << " = ashr " << I64 << " " << left << ", " << right << "\n";
+          return emitGuardedShl(left, right);
+        else if (op.op == ">>") {
+          if (isUnsignedTypeDesc(lt))
+            return emitGuardedShr(left, right, true);
+          return emitGuardedShr(left, right, false);
+        }
         return "%" + tmp;
       }
 
@@ -2567,18 +3707,40 @@ private:
 
       if (op.op == "?.") {
         std::string obj = emitExpr(*op.left);
+        TypeDesc obj_ty = exprType(*op.left);
+        TypeDesc base_ty = obj_ty;
+        if (isOptionDesc(obj_ty) && !obj_ty.args.empty())
+          base_ty = obj_ty.args[0];
+        else if (isPointerDesc(obj_ty))
+          base_ty = obj_ty.args[0];
         std::string is_n = gen_->fresh();
-        gen_->out_ << "  %" << is_n << " = icmp eq " << I64 << " " << obj << ", 0\n";
+        if (isOptionDesc(obj_ty)) {
+          std::string some = gen_->fresh("some");
+          gen_->out_ << "  %" << some << " = call i64 @far_option_is_some(i64 " << obj << ")\n";
+          gen_->out_ << "  %" << is_n << " = icmp eq i64 %" << some << ", 0\n";
+        } else {
+          gen_->out_ << "  %" << is_n << " = icmp eq " << I64 << " " << obj << ", 0\n";
+        }
         std::string ok = gen_->fresh("optok");
         std::string nil = gen_->fresh("optnil");
         std::string end = gen_->fresh("optend");
         gen_->out_ << "  br i1 %" << is_n << ", label %" << nil << ", label %" << ok << "\n";
         gen_->out_ << ok << ":\n";
-        std::string member = op.right->string_lit.value;
-        std::string val = obj;
-        if (!member.empty()) {
-          (void)member;
-          val = obj;
+        std::string inner_val = obj;
+        if (isOptionDesc(obj_ty)) {
+          std::string unwrapped = gen_->fresh("optu");
+          gen_->out_ << "  %" << unwrapped << " = call i64 @far_option_unwrap(i64 " << obj << ")\n";
+          inner_val = "%" + unwrapped;
+        }
+        std::string val = "0";
+        if (op.right && op.right->kind == Expr::String && isUserDesc(base_ty)) {
+          MemberAccess mem;
+          mem.member = op.right->string_lit.value;
+          val = emitUserMember(userCtx(), gen_->obj_reg_, mem, base_ty, inner_val);
+        } else if (op.right && op.right->kind == Expr::String && isUserDesc(obj_ty)) {
+          MemberAccess mem;
+          mem.member = op.right->string_lit.value;
+          val = emitUserMember(userCtx(), gen_->obj_reg_, mem, obj_ty, obj);
         }
         gen_->out_ << "  br label %" << end << "\n";
         gen_->out_ << nil << ":\n";
@@ -2594,6 +3756,22 @@ private:
         TypeDesc rty = exprType(*op.right);
         if (isAggregateDesc(rty))
           return emitUnaryAggregate(aggCtx(), "-", aggregateDescId(rty), emitExpr(*op.right));
+        if (isPrimitiveDesc(rty) && isFloatType(rty.primitive)) {
+          std::string right = emitExpr(*op.right);
+          std::string tmp = gen_->fresh();
+          gen_->out_ << "  %" << tmp << " = fsub " << F64 << " 0.0, " << right << "\n";
+          return "%" + tmp;
+        }
+        std::string right = emitExpr(*op.right);
+        if (isUnsignedTypeDesc(rty)) {
+          std::string tmp = gen_->fresh();
+          gen_->out_ << "  %" << tmp << " = sub " << I64 << " 0, " << right << "\n";
+          return "%" + tmp;
+        }
+        std::string tmp = gen_->fresh();
+        gen_->out_ << "  %" << tmp << " = call " << I64 << " @far_i64_neg_checked(" << I64 << " " << right
+                   << ")\n";
+        return "%" + tmp;
       }
 
       if (op.op == "**") {
@@ -2621,17 +3799,16 @@ private:
 
         std::string right = emitExpr(*op.right);
 
-        std::string q = gen_->fresh();
+        if (binOpUsesUnsigned(lty, rty))
+          return emitGuardedUdiv(left, right);
 
-        std::string r = gen_->fresh();
+        std::string q = emitGuardedSdiv(left, right);
 
-        gen_->out_ << "  %" << q << " = sdiv " << I64 << " " << left << ", " << right << "\n";
-
-        gen_->out_ << "  %" << r << " = srem " << I64 << " " << left << ", " << right << "\n";
+        std::string rem = emitGuardedSrem(left, right);
 
         std::string r_ne = gen_->fresh();
 
-        gen_->out_ << "  %" << r_ne << " = icmp ne " << I64 << " %" << r << ", 0\n";
+        gen_->out_ << "  %" << r_ne << " = icmp ne " << I64 << " " << rem << ", 0\n";
 
         std::string a_neg = gen_->fresh();
 
@@ -2651,11 +3828,12 @@ private:
 
         std::string q_adj = gen_->fresh();
 
-        gen_->out_ << "  %" << q_adj << " = sub " << I64 << " %" << q << ", 1\n";
+        gen_->out_ << "  %" << q_adj << " = sub " << I64 << " " << q << ", 1\n";
 
         std::string res = gen_->fresh();
 
-        gen_->out_ << "  %" << res << " = select i1 %" << need << ", " << I64 << " %" << q_adj << ", " << I64 << " %" << q << "\n";
+        gen_->out_ << "  %" << res << " = select i1 %" << need << ", " << I64 << " %" << q_adj << ", " << I64 << " "
+                   << q << "\n";
 
         return "%" + res;
 
@@ -2738,21 +3916,26 @@ private:
             (isPrimitiveDesc(rt) && isFloatType(rt.primitive))) {
           std::string l = left;
           std::string r = right;
-          if (!(isPrimitiveDesc(lt) && isFloatType(lt.primitive))) {
-            std::string conv = gen_->fresh();
-            gen_->out_ << "  %" << conv << " = sitofp " << I64 << " " << left << " to " << F64 << "\n";
-            l = "%" + conv;
-          }
-          if (!(isPrimitiveDesc(rt) && isFloatType(rt.primitive))) {
-            std::string conv = gen_->fresh();
-            gen_->out_ << "  %" << conv << " = sitofp " << I64 << " " << right << " to " << F64 << "\n";
-            r = "%" + conv;
-          }
+          if (!(isPrimitiveDesc(lt) && isFloatType(lt.primitive)))
+            l = gen_->emitIntToF64Desc(lt, left);
+          if (!(isPrimitiveDesc(rt) && isFloatType(rt.primitive)))
+            r = gen_->emitIntToF64Desc(rt, right);
           static const std::unordered_map<std::string, std::string> fcmpOps = {
-              {"==", "oeq"}, {"!=", "one"}, {"<", "olt"}, {">", "ogt"}, {"<=", "ole"}, {">=", "oge"}};
+              {"==", "oeq"}, {"!=", "une"}, {"<", "olt"}, {">", "ogt"}, {"<=", "ole"}, {">=", "oge"}};
           gen_->out_ << "  %" << tmp << " = fcmp " << fcmpOps.at(cmp_op) << " " << F64 << " " << l << ", " << r << "\n";
         } else {
-          gen_->out_ << "  %" << tmp << " = icmp " << cmp->second << " " << I64 << " " << left << ", " << right << "\n";
+          std::string icmp = cmp->second;
+          if (binOpUsesUnsigned(lt, rt)) {
+            if (icmp == "slt")
+              icmp = "ult";
+            else if (icmp == "sgt")
+              icmp = "ugt";
+            else if (icmp == "sle")
+              icmp = "ule";
+            else if (icmp == "sge")
+              icmp = "uge";
+          }
+          gen_->out_ << "  %" << tmp << " = icmp " << icmp << " " << I64 << " " << left << ", " << right << "\n";
         }
         std::string bool_tmp = gen_->fresh();
         gen_->out_ << "  %" << bool_tmp << " = zext i1 %" << tmp << " to " << I64 << "\n";
@@ -2765,41 +3948,146 @@ private:
       std::string left = emitExpr(*op.left);
       std::string right = emitExpr(*op.right);
       std::string tmp = gen_->fresh();
+      const bool unsigned_op = binOpUsesUnsigned(lt, rt);
       if ((isPrimitiveDesc(lt) && isFloatType(lt.primitive)) ||
           (isPrimitiveDesc(rt) && isFloatType(rt.primitive))) {
         std::string l = left;
         std::string r = right;
-        if (!(isPrimitiveDesc(lt) && isFloatType(lt.primitive))) {
-          std::string conv = gen_->fresh();
-          gen_->out_ << "  %" << conv << " = sitofp " << I64 << " " << left << " to " << F64 << "\n";
-          l = "%" + conv;
-        }
-        if (!(isPrimitiveDesc(rt) && isFloatType(rt.primitive))) {
-          std::string conv = gen_->fresh();
-          gen_->out_ << "  %" << conv << " = sitofp " << I64 << " " << right << " to " << F64 << "\n";
-          r = "%" + conv;
-        }
+        if (!(isPrimitiveDesc(lt) && isFloatType(lt.primitive)))
+          l = gen_->emitIntToF64Desc(lt, left);
+        if (!(isPrimitiveDesc(rt) && isFloatType(rt.primitive)))
+          r = gen_->emitIntToF64Desc(rt, right);
         static const std::unordered_map<std::string, std::string> fops = {
-            {"+", "fadd"}, {"-", "fsub"}, {"*", "fmul"}, {"/", "fdiv"}, {"%", "frem"}};
+            {"+", "fadd"}, {"-", "fsub"}, {"*", "fmul"}};
+        if (op.op == "/") {
+          std::string res = gen_->fresh();
+          gen_->out_ << "  %" << res << " = call " << F64 << " @far_f64_div_checked(" << F64 << " " << l
+                     << ", " << F64 << " " << r << ")\n";
+          return "%" + res;
+        }
+        if (op.op == "%") {
+          std::string res = gen_->fresh();
+          gen_->out_ << "  %" << res << " = call " << F64 << " @far_f64_rem_checked(" << F64 << " " << l
+                     << ", " << F64 << " " << r << ")\n";
+          return "%" + res;
+        }
         auto it = fops.find(op.op);
         if (it == fops.end())
           throw FarError("unknown float operator '" + op.op + "'");
         gen_->out_ << "  %" << tmp << " = " << it->second << " " << F64 << " " << l << ", " << r << "\n";
       } else {
-        gen_->out_ << "  %" << tmp << " = " << arith->second << " " << I64 << " " << left << ", " << right << "\n";
+        std::string llvm_op = arith->second;
+        if (unsigned_op) {
+          if (llvm_op == "sdiv")
+            llvm_op = "udiv";
+          else if (llvm_op == "srem")
+            llvm_op = "urem";
+        } else {
+          if (llvm_op == "add")
+            return emitGuardedSignedAdd(left, right);
+          if (llvm_op == "sub")
+            return emitGuardedSignedSub(left, right);
+          if (llvm_op == "mul")
+            return emitGuardedSignedMul(left, right);
+          if (llvm_op == "sdiv")
+            return emitGuardedSdiv(left, right);
+          if (llvm_op == "srem")
+            return emitGuardedSrem(left, right);
+        }
+        if (llvm_op == "udiv")
+          return emitGuardedUdiv(left, right);
+        if (llvm_op == "urem")
+          return emitGuardedUrem(left, right);
+        gen_->out_ << "  %" << tmp << " = " << llvm_op << " " << I64 << " " << left << ", " << right << "\n";
       }
       return "%" + tmp;
     }
 
 
 
+    std::string emitGuardedUdiv(const std::string& left, const std::string& right) {
+      std::string tmp = gen_->fresh();
+      gen_->out_ << "  %" << tmp << " = call " << I64 << " @far_u64_div_checked(" << I64 << " " << left
+                 << ", " << I64 << " " << right << ")\n";
+      return "%" + tmp;
+    }
+
+    std::string emitGuardedUrem(const std::string& left, const std::string& right) {
+      std::string tmp = gen_->fresh();
+      gen_->out_ << "  %" << tmp << " = call " << I64 << " @far_u64_mod_checked(" << I64 << " " << left
+                 << ", " << I64 << " " << right << ")\n";
+      return "%" + tmp;
+    }
+
+    std::string emitGuardedShl(const std::string& left, const std::string& right) {
+      std::string tmp = gen_->fresh();
+      gen_->out_ << "  %" << tmp << " = call " << I64 << " @far_i64_shl_checked(" << I64 << " " << left
+                 << ", " << I64 << " " << right << ")\n";
+      return "%" + tmp;
+    }
+
+    std::string emitGuardedShr(const std::string& left, const std::string& right, bool unsigned_shift) {
+      std::string tmp = gen_->fresh();
+      const char* fn = unsigned_shift ? "far_u64_shr_checked" : "far_i64_shr_checked";
+      gen_->out_ << "  %" << tmp << " = call " << I64 << " @" << fn << "(" << I64 << " " << left << ", " << I64
+                 << " " << right << ")\n";
+      return "%" + tmp;
+    }
+
+    std::string emitGuardedSignedAdd(const std::string& left, const std::string& right) {
+      std::string tmp = gen_->fresh();
+      gen_->out_ << "  %" << tmp << " = call " << I64 << " @far_i64_add_checked(" << I64 << " " << left
+                 << ", " << I64 << " " << right << ")\n";
+      return "%" + tmp;
+    }
+
+    std::string emitGuardedSignedSub(const std::string& left, const std::string& right) {
+      std::string tmp = gen_->fresh();
+      gen_->out_ << "  %" << tmp << " = call " << I64 << " @far_i64_sub_checked(" << I64 << " " << left
+                 << ", " << I64 << " " << right << ")\n";
+      return "%" + tmp;
+    }
+
+    std::string emitGuardedSignedMul(const std::string& left, const std::string& right) {
+      std::string tmp = gen_->fresh();
+      gen_->out_ << "  %" << tmp << " = call " << I64 << " @far_i64_mul_checked(" << I64 << " " << left
+                 << ", " << I64 << " " << right << ")\n";
+      return "%" + tmp;
+    }
+
+    std::string emitGuardedSdiv(const std::string& left, const std::string& right) {
+      std::string tmp = gen_->fresh();
+      gen_->out_ << "  %" << tmp << " = call " << I64 << " @far_i64_div_checked(" << I64 << " " << left
+                 << ", " << I64 << " " << right << ")\n";
+      return "%" + tmp;
+    }
+
+    std::string emitGuardedSrem(const std::string& left, const std::string& right) {
+      std::string tmp = gen_->fresh();
+      gen_->out_ << "  %" << tmp << " = call " << I64 << " @far_i64_mod_checked(" << I64 << " " << left
+                 << ", " << I64 << " " << right << ")\n";
+      return "%" + tmp;
+    }
+
     std::string emitShortCircuitAnd(const Expr& left, const Expr& right) {
+
+      ConstBool lb = constBoolFromExpr(left);
+      if (lb == ConstBool::False)
+        return "0";
+      if (lb == ConstBool::True) {
+        std::string rval = emitExpr(right);
+        std::string rcond = emitTruthyCond(exprType(right), rval);
+        std::string rz = gen_->fresh();
+        gen_->out_ << "  %" << rz << " = zext i1 " << rcond << " to " << I64 << "\n";
+        return "%" + rz;
+      }
+
+      std::string slot = gen_->fresh("andslot");
+      gen_->hoisted_allocas_ << "  %" << slot << " = alloca " << I64 << "\n";
 
       std::string lval = emitExpr(left);
 
-      std::string lcond = gen_->fresh("lc");
-
-      gen_->out_ << "  %" << lcond << " = icmp ne " << I64 << " " << lval << ", 0\n";
+      std::string lcond = emitTruthyCond(exprType(left), lval);
 
       std::string rhs_label = gen_->fresh("and.rhs");
 
@@ -2807,35 +4095,35 @@ private:
 
       std::string end_label = gen_->fresh("and.end");
 
-      gen_->out_ << "  br i1 %" << lcond << ", label %" << rhs_label << ", label %" << false_label << "\n";
+      gen_->out_ << "  br i1 " << lcond << ", label %" << rhs_label << ", label %" << false_label << "\n";
+
+      gen_->out_ << false_label << ":\n";
+
+      gen_->out_ << "  store " << I64 << " 0, " << I64 << "* %" << slot << "\n";
+
+      gen_->out_ << "  br label %" << end_label << "\n";
 
       gen_->out_ << rhs_label << ":\n";
 
       std::string rval = emitExpr(right);
 
-      std::string rcond = gen_->fresh("rc");
-
-      gen_->out_ << "  %" << rcond << " = icmp ne " << I64 << " " << rval << ", 0\n";
+      std::string rcond = emitTruthyCond(exprType(right), rval);
 
       std::string rz = gen_->fresh();
 
-      gen_->out_ << "  %" << rz << " = zext i1 %" << rcond << " to " << I64 << "\n";
+      gen_->out_ << "  %" << rz << " = zext i1 " << rcond << " to " << I64 << "\n";
 
-      gen_->out_ << "  br label %" << end_label << "\n";
-
-      gen_->out_ << false_label << ":\n";
+      gen_->out_ << "  store " << I64 << " %" << rz << ", " << I64 << "* %" << slot << "\n";
 
       gen_->out_ << "  br label %" << end_label << "\n";
 
       gen_->out_ << end_label << ":\n";
 
-      std::string phi = gen_->fresh("andp");
+      std::string loaded = gen_->fresh("andld");
 
-      gen_->out_ << "  %" << phi << " = phi " << I64 << " [ %" << rz << ", %" << rhs_label
+      gen_->out_ << "  %" << loaded << " = load " << I64 << ", " << I64 << "* %" << slot << "\n";
 
-                 << " ], [ 0, %" << false_label << " ]\n";
-
-      return "%" + phi;
+      return "%" + loaded;
 
     }
 
@@ -2843,11 +4131,23 @@ private:
 
     std::string emitShortCircuitOr(const Expr& left, const Expr& right) {
 
+      ConstBool lb = constBoolFromExpr(left);
+      if (lb == ConstBool::True)
+        return "1";
+      if (lb == ConstBool::False) {
+        std::string rval = emitExpr(right);
+        std::string rcond = emitTruthyCond(exprType(right), rval);
+        std::string rz = gen_->fresh();
+        gen_->out_ << "  %" << rz << " = zext i1 " << rcond << " to " << I64 << "\n";
+        return "%" + rz;
+      }
+
+      std::string slot = gen_->fresh("orslot");
+      gen_->hoisted_allocas_ << "  %" << slot << " = alloca " << I64 << "\n";
+
       std::string lval = emitExpr(left);
 
-      std::string lcond = gen_->fresh("lc");
-
-      gen_->out_ << "  %" << lcond << " = icmp ne " << I64 << " " << lval << ", 0\n";
+      std::string lcond = emitTruthyCond(exprType(left), lval);
 
       std::string true_label = gen_->fresh("or.true");
 
@@ -2855,9 +4155,11 @@ private:
 
       std::string end_label = gen_->fresh("or.end");
 
-      gen_->out_ << "  br i1 %" << lcond << ", label %" << true_label << ", label %" << rhs_label << "\n";
+      gen_->out_ << "  br i1 " << lcond << ", label %" << true_label << ", label %" << rhs_label << "\n";
 
       gen_->out_ << true_label << ":\n";
+
+      gen_->out_ << "  store " << I64 << " 1, " << I64 << "* %" << slot << "\n";
 
       gen_->out_ << "  br label %" << end_label << "\n";
 
@@ -2865,25 +4167,23 @@ private:
 
       std::string rval = emitExpr(right);
 
-      std::string rcond = gen_->fresh("rc");
-
-      gen_->out_ << "  %" << rcond << " = icmp ne " << I64 << " " << rval << ", 0\n";
+      std::string rcond = emitTruthyCond(exprType(right), rval);
 
       std::string rz = gen_->fresh();
 
-      gen_->out_ << "  %" << rz << " = zext i1 %" << rcond << " to " << I64 << "\n";
+      gen_->out_ << "  %" << rz << " = zext i1 " << rcond << " to " << I64 << "\n";
+
+      gen_->out_ << "  store " << I64 << " %" << rz << ", " << I64 << "* %" << slot << "\n";
 
       gen_->out_ << "  br label %" << end_label << "\n";
 
       gen_->out_ << end_label << ":\n";
 
-      std::string phi = gen_->fresh("orp");
+      std::string loaded = gen_->fresh("orld");
 
-      gen_->out_ << "  %" << phi << " = phi " << I64 << " [ 1, %" << true_label
+      gen_->out_ << "  %" << loaded << " = load " << I64 << ", " << I64 << "* %" << slot << "\n";
 
-                 << " ], [ %" << rz << ", %" << rhs_label << " ]\n";
-
-      return "%" + phi;
+      return "%" + loaded;
 
     }
 

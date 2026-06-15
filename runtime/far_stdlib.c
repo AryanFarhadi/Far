@@ -1,6 +1,7 @@
 /* Far standard library runtime — included from far_rt.c */
 
 #include <ctype.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,13 +40,20 @@ static char* far_i64_to_ptr(int64_t v) { return (char*)(intptr_t)v; }
 
 /* --- random --- */
 
-void far_rand_seed(int64_t seed) { g_rand_state = (uint32_t)seed ^ 0x9e3779b9u; }
+void far_rand_seed(int64_t seed) {
+  far_global_lock();
+  g_rand_state = (uint32_t)seed ^ 0x9e3779b9u;
+  far_global_unlock();
+}
 
 int64_t far_rand_i64(void) {
+  far_global_lock();
   g_rand_state ^= g_rand_state << 13;
   g_rand_state ^= g_rand_state >> 17;
   g_rand_state ^= g_rand_state << 5;
-  return (int64_t)(g_rand_state & 0x7fffffff);
+  int64_t out = (int64_t)(g_rand_state & 0x7fffffff);
+  far_global_unlock();
+  return out;
 }
 
 double far_rand_f64(void) { return (double)far_rand_i64() / 2147483647.0; }
@@ -58,8 +66,13 @@ int64_t far_rand_range(int64_t lo, int64_t hi) {
   }
   if (hi == lo)
     return lo;
-  uint64_t span = (uint64_t)(hi - lo + 1);
-  return lo + (int64_t)(far_rand_i64() % (int64_t)span);
+  uint64_t span = (uint64_t)hi - (uint64_t)lo + 1ULL;
+  if (span == 0 || span > (uint64_t)INT64_MAX)
+    return lo;
+  int64_t mod = (int64_t)span;
+  if (mod <= 0)
+    return lo;
+  return lo + far_rand_i64() % mod;
 }
 
 /* --- time --- */
@@ -142,16 +155,41 @@ int64_t far_date_second(int64_t ms) {
 
 /* --- filesystem --- */
 
+extern int64_t far_sec_sandbox_active(void);
+extern int64_t far_sec_sandbox_can(const char* path);
+
+static int far_fs_allowed(const char* path) {
+  if (!path)
+    return 0;
+  if (far_sec_sandbox_active() && !far_sec_sandbox_can(path))
+    return 0;
+  return 1;
+}
+
 char* far_fs_read(const char* path) {
+  if (!far_fs_allowed(path))
+    return NULL;
   FILE* f = fopen(path, "rb");
   if (!f)
     return NULL;
+#if defined(_WIN32)
+  if (_fseeki64(f, 0, SEEK_END) != 0) {
+    fclose(f);
+    return NULL;
+  }
+  __int64 sz = _ftelli64(f);
+#else
   if (fseek(f, 0, SEEK_END) != 0) {
     fclose(f);
     return NULL;
   }
   long sz = ftell(f);
+#endif
   if (sz < 0) {
+    fclose(f);
+    return NULL;
+  }
+  if ((unsigned long long)sz > (unsigned long long)SIZE_MAX - 1) {
     fclose(f);
     return NULL;
   }
@@ -174,6 +212,8 @@ char* far_fs_read(const char* path) {
 int64_t far_fs_write(const char* path, const char* content) {
   if (!path)
     return -1;
+  if (!far_fs_allowed(path))
+    return -1;
   FILE* f = fopen(path, "wb");
   if (!f)
     return -1;
@@ -190,6 +230,8 @@ int64_t far_fs_write(const char* path, const char* content) {
 
 int64_t far_fs_exists(const char* path) {
   if (!path)
+    return 0;
+  if (!far_fs_allowed(path))
     return 0;
 #ifdef _WIN32
   return _access(path, 0) == 0 ? 1 : 0;
@@ -229,6 +271,8 @@ int64_t far_fs_is_dir(const char* path) {
 int64_t far_fs_mkdir(const char* path) {
   if (!path)
     return -1;
+  if (!far_fs_allowed(path))
+    return -1;
 #ifdef _WIN32
   return _mkdir(path) == 0 ? 0 : -1;
 #else
@@ -238,6 +282,8 @@ int64_t far_fs_mkdir(const char* path) {
 
 int64_t far_fs_remove(const char* path) {
   if (!path)
+    return -1;
+  if (!far_fs_allowed(path))
     return -1;
   return remove(path) == 0 ? 0 : -1;
 }
@@ -287,15 +333,27 @@ int64_t far_net_connect(const char* host, int64_t port) {
   return sock;
 }
 
+static int64_t far_net_send_all(int64_t sock, const char* data, size_t len) {
+  if (sock < 0 || !data)
+    return -1;
+  size_t off = 0;
+  while (off < len) {
+#ifdef _WIN32
+    int n = send((SOCKET)sock, data + off, (int)(len - off), 0);
+#else
+    ssize_t n = send((int)sock, data + off, len - off, 0);
+#endif
+    if (n <= 0)
+      return -1;
+    off += (size_t)n;
+  }
+  return (int64_t)len;
+}
+
 int64_t far_net_send(int64_t sock, const char* data) {
   if (sock < 0 || !data)
     return -1;
-#ifdef _WIN32
-  int sent = send((SOCKET)sock, data, (int)strlen(data), 0);
-#else
-  ssize_t sent = send((int)sock, data, strlen(data), 0);
-#endif
-  return sent < 0 ? -1 : (int64_t)sent;
+  return far_net_send_all(sock, data, strlen(data));
 }
 
 char* far_net_recv(int64_t sock, int64_t max) {
@@ -330,23 +388,89 @@ int64_t far_net_close(int64_t sock) {
 
 /* --- json (minimal) --- */
 
+static void far_stdlib_json_write_escaped(char* out, const char* data) {
+  for (const char* p = data; *p; ++p) {
+    switch (*p) {
+      case '"':
+        *out++ = '\\';
+        *out++ = '"';
+        break;
+      case '\\':
+        *out++ = '\\';
+        *out++ = '\\';
+        break;
+      case '\b':
+        *out++ = '\\';
+        *out++ = 'b';
+        break;
+      case '\f':
+        *out++ = '\\';
+        *out++ = 'f';
+        break;
+      case '\n':
+        *out++ = '\\';
+        *out++ = 'n';
+        break;
+      case '\r':
+        *out++ = '\\';
+        *out++ = 'r';
+        break;
+      case '\t':
+        *out++ = '\\';
+        *out++ = 't';
+        break;
+      default:
+        if ((unsigned char)*p < 0x20)
+          out += sprintf(out, "\\u%04x", (unsigned char)*p);
+        else
+          *out++ = *p;
+        break;
+    }
+  }
+  *out = '\0';
+}
+
+static size_t far_stdlib_json_escaped_len(const char* data) {
+  size_t n = 2;
+  if (!data)
+    return n;
+  for (const char* p = data; *p; ++p) {
+    switch (*p) {
+      case '"':
+      case '\\':
+        n += 2;
+        break;
+      case '\b':
+      case '\f':
+      case '\n':
+      case '\r':
+      case '\t':
+        n += 2;
+        break;
+      default:
+        if ((unsigned char)*p < 0x20)
+          n += 6;
+        else
+          n += 1;
+        break;
+    }
+  }
+  return n;
+}
+
 char* far_json_escape(const char* s) {
   if (!s)
-    return far_strdup("");
-  size_t cap = strlen(s) * 2 + 3;
+    return far_strdup("\"\"");
+  size_t cap = far_stdlib_json_escaped_len(s) + 1;
   char* out = (char*)malloc(cap);
   if (!out)
     return NULL;
-  size_t j = 0;
-  out[j++] = '"';
-  for (size_t i = 0; s[i]; ++i) {
-    char c = s[i];
-    if (c == '"' || c == '\\')
-      out[j++] = '\\';
-    out[j++] = c;
-  }
-  out[j++] = '"';
-  out[j] = '\0';
+  char* p = out;
+  *p++ = '"';
+  far_stdlib_json_write_escaped(p, s);
+  p += strlen(p);
+  *p++ = '"';
+  *p = '\0';
   return out;
 }
 
@@ -361,13 +485,31 @@ char* far_json_stringify_str(const char* s) { return far_json_escape(s); }
 static const char* far_json_find_key(const char* json, const char* key) {
   if (!json || !key)
     return NULL;
-  char pattern[128];
-  snprintf(pattern, sizeof(pattern), "\"%s\"", key);
-  const char* p = strstr(json, pattern);
-  if (!p)
-    return NULL;
-  p = strchr(p + strlen(pattern), ':');
-  return p ? p + 1 : NULL;
+  size_t klen = strlen(key);
+  const char* p = json;
+  while (*p) {
+    if (*p == '"') {
+      const char* ks = p + 1;
+      const char* ke = ks;
+      while (*ke && *ke != '"') {
+        if (*ke == '\\' && ke[1])
+          ke += 2;
+        else
+          ++ke;
+      }
+      if ((size_t)(ke - ks) == klen && strncmp(ks, key, klen) == 0) {
+        p = ke + 1;
+        while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r')
+          ++p;
+        if (*p == ':')
+          return p + 1;
+      }
+      p = (*ke == '"') ? ke + 1 : ke;
+      continue;
+    }
+    ++p;
+  }
+  return NULL;
 }
 
 int64_t far_json_get_i64(const char* json, const char* key) {
@@ -376,7 +518,74 @@ int64_t far_json_get_i64(const char* json, const char* key) {
     return 0;
   while (*p == ' ' || *p == '\t')
     ++p;
-  return (int64_t)strtoll(p, NULL, 10);
+  char* end = NULL;
+  long long v = strtoll(p, &end, 10);
+  if (end == p)
+    return 0;
+  while (*end == ' ' || *end == '\t')
+    ++end;
+  if (*end != 0 && *end != ',' && *end != '}' && *end != ']' && *end != '\n' && *end != '\r')
+    return 0;
+  return (int64_t)v;
+}
+
+static int far_json_hex4(const char* p, uint32_t* out) {
+  *out = 0;
+  for (int i = 0; i < 4; ++i) {
+    char c = p[i];
+    int v;
+    if (c >= '0' && c <= '9')
+      v = c - '0';
+    else if (c >= 'a' && c <= 'f')
+      v = c - 'a' + 10;
+    else if (c >= 'A' && c <= 'F')
+      v = c - 'A' + 10;
+    else
+      return 0;
+    *out = (*out << 4) | (uint32_t)v;
+  }
+  return 1;
+}
+
+static int far_json_append_bytes(char** out, size_t* cap, size_t* len, const char* bytes, size_t n) {
+  if (*len + n >= *cap) {
+    size_t nc = *cap * 2;
+    while (*len + n >= nc)
+      nc *= 2;
+    char* bigger = (char*)realloc(*out, nc);
+    if (!bigger)
+      return 0;
+    *out = bigger;
+    *cap = nc;
+  }
+  memcpy(*out + *len, bytes, n);
+  *len += n;
+  return 1;
+}
+
+static int far_json_append_codepoint(char** out, size_t* cap, size_t* len, uint32_t cp) {
+  char buf[4];
+  size_t n = 0;
+  if (cp <= 0x7F) {
+    buf[0] = (char)cp;
+    n = 1;
+  } else if (cp <= 0x7FF) {
+    buf[0] = (char)(0xC0 | (cp >> 6));
+    buf[1] = (char)(0x80 | (cp & 0x3F));
+    n = 2;
+  } else if (cp <= 0xFFFF) {
+    buf[0] = (char)(0xE0 | (cp >> 12));
+    buf[1] = (char)(0x80 | ((cp >> 6) & 0x3F));
+    buf[2] = (char)(0x80 | (cp & 0x3F));
+    n = 3;
+  } else {
+    buf[0] = (char)(0xF0 | (cp >> 18));
+    buf[1] = (char)(0x80 | ((cp >> 12) & 0x3F));
+    buf[2] = (char)(0x80 | ((cp >> 6) & 0x3F));
+    buf[3] = (char)(0x80 | (cp & 0x3F));
+    n = 4;
+  }
+  return far_json_append_bytes(out, cap, len, buf, n);
 }
 
 char* far_json_get_str(const char* json, const char* key) {
@@ -388,15 +597,59 @@ char* far_json_get_str(const char* json, const char* key) {
   if (*p != '"')
     return NULL;
   ++p;
-  const char* end = strchr(p, '"');
-  if (!end)
-    return NULL;
-  size_t n = (size_t)(end - p);
-  char* out = (char*)malloc(n + 1);
+  size_t cap = 64;
+  size_t len = 0;
+  char* out = (char*)malloc(cap);
   if (!out)
     return NULL;
-  memcpy(out, p, n);
-  out[n] = '\0';
+  while (*p && *p != '"') {
+    if (*p == '\\' && p[1]) {
+      ++p;
+      if (*p == 'u' && p[1] && p[2] && p[3] && p[4]) {
+        uint32_t cp = 0;
+        if (far_json_hex4(p + 1, &cp)) {
+          if (!far_json_append_codepoint(&out, &cap, &len, cp)) {
+            free(out);
+            return NULL;
+          }
+          p += 5;
+          continue;
+        }
+      }
+      char ch = *p;
+      switch (ch) {
+        case 'b':
+          ch = '\b';
+          break;
+        case 'f':
+          ch = '\f';
+          break;
+        case 'n':
+          ch = '\n';
+          break;
+        case 'r':
+          ch = '\r';
+          break;
+        case 't':
+          ch = '\t';
+          break;
+        default:
+          break;
+      }
+      if (!far_json_append_bytes(&out, &cap, &len, &ch, 1)) {
+        free(out);
+        return NULL;
+      }
+      ++p;
+      continue;
+    }
+    if (!far_json_append_bytes(&out, &cap, &len, p, 1)) {
+      free(out);
+      return NULL;
+    }
+    ++p;
+  }
+  out[len] = '\0';
   return out;
 }
 
@@ -443,7 +696,7 @@ char* far_xml_tag(const char* name, const char* body) {
   if (!body)
     body = "";
   char* en = far_xml_escape(body);
-  size_t n = strlen(name) + (en ? strlen(en) : 0) + 5;
+  size_t n = strlen(name) * 2 + (en ? strlen(en) : 0) + 5;
   char* out = (char*)malloc(n);
   if (!out) {
     free(en);
@@ -457,22 +710,31 @@ char* far_xml_tag(const char* name, const char* body) {
 char* far_xml_get_attr(const char* xml, const char* attr) {
   if (!xml || !attr)
     return NULL;
-  char pattern[128];
-  snprintf(pattern, sizeof(pattern), "%s=\"", attr);
-  const char* p = strstr(xml, pattern);
-  if (!p)
-    return NULL;
-  p += strlen(pattern);
-  const char* end = strchr(p, '"');
-  if (!end)
-    return NULL;
-  size_t n = (size_t)(end - p);
-  char* out = (char*)malloc(n + 1);
-  if (!out)
-    return NULL;
-  memcpy(out, p, n);
-  out[n] = '\0';
-  return out;
+  size_t alen = strlen(attr);
+  const char* p = xml;
+  while ((p = strstr(p, attr)) != NULL) {
+    if (p > xml) {
+      char prev = p[-1];
+      if (prev != ' ' && prev != '\t' && prev != '\n' && prev != '\r' && prev != '<')
+        goto next_match;
+    }
+    if (p[alen] == '=' && p[alen + 1] == '"') {
+      p += alen + 2;
+      const char* end = strchr(p, '"');
+      if (!end)
+        return NULL;
+      size_t n = (size_t)(end - p);
+      char* out = (char*)malloc(n + 1);
+      if (!out)
+        return NULL;
+      memcpy(out, p, n);
+      out[n] = '\0';
+      return out;
+    }
+  next_match:
+    p += alen;
+  }
+  return NULL;
 }
 
 /* --- yaml --- */
@@ -480,24 +742,35 @@ char* far_xml_get_attr(const char* xml, const char* attr) {
 char* far_yaml_get(const char* yaml, const char* key) {
   if (!yaml || !key)
     return NULL;
-  char pattern[256];
-  snprintf(pattern, sizeof(pattern), "%s:", key);
-  const char* p = strstr(yaml, pattern);
-  if (!p)
-    return NULL;
-  p += strlen(pattern);
-  while (*p == ' ' || *p == '\t')
-    ++p;
-  const char* end = p;
-  while (*end && *end != '\n' && *end != '\r')
-    ++end;
-  size_t n = (size_t)(end - p);
-  char* out = (char*)malloc(n + 1);
-  if (!out)
-    return NULL;
-  memcpy(out, p, n);
-  out[n] = '\0';
-  return out;
+  size_t klen = strlen(key);
+  const char* p = yaml;
+  while (*p) {
+    const char* line = p;
+    while (*line == ' ' || *line == '\t')
+      ++line;
+    while (*p && *p != '\n' && *p != '\r')
+      ++p;
+    if ((size_t)(p - line) >= klen + 1 && strncmp(line, key, klen) == 0 && line[klen] == ':') {
+      p = line + klen + 1;
+      while (*p == ' ' || *p == '\t')
+        ++p;
+      const char* end = p;
+      while (*end && *end != '\n' && *end != '\r')
+        ++end;
+      size_t n = (size_t)(end - p);
+      char* out = (char*)malloc(n + 1);
+      if (!out)
+        return NULL;
+      memcpy(out, p, n);
+      out[n] = '\0';
+      return out;
+    }
+    if (*p == '\r')
+      ++p;
+    if (*p == '\n')
+      ++p;
+  }
+  return NULL;
 }
 
 /* --- csv --- */
@@ -582,7 +855,7 @@ char* far_compress_rle(const char* data) {
   if (!data)
     return far_strdup("");
   size_t in_len = strlen(data);
-  char* out = (char*)malloc(in_len * 2 + 2);
+  char* out = (char*)malloc(in_len * 3 + 4);
   if (!out)
     return NULL;
   size_t j = 0;
@@ -608,7 +881,7 @@ char* far_compress_rle(const char* data) {
 char* far_decompress_rle(const char* data) {
   if (!data)
     return far_strdup("");
-  size_t cap = strlen(data) * 4 + 1;
+  size_t cap = strlen(data) * 86 + 1;
   char* out = (char*)malloc(cap);
   if (!out)
     return NULL;

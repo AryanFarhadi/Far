@@ -1,0 +1,6 @@
+﻿fun main() {
+  constexpr EMPTY = []
+  for x in EMPTY { y = 1 }
+  print(0)
+  return 0
+}

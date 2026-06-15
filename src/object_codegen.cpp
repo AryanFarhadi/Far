@@ -55,12 +55,17 @@ std::string emitUserConstruct(ObjCodegenCtx ctx, const UserTypeDef& td, const st
   if (!td.fields.empty()) {
     std::string ptr = ctx.fresh("boxp");
     ctx.out << "  %" << ptr << " = inttoptr i64 " << raw << " to " << st << "*\n";
-    for (size_t i = 0; i < td.fields.size() && i < arg_vals.size(); ++i) {
+    for (size_t i = 0; i < td.fields.size(); ++i) {
       const char* ft = userFieldLlvmType(td.fields[i].type);
+      std::string val;
+      if (i < arg_vals.size())
+        val = arg_vals[i];
+      else
+        val = (std::string(ft) == "double") ? "0.0" : "0";
       std::string fptr = ctx.fresh("bfp");
       ctx.out << "  %" << fptr << " = getelementptr inbounds " << st << ", " << st << "* %" << ptr
               << ", i32 0, i32 " << i << "\n";
-      ctx.out << "  store " << ft << " " << arg_vals[i] << ", " << ft << "* %" << fptr << "\n";
+      ctx.out << "  store " << ft << " " << val << ", " << ft << "* %" << fptr << "\n";
     }
   }
   return raw;
@@ -99,7 +104,7 @@ std::string emitUserMember(ObjCodegenCtx ctx, const ObjectRegistry& reg, const M
   ctx.out << "  %" << tmp << " = load " << ft << ", " << ft << "* %" << fptr << "\n";
   if (ft == std::string("double")) {
     std::string ext = ctx.fresh("mfld");
-    ctx.out << "  %" << ext << " = fptosi double %" << tmp << " to i64\n";
+    ctx.out << "  %" << ext << " = bitcast double %" << tmp << " to i64\n";
     return "%" + ext;
   }
   return "%" + tmp;
@@ -121,7 +126,13 @@ void emitUserMemberStore(ObjCodegenCtx ctx, const ObjectRegistry& reg, const Mem
   std::string fptr = ctx.fresh("mfp");
   ctx.out << "  %" << fptr << " = getelementptr inbounds " << st << ", " << st << "* %" << ptr
           << ", i32 0, i32 " << idx << "\n";
-  ctx.out << "  store " << ft << " " << value << ", " << ft << "* %" << fptr << "\n";
+  std::string stored = value;
+  if (ft == std::string("double")) {
+    std::string conv = ctx.fresh("mstore");
+    ctx.out << "  %" << conv << " = bitcast i64 " << value << " to double\n";
+    stored = "%" + conv;
+  }
+  ctx.out << "  store " << ft << " " << stored << ", " << ft << "* %" << fptr << "\n";
 }
 
 std::string emitUserMethodCall(ObjCodegenCtx ctx, const ObjectRegistry& reg, const MethodCall& call,
@@ -136,8 +147,23 @@ std::string emitUserMethodCall(ObjCodegenCtx ctx, const ObjectRegistry& reg, con
   std::string sym = userMangleMethod(type_name, m->name);
   std::string tmp = ctx.fresh("umcall");
   ctx.out << "  %" << tmp << " = call i64 @" << sym << "(i64 " << obj_val;
-  for (const auto& av : arg_vals)
-    ctx.out << ", i64 " << av;
+  for (size_t i = 0; i < arg_vals.size(); ++i) {
+    size_t pi = i + 1;
+    if (pi >= m->params.size())
+      break;
+    const char* pt = userFieldLlvmType(m->params[pi].type);
+    std::string av = arg_vals[i];
+    if (std::string(pt) == "double") {
+      std::string conv = ctx.fresh("umarg");
+      if (isPrimitiveDesc(m->params[pi].type) && isIntegerType(m->params[pi].type.primitive) &&
+          !typeInfo(m->params[pi].type.primitive).is_signed)
+        ctx.out << "  %" << conv << " = uitofp i64 " << av << " to double\n";
+      else
+        ctx.out << "  %" << conv << " = sitofp i64 " << av << " to double\n";
+      av = "%" + conv;
+    }
+    ctx.out << ", " << pt << " " << av;
+  }
   ctx.out << ")\n";
   return "%" + tmp;
 }

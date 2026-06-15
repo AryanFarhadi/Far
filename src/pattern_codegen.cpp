@@ -1,6 +1,7 @@
 #include "pattern_codegen.h"
 
 #include "error.h"
+#include "generics.h"
 #include "object_codegen.h"
 #include "pattern.h"
 
@@ -57,36 +58,43 @@ PatTestResult emitPatternTest(PatCodegenCtx ctx, const Pattern& pat, const std::
       }
       return r;
     }
-    case PatKind::TypeTest:
-      if (isUserDesc(scrut_ty) && scrut_ty.user_name == pat.type_name) {
-        r.cond = "1";
-        r.always = true;
-      } else {
-        std::string nz = ctx.fresh("tnz");
-        ctx.out << "  %" << nz << " = icmp ne i64 " << scrut_val << ", 0\n";
-        r.cond = "%" + nz;
-      }
-      return r;
-    case PatKind::StructDestructure: {
+    case PatKind::TypeTest: {
+      if (!ctx.obj_reg)
+        throw FarError("internal error: missing object registry for type pattern");
       const UserTypeDef* td = ctx.obj_reg->lookup(pat.type_name);
       if (!td)
         throw FarError("unknown type '" + pat.type_name + "'");
-      if (isUserDesc(scrut_ty) && scrut_ty.user_name != pat.type_name)
+      if (isUserDesc(scrut_ty) && typeDescEquals(scrut_ty, pat.type_test)) {
+        r.cond = "1";
+        r.always = true;
+      } else {
+        std::string false_tmp = ctx.fresh("pfalse");
+        ctx.out << "  %" << false_tmp << " = icmp eq i1 0, 1\n";
+        r.cond = "%" + false_tmp;
+      }
+      return r;
+    }
+    case PatKind::StructDestructure: {
+      TypeDesc obj_ty = isUserDesc(scrut_ty) ? scrut_ty : TypeDesc::user(pat.type_name);
+      const UserTypeDef* td = ctx.obj_reg->lookup(userTypeKey(obj_ty));
+      if (!td)
+        throw FarError("unknown type '" + pat.type_name + "'");
+      if (isUserDesc(scrut_ty) && userTypeKey(scrut_ty) != pat.type_name &&
+          td->name != pat.type_name && td->mangled_name != pat.type_name)
         throw FarError("pattern type mismatch");
       r.cond = "1";
       r.always = true;
       for (size_t i = 0; i < pat.fields.size(); ++i) {
         int fidx = static_cast<int>(i);
         if (!pat.field_names.empty()) {
-          fidx = ctx.obj_reg->lookupFieldIndex(TypeDesc::user(pat.type_name), pat.field_names[i]);
+          fidx = ctx.obj_reg->lookupFieldIndex(obj_ty, pat.field_names[i]);
           if (fidx < 0)
             throw FarError("unknown field '" + pat.field_names[i] + "'");
         }
         MemberAccess mem;
         mem.member = td->fields[static_cast<size_t>(fidx)].name;
         ObjCodegenCtx octx{ctx.out, ctx.fresh};
-        std::string fld_val =
-            emitUserMember(octx, *ctx.obj_reg, mem, TypeDesc::user(pat.type_name), scrut_val);
+        std::string fld_val = emitUserMember(octx, *ctx.obj_reg, mem, obj_ty, scrut_val);
         PatTestResult sub = emitPatternTest(ctx, *pat.fields[i], fld_val,
                                             td->fields[static_cast<size_t>(fidx)].type);
         if (!sub.always) {
@@ -126,6 +134,8 @@ PatTestResult emitPatternTest(PatCodegenCtx ctx, const Pattern& pat, const std::
 
 std::string emitUnionConstruct(PatCodegenCtx ctx, const UnionVariantExpr& uv,
                                const std::vector<std::string>& arg_vals) {
+  if (arg_vals.size() > 8)
+    throw FarError("union variants with more than 8 fields are not supported");
   std::vector<std::string> fields(8, "0");
   for (size_t i = 0; i < arg_vals.size() && i < fields.size(); ++i)
     fields[i] = arg_vals[i];

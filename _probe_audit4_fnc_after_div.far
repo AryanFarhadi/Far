@@ -1,0 +1,7 @@
+fun main() {
+  a: f64 = 1.0
+  b: f64 = 0.0
+  c = a / b
+  print(c ?? 99.0)
+  return 0
+}

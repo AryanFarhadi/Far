@@ -1,0 +1,5 @@
+﻿constexpr S = "" + ""
+fun main() {
+  print(len(S))
+  return 0
+}

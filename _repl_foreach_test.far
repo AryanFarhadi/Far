@@ -1,0 +1,4 @@
+﻿fun main() {
+  for x in [] { y = undefined_foreach }
+  return 0
+}

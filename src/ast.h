@@ -50,7 +50,7 @@ struct ModuleAlias {
   std::unordered_map<std::string, std::string> flat_methods;
 };
 
-struct IntLit { int64_t value; };
+struct IntLit { int64_t value; bool unsigned_decimal = false; };
 struct FloatLit { double value; bool is_float; };
 struct StringLit { std::string value; };
 struct CharLit { uint16_t value; };
@@ -590,6 +590,7 @@ struct For {
   std::unique_ptr<Expr> range_start;
   std::unique_ptr<Expr> range_end;
   std::string parallel_fn;
+  std::vector<std::string> parallel_captures;
   bool is_foreach = false;
   std::string foreach_var;
   std::unique_ptr<Expr> foreach_iter;
@@ -813,6 +814,7 @@ struct Function {
   TypeDesc return_type = TypeDesc::prim(FarTypeId::I64);
   bool return_type_explicit = false;
   std::vector<std::unique_ptr<Stmt>> body;
+  std::vector<Attribute> attrs;
   bool is_async = false;
   bool is_generator = false;
   bool is_coroutine = false;

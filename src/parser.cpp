@@ -10,6 +10,8 @@
 #include "type_desc.h"
 #include "types.h"
 
+#include <cctype>
+#include <climits>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -21,6 +23,30 @@
 
 
 namespace far {
+
+static void prescanTypeDeclNames(const std::vector<Token>& tokens,
+                                 std::unordered_set<std::string>& user_types,
+                                 std::unordered_set<std::string>& enum_types,
+                                 std::unordered_set<std::string>& union_types) {
+  auto is_type_decl = [](TokenKind k) {
+    return k == TokenKind::Struct || k == TokenKind::Class || k == TokenKind::Record ||
+           k == TokenKind::Interface || k == TokenKind::Enum || k == TokenKind::Flags ||
+           k == TokenKind::Trait || k == TokenKind::Actor || k == TokenKind::Exception ||
+           k == TokenKind::Union;
+  };
+  for (size_t i = 0; i + 1 < tokens.size(); ++i) {
+    if (!is_type_decl(tokens[i].kind))
+      continue;
+    const Token& name_tok = tokens[i + 1];
+    if (name_tok.kind != TokenKind::Ident && name_tok.kind != TokenKind::TypeName)
+      continue;
+    user_types.insert(name_tok.value);
+    if (tokens[i].kind == TokenKind::Enum || tokens[i].kind == TokenKind::Flags)
+      enum_types.insert(name_tok.value);
+    if (tokens[i].kind == TokenKind::Union)
+      union_types.insert(name_tok.value);
+  }
+}
 
 static bool isPrim(const TypeDesc& td, FarTypeId id) {
   return isPrimitiveDesc(td) && td.primitive == id;
@@ -295,6 +321,27 @@ const Token& Parser::expect(TokenKind k) {
 
 }
 
+bool Parser::matchTypeClosingGt() {
+  if (pending_type_closing_gt_) {
+    pending_type_closing_gt_ = false;
+    return true;
+  }
+  if (match(TokenKind::Gt))
+    return true;
+  if (match(TokenKind::RShift)) {
+    pending_type_closing_gt_ = true;
+    return true;
+  }
+  return false;
+}
+
+void Parser::expectTypeClosingGt() {
+  if (!matchTypeClosingGt()) {
+    const Token& tok = current();
+    throw FarError("expected >", tok.line, tok.col);
+  }
+}
+
 
 
 void Parser::consumeOptionalSemi() {
@@ -428,6 +475,16 @@ void Parser::parseNamespaceDecl(Program& program) {
 }
 
 void Parser::parseTopLevelDecl(Program& program) {
+  if (match(TokenKind::From)) {
+    program.imports.push_back(parseFromImportDecl());
+    consumeOptionalSemi();
+    return;
+  }
+  if (match(TokenKind::Import)) {
+    program.imports.push_back(parseImportDecl());
+    consumeOptionalSemi();
+    return;
+  }
   if (match(TokenKind::Export)) {
     parseExportList(program.exports);
     consumeOptionalSemi();
@@ -476,8 +533,8 @@ void Parser::parseTopLevelDecl(Program& program) {
     program.extensions.push_back(std::move(ext));
   } else if (check(TokenKind::Def) || check(TokenKind::Async) || check(TokenKind::Coroutine) ||
              check(TokenKind::Constexpr) || check(TokenKind::Consteval) || check(TokenKind::Codegen)) {
-    (void)attrs;
     Function fn = parseFunction();
+    fn.attrs = std::move(attrs);
     fn.visibility = vis;
     program.functions.push_back(std::move(fn));
   } else {
@@ -488,6 +545,8 @@ void Parser::parseTopLevelDecl(Program& program) {
 Program Parser::parse() {
 
   Program program;
+
+  prescanTypeDeclNames(tokens_, user_type_names_, enum_type_names_, union_type_names_);
 
   while (!check(TokenKind::Eof)) {
     if (match(TokenKind::From)) {
@@ -575,7 +634,9 @@ Program Parser::parse() {
       parseTopLevelDecl(program);
       continue;
     }
-    break;
+    const Token& tok = current();
+    throw FarError(std::string("unexpected token ") + tokenName(tok.kind) + " at top level", tok.line,
+                   tok.col);
   }
 
   return program;
@@ -790,7 +851,7 @@ void Parser::parseEnumBody(UserTypeDef& td) {
     if (match(TokenKind::Eq)) {
       if (!match(TokenKind::Int))
         throw FarError("enum value must be integer", current().line, current().col);
-      v.value = std::stoll(tokens_[pos_ - 1].value);
+      v.value = parseIntLiteral(tokens_[pos_ - 1].value, tokens_[pos_ - 1].line, tokens_[pos_ - 1].col);
       next_val = v.value + 1;
     } else {
       v.value = next_val++;
@@ -818,7 +879,7 @@ std::vector<TypeParam> Parser::parseTypeParams() {
       tp.constraint = parseTypeIdent();
     params.push_back(std::move(tp));
   } while (match(TokenKind::Comma));
-  expect(TokenKind::Gt);
+  expectTypeClosingGt();
   return params;
 }
 
@@ -843,7 +904,7 @@ void Parser::parseUnionBody(UserTypeDef& td) {
     if (match(TokenKind::Eq)) {
       if (!match(TokenKind::Int))
         throw FarError("union variant value must be integer", current().line, current().col);
-      v.value = std::stoll(tokens_[pos_ - 1].value);
+      v.value = parseIntLiteral(tokens_[pos_ - 1].value, tokens_[pos_ - 1].line, tokens_[pos_ - 1].col);
       next_val = v.value + 1;
     } else {
       v.value = next_val++;
@@ -1050,6 +1111,7 @@ Function Parser::parseFunction() {
   fn.is_coroutine = is_coro;
   fn.name = qualifyName(expect(TokenKind::Ident).value);
   fn.type_params = parseTypeParams();
+  current_type_params_ = fn.type_params;
   expect(TokenKind::LParen);
   if (!check(TokenKind::RParen)) {
     do {
@@ -1072,6 +1134,7 @@ Function Parser::parseFunction() {
   if (fn.is_coroutine)
     fn.is_generator = true;
   expect(TokenKind::RBrace);
+  current_type_params_.clear();
   return fn;
 }
 
@@ -1350,10 +1413,15 @@ std::unique_ptr<Stmt> Parser::parseTryStmt() {
 }
 
 std::unique_ptr<Pattern> Parser::parsePattern() {
+  pushParseDepth(current().line, current().col);
+  struct Guard {
+    Parser& p;
+    ~Guard() { p.popParseDepth(); }
+  } guard{*this};
   if (match(TokenKind::Int)) {
     auto p = std::make_unique<Pattern>();
     p->kind = PatKind::Literal;
-    p->literal = std::stoll(tokens_[pos_ - 1].value);
+    p->literal = parseIntLiteral(tokens_[pos_ - 1].value, tokens_[pos_ - 1].line, tokens_[pos_ - 1].col);
     return p;
   }
   if (match(TokenKind::LParen)) {
@@ -1513,6 +1581,11 @@ std::unique_ptr<Stmt> Parser::parseSwitchStmt() {
 }
 
 std::unique_ptr<Stmt> Parser::parseStmt() {
+  pushParseDepth(current().line, current().col);
+  struct Guard {
+    Parser& p;
+    ~Guard() { p.popParseDepth(); }
+  } guard{*this};
 
   if (match(TokenKind::Return)) {
 
@@ -1787,10 +1860,27 @@ static std::unique_ptr<Expr> desugarPipeline(std::unique_ptr<Expr> left, std::un
     args.push_back(std::move(left));
     return Expr::makeCall(right->var.name, std::move(args));
   }
-  return Expr::makeBinOp("|>", std::move(left), std::move(right));
+  throw FarError("pipeline right-hand side must be a function call or identifier");
 }
 
-std::unique_ptr<Expr> Parser::parseExpr() { return parseAssign(); }
+void Parser::pushParseDepth(int line, int col) {
+  if (++parse_depth_ > 512)
+    throw FarError("parser recursion depth exceeded", line, col);
+}
+
+void Parser::popParseDepth() {
+  if (parse_depth_ > 0)
+    --parse_depth_;
+}
+
+std::unique_ptr<Expr> Parser::parseExpr() {
+  pushParseDepth(current().line, current().col);
+  struct Guard {
+    Parser& p;
+    ~Guard() { p.popParseDepth(); }
+  } guard{*this};
+  return parseAssign();
+}
 
 std::unique_ptr<Expr> Parser::parseAssign() {
   auto left = parsePipeline();
@@ -1808,7 +1898,7 @@ std::unique_ptr<Expr> Parser::parseAssign() {
 std::unique_ptr<Expr> Parser::parsePipeline() {
   auto left = parseNullCoalesce();
   while (match(TokenKind::PipeGt)) {
-    auto right = parseUnary();
+    auto right = parseNullCoalesce();
     left = desugarPipeline(std::move(left), std::move(right));
   }
   return left;
@@ -1890,8 +1980,9 @@ std::unique_ptr<Expr> Parser::parseMembership() {
     if (match(TokenKind::In)) {
       auto right = parseIsAs();
       left = Expr::makeBinOp("in", std::move(left), std::move(right));
-    } else if (match(TokenKind::Not) && check(TokenKind::In)) {
-      expect(TokenKind::In);
+    } else if (check(TokenKind::Not) && pos_ + 1 < tokens_.size() &&
+               tokens_[pos_ + 1].kind == TokenKind::In) {
+      pos_ += 2;
       auto right = parseIsAs();
       left = Expr::makeBinOp("not in", std::move(left), std::move(right));
     } else {
@@ -1990,8 +2081,13 @@ std::unique_ptr<Expr> Parser::parseUnary() {
     return Expr::makePrefix("--", parseUnary());
   if (match(TokenKind::Tilde))
     return Expr::makePrefix("~", parseUnary());
-  if (match(TokenKind::Minus))
+  if (match(TokenKind::Minus)) {
+    if (check(TokenKind::Int) && tokens_[pos_].value == "9223372036854775808") {
+      expect(TokenKind::Int);
+      return Expr::makeInt(INT64_MIN);
+    }
     return Expr::makeBinOp("-", Expr::makeInt(0), parseUnary());
+  }
   if (match(TokenKind::Bang))
     return Expr::makeBinOp("!", Expr::makeInt(0), parseUnary());
   if (match(TokenKind::Star))
@@ -2007,7 +2103,7 @@ std::unique_ptr<Expr> Parser::parseUnary() {
            (user_type_names_.count(current().value) || isTypeName(current().value))))
         e = Expr::makeTypeUnaryType("typeof", parseType());
       else
-        e = Expr::makeTypeUnary("typeof", parseIsAs());
+        e = Expr::makeTypeUnary("typeof", parseExpr());
       expect(TokenKind::RParen);
       return e;
     }
@@ -2022,7 +2118,7 @@ std::unique_ptr<Expr> Parser::parseUnary() {
            (user_type_names_.count(current().value) || isTypeName(current().value))))
         e = Expr::makeTypeUnaryType("type_tag", parseType());
       else
-        e = Expr::makeTypeUnary("type_tag", parseIsAs());
+        e = Expr::makeTypeUnary("type_tag", parseExpr());
       expect(TokenKind::RParen);
       return e;
     }
@@ -2031,24 +2127,33 @@ std::unique_ptr<Expr> Parser::parseUnary() {
   if (match(TokenKind::Sizeof)) {
     expect(TokenKind::LParen);
     std::unique_ptr<Expr> e;
-    if (check(TokenKind::TypeName) || check(TokenKind::Ident) || check(TokenKind::Fn))
+    if (check(TokenKind::TypeName) || check(TokenKind::Fn))
       e = Expr::makeTypeUnaryType("sizeof", parseType());
-    else {
+    else if (check(TokenKind::Ident) &&
+             (user_type_names_.count(current().value) || isTypeName(current().value)))
+      e = Expr::makeTypeUnaryType("sizeof", parseType());
+    else
       e = Expr::makeTypeUnary("sizeof", parseExpr());
-    }
     expect(TokenKind::RParen);
     return e;
   }
   if (match(TokenKind::Alignof)) {
     expect(TokenKind::LParen);
-    auto e = Expr::makeTypeUnaryType("alignof", parseType());
+    std::unique_ptr<Expr> e;
+    if (check(TokenKind::TypeName) || check(TokenKind::Fn))
+      e = Expr::makeTypeUnaryType("alignof", parseType());
+    else if (check(TokenKind::Ident) &&
+             (user_type_names_.count(current().value) || isTypeName(current().value)))
+      e = Expr::makeTypeUnaryType("alignof", parseType());
+    else
+      e = Expr::makeTypeUnary("alignof", parseExpr());
     expect(TokenKind::RParen);
     return e;
   }
   if (match(TokenKind::StackAlloc)) {
     expect(TokenKind::Lt);
     TypeDesc elem = parseType();
-    expect(TokenKind::Gt);
+    expectTypeClosingGt();
     expect(TokenKind::LParen);
     auto count = parseExpr();
     expect(TokenKind::RParen);
@@ -2276,9 +2381,13 @@ std::unique_ptr<Expr> Parser::parsePrimary() {
     return Expr::makeFnLit(std::move(lit), TypeDesc::function(std::move(ptypes), ret));
   }
 
-  if (match(TokenKind::Int))
-
-    e = Expr::makeInt(std::stoll(tokens_[pos_ - 1].value));
+  if (match(TokenKind::Int)) {
+    bool unsigned_decimal = false;
+    int64_t v = parseIntLiteral(tokens_[pos_ - 1].value, tokens_[pos_ - 1].line,
+                                tokens_[pos_ - 1].col, &unsigned_decimal);
+    e = Expr::makeInt(v);
+    e->int_lit.unsigned_decimal = unsigned_decimal;
+  }
 
   else if (match(TokenKind::Float)) {
 
@@ -2294,7 +2403,11 @@ std::unique_ptr<Expr> Parser::parsePrimary() {
 
     }
 
-    e = Expr::makeFloat(std::stod(text), is_float);
+    try {
+      e = Expr::makeFloat(std::stod(text), is_float);
+    } catch (const std::exception&) {
+      throw FarError("invalid float literal", tokens_[pos_ - 1].line, tokens_[pos_ - 1].col);
+    }
 
   } else if (match(TokenKind::String))
 
@@ -2302,7 +2415,8 @@ std::unique_ptr<Expr> Parser::parsePrimary() {
 
   else if (match(TokenKind::Char))
 
-    e = Expr::makeChar(static_cast<uint16_t>(std::stoul(tokens_[pos_ - 1].value)));
+    e = Expr::makeChar(static_cast<uint16_t>(
+        parseIntLiteral(tokens_[pos_ - 1].value, tokens_[pos_ - 1].line, tokens_[pos_ - 1].col)));
 
   else if (match(TokenKind::InterpString))
 
@@ -2430,9 +2544,22 @@ std::unique_ptr<Expr> Parser::parsePrimary() {
       }
 
     } else {
-
+      bool type_value_error = tid.form == TypeForm::List || tid.form == TypeForm::Dict ||
+                              tid.form == TypeForm::Set || tid.form == TypeForm::Queue ||
+                              tid.form == TypeForm::Stack || tid.form == TypeForm::LinkedList ||
+                              tid.form == TypeForm::Span || tid.form == TypeForm::Slice ||
+                              tid.form == TypeForm::Box || tid.form == TypeForm::Rc ||
+                              tid.form == TypeForm::Optional || tid.form == TypeForm::Result ||
+                              tid.form == TypeForm::FixedArray || tid.form == TypeForm::Function ||
+                              tid.form == TypeForm::Channel || tid.form == TypeForm::Atomic ||
+                              tid.form == TypeForm::LockFreeQueue ||
+                              (tid.form == TypeForm::User && !tid.args.empty());
+      if (type_value_error) {
+        throw FarError("type expression '" + type_name + "' cannot be used as a value; use " +
+                           type_name + "(...) to construct",
+                       tokens_[pos_ - 1].line, tokens_[pos_ - 1].col);
+      }
       e = Expr::makeVar(type_name);
-
     }
 
     }
@@ -2536,6 +2663,8 @@ std::unique_ptr<Expr> Parser::parsePrimary() {
       e = Expr::makeCallArgs(std::move(name), std::move(args), std::move(ret_ty), std::move(targs));
       e->line = name_tok.line;
       e->col = name_tok.col;
+    } else if (!targs.empty()) {
+      throw FarError("type arguments require a call expression", name_tok.line, name_tok.col);
     } else if (user_type_names_.count(name)) {
       e = Expr::makeVar(name);
       e->line = name_tok.line;
@@ -2640,9 +2769,16 @@ Program parseProgram(const std::string& source, bool require_main) {
 
     }
 
-    if (!has_main)
-
+    if (!has_main) {
+      const bool empty =
+          program.functions.empty() && program.imports.empty() && program.user_types.empty() &&
+          program.extensions.empty() && program.macros.empty() && program.comptime_stmts.empty() &&
+          program.codegen_stmts.empty() && program.package_name.empty() &&
+          program.module_name.empty() && program.exports.empty();
+      if (empty)
+        throw FarError("empty source file");
       throw FarError("program must define fun main()");
+    }
 
   }
 
@@ -2670,12 +2806,12 @@ TypeDesc Parser::finishParseType(const std::string& name) {
   if (name == "List") {
     expect(TokenKind::Lt);
     TypeDesc elem = parseType();
-    expect(TokenKind::Gt);
+    expectTypeClosingGt();
     TypeDesc base = TypeDesc::list(elem);
     while (match(TokenKind::LBracket) && match(TokenKind::RBracket))
       base = TypeDesc::array(base);
-    if (match(TokenKind::Question)) {
-    }
+    if (match(TokenKind::Question))
+      base = TypeDesc::optional(base);
     return base;
   }
   if (name == "Dict") {
@@ -2683,14 +2819,14 @@ TypeDesc Parser::finishParseType(const std::string& name) {
     TypeDesc key = parseType();
     expect(TokenKind::Comma);
     TypeDesc val = parseType();
-    expect(TokenKind::Gt);
+    expectTypeClosingGt();
     return TypeDesc::dict(key, val);
   }
   if (name == "ptr" || name == "ref") {
     if (check(TokenKind::Lt)) {
       expect(TokenKind::Lt);
       TypeDesc inner = parseType();
-      expect(TokenKind::Gt);
+      expectTypeClosingGt();
       return name == "ptr" ? TypeDesc::pointer(inner) : TypeDesc::borrowRef(inner);
     }
     return TypeDesc::prim(name == "ptr" ? FarTypeId::Ptr : FarTypeId::Ref);
@@ -2709,14 +2845,14 @@ TypeDesc Parser::finishParseType(const std::string& name) {
           td.args.push_back(parseType());
         } while (match(TokenKind::Comma));
       }
-      expect(TokenKind::Gt);
+      expectTypeClosingGt();
     }
     return td;
   }
   if (name == "Box" || name == "Rc" || name == "Pool") {
     expect(TokenKind::Lt);
     TypeDesc elem = parseType();
-    expect(TokenKind::Gt);
+    expectTypeClosingGt();
     if (name == "Box")
       return TypeDesc::box(elem);
     if (name == "Rc")
@@ -2728,7 +2864,7 @@ TypeDesc Parser::finishParseType(const std::string& name) {
   if (name == "Channel") {
     expect(TokenKind::Lt);
     TypeDesc elem = parseType();
-    expect(TokenKind::Gt);
+    expectTypeClosingGt();
     return TypeDesc::channel(elem);
   }
   if (name == "Mutex")
@@ -2738,7 +2874,7 @@ TypeDesc Parser::finishParseType(const std::string& name) {
   if (name == "Atomic") {
     expect(TokenKind::Lt);
     TypeDesc elem = parseType();
-    expect(TokenKind::Gt);
+    expectTypeClosingGt();
     return TypeDesc::atomic(elem);
   }
   if (name == "ThreadPool")
@@ -2746,7 +2882,7 @@ TypeDesc Parser::finishParseType(const std::string& name) {
   if (name == "LockFreeQueue") {
     expect(TokenKind::Lt);
     TypeDesc elem = parseType();
-    expect(TokenKind::Gt);
+    expectTypeClosingGt();
     return TypeDesc::lockFreeQueue(elem);
   }
   if (name == "Task")
@@ -2755,7 +2891,7 @@ TypeDesc Parser::finishParseType(const std::string& name) {
       name == "Slice") {
     expect(TokenKind::Lt);
     TypeDesc elem = parseType();
-    expect(TokenKind::Gt);
+    expectTypeClosingGt();
     TypeDesc base;
     if (name == "Set")
       base = TypeDesc::set(elem);
@@ -2777,13 +2913,18 @@ TypeDesc Parser::finishParseType(const std::string& name) {
     expect(TokenKind::Comma);
     TypeDesc td = TypeDesc::fixedArray(elem, 0);
     if (match(TokenKind::Int)) {
-      td.const_n = std::stoll(tokens_[pos_ - 1].value);
+      td.const_n = parseIntLiteral(tokens_[pos_ - 1].value, tokens_[pos_ - 1].line, tokens_[pos_ - 1].col);
+      if (td.const_n <= 0)
+        throw FarError("FixedArray size must be positive", tokens_[pos_ - 1].line, tokens_[pos_ - 1].col);
+      if (td.const_n > (1 << 24))
+        throw FarError("FixedArray size exceeds maximum (16777216)", tokens_[pos_ - 1].line,
+                       tokens_[pos_ - 1].col);
     } else if (match(TokenKind::Comptime)) {
       td.comptime_size = std::shared_ptr<Expr>(parseExpr().release());
     } else {
       throw FarError("FixedArray requires compile-time size", current().line, current().col);
     }
-    expect(TokenKind::Gt);
+    expectTypeClosingGt();
     return td;
   }
   if (name == "Tuple") {
@@ -2792,7 +2933,7 @@ TypeDesc Parser::finishParseType(const std::string& name) {
     fields.push_back(parseType());
     while (match(TokenKind::Comma))
       fields.push_back(parseType());
-    expect(TokenKind::Gt);
+    expectTypeClosingGt();
     return TypeDesc::tuple(std::move(fields));
   }
   if (name == "Range")
@@ -2800,7 +2941,7 @@ TypeDesc Parser::finishParseType(const std::string& name) {
   if (name == "Option") {
     expect(TokenKind::Lt);
     TypeDesc elem = parseType();
-    expect(TokenKind::Gt);
+    expectTypeClosingGt();
     return TypeDesc::optional(elem);
   }
   if (name == "Result") {
@@ -2808,7 +2949,7 @@ TypeDesc Parser::finishParseType(const std::string& name) {
     TypeDesc ok = parseType();
     expect(TokenKind::Comma);
     TypeDesc err = parseType();
-    expect(TokenKind::Gt);
+    expectTypeClosingGt();
     return TypeDesc::result(std::move(ok), std::move(err));
   }
   if (name == "arr")
@@ -2831,22 +2972,31 @@ bool Parser::tryParseGenericTypeArgs(std::vector<TypeDesc>& out) {
   if (!check(TokenKind::Lt))
     return false;
   size_t save = pos_;
+  bool save_gt = pending_type_closing_gt_;
   match(TokenKind::Lt);
   try {
     out.push_back(parseType());
     while (match(TokenKind::Comma))
       out.push_back(parseType());
-    if (!match(TokenKind::Gt))
+    if (!matchTypeClosingGt())
       throw FarError("expected >", current().line, current().col);
     return true;
-  } catch (...) {
+  } catch (const FarError& e) {
     pos_ = save;
+    pending_type_closing_gt_ = save_gt;
     out.clear();
+    if (e.message.find("depth exceeded") != std::string::npos)
+      throw;
     return false;
   }
 }
 
 TypeDesc Parser::parseType() {
+  pushParseDepth(current().line, current().col);
+  struct Guard {
+    Parser& p;
+    ~Guard() { p.popParseDepth(); }
+  } guard{*this};
   if (match(TokenKind::Fn))
     return finishParseType("fn");
   if (match(TokenKind::TypeName))
@@ -2857,7 +3007,12 @@ TypeDesc Parser::parseType() {
       return finishParseType(n);
     if (isTypeName(n))
       return finishParseType(n);
-    return TypeDesc::typeVar(n);
+    for (const auto& tp : current_type_params_) {
+      if (tp.name == n)
+        return TypeDesc::typeVar(n);
+    }
+    const Token& tok = tokens_[pos_ - 1];
+    throw FarError("unknown type '" + n + "'", tok.line, tok.col);
   }
   const Token& tok = current();
   throw FarError(std::string("expected type name, got ") + tokenName(tok.kind), tok.line, tok.col);
@@ -2870,6 +3025,13 @@ std::unique_ptr<Expr> Parser::parseExprFromSource(const std::string& source) {
   Lexer lexer(source);
 
   Parser parser(lexer.tokenize());
+  parser.user_type_names_ = user_type_names_;
+  parser.enum_type_names_ = enum_type_names_;
+  parser.union_type_names_ = union_type_names_;
+  parser.macro_names_ = macro_names_;
+  parser.current_namespace_ = current_namespace_;
+  parser.current_type_name_ = current_type_name_;
+  parser.current_type_params_ = current_type_params_;
 
   return parser.parseExpr();
 
@@ -2903,7 +3065,10 @@ std::unique_ptr<Expr> Parser::parseInterpString(const Token& tok) {
 
       append(Expr::makeString(tok.interp_texts[i]));
 
-    append(parseExprFromSource(tok.interp_exprs[i]));
+    if (tok.interp_exprs[i].empty())
+      append(Expr::makeString(""));
+    else
+      append(parseExprFromSource(tok.interp_exprs[i]));
 
   }
 

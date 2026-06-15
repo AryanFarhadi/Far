@@ -1,0 +1,5 @@
+﻿fun main() {
+  print(comptime u8(255 + 1))
+  print(comptime (u8(255) + u8(1) as u8))
+  return 0
+}

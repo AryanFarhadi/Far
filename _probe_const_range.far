@@ -1,0 +1,9 @@
+﻿fun test_range() -> i64 {
+  start = 0
+  end = 0
+  for i in start..end {
+    x = undefined_range
+  }
+  return 0
+}
+fun main() { print(test_range()); return 0 }

@@ -1,0 +1,13 @@
+﻿fun main() {
+  i = 0
+  while (i < 1) {
+    try {
+      try {
+        i = i + 1
+        break
+      } finally { print(1) }
+    } finally { print(2) }
+  }
+  print(i)
+  return 0
+}

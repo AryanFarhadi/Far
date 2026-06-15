@@ -1,0 +1,6 @@
+﻿fun test() -> i64 {
+  flag: f32 = 0.0f
+  if (flag) { x = undefined_f32_if }
+  return 0
+}
+fun main() { test(); return 0 }

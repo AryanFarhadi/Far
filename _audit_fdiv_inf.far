@@ -1,0 +1,8 @@
+fun test_int_float_div() -> i64 {
+  a: f64 = 1.0
+  b: f64 = 0.0
+  c = a / b
+  if (c > 0) { return 1 }
+  return 0
+}
+fun main() { print(test_int_float_div()); return 0 }

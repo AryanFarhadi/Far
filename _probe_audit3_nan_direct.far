@@ -1,0 +1,6 @@
+fun main() {
+  import math
+  x: f64 = 0.0
+  print(x / 0.0)
+  return 0
+}

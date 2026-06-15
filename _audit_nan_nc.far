@@ -1,0 +1,5 @@
+fun test_nan_nc() -> f64 {
+  x: f64 = 0.0 / 0.0
+  return x ?? 42.0
+}
+fun main() { print(test_nan_nc()); return 0 }

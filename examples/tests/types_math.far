@@ -60,7 +60,7 @@ fun color_ops() -> i32 {
   if (c.g != 0.5) {
     return 40
   }
-  c32 = color32(255, 128, 64, 255)
+  c32 = color32(u8(255), u8(128), u8(64), u8(255))
   cf = colors.to_color(c32)
   if (cf.r < 0.99) {
     return 41

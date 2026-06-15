@@ -1,0 +1,5 @@
+﻿fun test_lit_and() -> i64 {
+  if (0 && undefined_lit) { return 1 }
+  return 0
+}
+fun main() { print(test_lit_and()); return 0 }

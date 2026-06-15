@@ -88,6 +88,7 @@ struct TypeDesc {
   static TypeDesc task();
 };
 
+TypeDesc resolveSubst(const std::unordered_map<std::string, TypeDesc>& sub, TypeDesc td);
 TypeDesc substituteTypeDesc(const TypeDesc& td, const std::unordered_map<std::string, TypeDesc>& sub);
 bool unifyTypeVar(const std::string& name, const TypeDesc& concrete,
                   std::unordered_map<std::string, TypeDesc>& out);
@@ -101,14 +102,17 @@ FarTypeId primitiveOf(const TypeDesc& td);
 TypeDesc elemTypeOf(const TypeDesc& td);
 std::string typeDescName(const TypeDesc& td);
 bool canAssignTypes(const TypeDesc& from, const TypeDesc& to);
+bool canCastTypes(const TypeDesc& from, const TypeDesc& to);
 
 uint16_t typeTag(const TypeDesc& td);
 int elemSizeBytes(const TypeDesc& td);
+int elemAlignBytes(const TypeDesc& td);
 bool isHashableType(const TypeDesc& td);
 bool isCollectionHandle(const TypeDesc& td);
 bool isCollectionValue(const TypeDesc& td);
 bool isFunctionDesc(const TypeDesc& td);
 inline TypeDesc defaultIntType() { return TypeDesc::prim(FarTypeId::I32); }
+TypeDesc inferIntLiteralType(int64_t value, bool unsigned_decimal);
 bool isUserDesc(const TypeDesc& td);
 bool isPointerDesc(const TypeDesc& td);
 bool isBorrowRefDesc(const TypeDesc& td);

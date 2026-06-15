@@ -1,0 +1,13 @@
+﻿fun test() -> i64 {
+  flag = 1
+  if (flag) {
+    return 1
+  } else {
+    x = undefined_var
+  }
+  return 0
+}
+fun main() {
+  print(test())
+  return 0
+}

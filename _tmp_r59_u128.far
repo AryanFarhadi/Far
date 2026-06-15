@@ -1,0 +1,6 @@
+﻿fun main() {
+  x: u128 = 1
+  print(x)
+  print(u128.max)
+  return 0
+}

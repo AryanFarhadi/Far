@@ -73,7 +73,10 @@ static std::string emitToDouble(AggCodegenCtx ctx, FarTypeId ty, const std::stri
   if (ty == FarTypeId::F64)
     return val;
   std::string tmp = ctx.fresh("t");
-  ctx.out << "  %" << tmp << " = sitofp i64 " << val << " to double\n";
+  if (isIntegerType(ty) && !typeInfo(ty).is_signed)
+    ctx.out << "  %" << tmp << " = uitofp i64 " << val << " to double\n";
+  else
+    ctx.out << "  %" << tmp << " = sitofp i64 " << val << " to double\n";
   return "%" + tmp;
 }
 

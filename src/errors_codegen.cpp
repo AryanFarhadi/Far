@@ -115,13 +115,13 @@ std::string emitCaughtMatches(ErrCodegenCtx ctx, int64_t expected_tag) {
 
 std::string emitCaughtValueGlobal(ErrCodegenCtx ctx) {
   std::string tmp = ctx.fresh("caught");
-  ctx.out << "  %" << tmp << " = load volatile i64, i64* @far_g_caught_value\n";
+  ctx.out << "  %" << tmp << " = call i64 @far_caught_value()\n";
   return "%" + tmp;
 }
 
 std::string emitCaughtTagGlobal(ErrCodegenCtx ctx) {
   std::string tmp = ctx.fresh("ctag");
-  ctx.out << "  %" << tmp << " = load volatile i64, i64* @far_g_caught_tag\n";
+  ctx.out << "  %" << tmp << " = call i64 @far_caught_tag()\n";
   return "%" + tmp;
 }
 

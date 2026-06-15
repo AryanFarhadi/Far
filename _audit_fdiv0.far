@@ -1,0 +1,8 @@
+fun test_fdiv0() -> i64 {
+  x: f64 = 0.0
+  y: f64 = 1.0
+  z = y / x
+  print(z)
+  return 0
+}
+fun main() { test_fdiv0(); return 0 }

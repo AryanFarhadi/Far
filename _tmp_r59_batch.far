@@ -1,0 +1,20 @@
+﻿import math
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(id: i64, r: i64) -> i64 { if (r != 0) { print(id); return id } return 0 }
+fun t04_break_in_finally() -> i64 {
+  i = 0
+  while (i < 3) {
+    try {
+      i = i + 1
+      if (i == 2) { break }
+    } finally {
+      print(i)
+    }
+  }
+  return eq(i, 2)
+}
+fun main() {
+  r = run(4, t04_break_in_finally()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

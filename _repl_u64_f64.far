@@ -1,0 +1,6 @@
+﻿fun main() {
+  x: u64 = 9223372036854775808
+  y: f64 = x as f64
+  print(y)
+  return 0
+}

@@ -10,10 +10,40 @@ fun test_stringify_eq() -> i64 {
   if (json.stringify_i64(42) == "42") { return 0 }
   return 2
 }
+fun test_large_int_infer() -> i64 {
+  x = 5000000000
+  if (x != 5000000000) { return 3 }
+  return 0
+}
+fun test_typed_reassign() -> i64 {
+  x: i32 = 0
+  x = 42
+  if (x != 42) { return 4 }
+  return 0
+}
+fun test_explicit_narrow() -> i64 {
+  y: i64 = 42
+  if (i32(y) != 42) { return 5 }
+  return 0
+}
+fun test_compound_typed() -> i64 {
+  x: i32 = 10
+  x += 5
+  if (x != 15) { return 6 }
+  return 0
+}
 fun main() -> i64 {
   r = test_string_eq()
   if (r != 0) { print(r); return r }
   r = test_stringify_eq()
+  if (r != 0) { print(r); return r }
+  r = test_large_int_infer()
+  if (r != 0) { print(r); return r }
+  r = test_typed_reassign()
+  if (r != 0) { print(r); return r }
+  r = test_explicit_narrow()
+  if (r != 0) { print(r); return r }
+  r = test_compound_typed()
   if (r != 0) { print(r); return r }
   print(0)
   return 0

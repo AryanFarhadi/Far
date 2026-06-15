@@ -1,6 +1,7 @@
 #include "types.h"
 
 #include "aggregate.h"
+#include "ast.h"
 #include "error.h"
 
 #include <climits>
@@ -142,6 +143,61 @@ bool isVoidType(FarTypeId id) {
   return id == FarTypeId::Void;
 }
 
+bool isNarrowingIntegerAssign(FarTypeId from, FarTypeId to) {
+  if (!isIntegerType(from) || !isIntegerType(to) || from == to)
+    return false;
+  const FarTypeInfo& fi = typeInfo(from);
+  const FarTypeInfo& ti = typeInfo(to);
+  if (ti.bits < fi.bits)
+    return true;
+  if (ti.bits == fi.bits && fi.is_signed != ti.is_signed)
+    return true;
+  return false;
+}
+
+bool intLiteralValueFitsType(int64_t value, bool unsigned_decimal, FarTypeId target) {
+  if (!isIntegerType(target))
+    return true;
+  const FarTypeInfo& info = typeInfo(target);
+  if (info.is_signed) {
+    if (unsigned_decimal)
+      return false;
+    return value >= info.min_i && value <= info.max_i;
+  }
+  if (!unsigned_decimal && value < 0)
+    return false;
+  const uint64_t uv = static_cast<uint64_t>(value);
+  return uv <= static_cast<uint64_t>(info.max_i);
+}
+
+static bool tryStaticIntLiteral(const Expr& expr, int64_t* value, bool* unsigned_decimal) {
+  if (expr.kind == Expr::Int) {
+    *value = expr.int_lit.value;
+    *unsigned_decimal = expr.int_lit.unsigned_decimal;
+    return true;
+  }
+  if (expr.kind == Expr::Binary && expr.bin_op.op == "-" && expr.bin_op.left && expr.bin_op.right &&
+      expr.bin_op.left->kind == Expr::Int && expr.bin_op.left->int_lit.value == 0 &&
+      !expr.bin_op.left->int_lit.unsigned_decimal && expr.bin_op.right->kind == Expr::Int &&
+      !expr.bin_op.right->int_lit.unsigned_decimal) {
+    const int64_t rhs = expr.bin_op.right->int_lit.value;
+    if (rhs == INT64_MIN)
+      return false;
+    *value = -rhs;
+    *unsigned_decimal = false;
+    return true;
+  }
+  return false;
+}
+
+bool intLiteralExprFitsType(const Expr& expr, FarTypeId target) {
+  int64_t value = 0;
+  bool unsigned_decimal = false;
+  if (!tryStaticIntLiteral(expr, &value, &unsigned_decimal))
+    return true;
+  return intLiteralValueFitsType(value, unsigned_decimal, target);
+}
+
 bool canAssign(FarTypeId from, FarTypeId to) {
   if (from == to)
     return true;
@@ -149,11 +205,15 @@ bool canAssign(FarTypeId from, FarTypeId to) {
     return true;
   if (isIntegerType(from) && isIntegerType(to))
     return true;
+  if (isIntegerType(to) && isFloatType(from))
+    return true;
   if (to == FarTypeId::F64 && (isFloatType(from) || isIntegerType(from)))
     return true;
-  if (to == FarTypeId::F32 && (from == FarTypeId::F32 || from == FarTypeId::F16 || isIntegerType(from)))
+  if (to == FarTypeId::F32 && (from == FarTypeId::F32 || from == FarTypeId::F16 || from == FarTypeId::F64 ||
+                               isIntegerType(from)))
     return true;
-  if (to == FarTypeId::F16 && (from == FarTypeId::F16 || isIntegerType(from)))
+  if (to == FarTypeId::F16 && (from == FarTypeId::F16 || from == FarTypeId::F32 || from == FarTypeId::F64 ||
+                               isIntegerType(from)))
     return true;
   if (to == FarTypeId::Bool && isIntegerType(from))
     return true;

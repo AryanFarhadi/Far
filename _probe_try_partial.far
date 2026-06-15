@@ -1,0 +1,10 @@
+﻿fun test_try_partial() -> i64 {
+  flag = 1
+  try {
+    if (flag) { return 1 }
+  } catch (e) {
+    x = undefined_catch
+  }
+  return 0
+}
+fun main() { print(test_try_partial()); return 0 }

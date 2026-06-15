@@ -1,0 +1,5 @@
+﻿fun main() {
+  x: f64 = 1.0
+  match x { _ => print(0) }
+  return 0
+}

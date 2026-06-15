@@ -1,0 +1,5 @@
+﻿fun main() {
+  v = comptime (u64(1) >> 1)
+  print(v)
+  return 0
+}

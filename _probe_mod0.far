@@ -1,0 +1,4 @@
+﻿fun test_mod0() -> i64 {
+  return 10 % 0
+}
+fun main() { print(test_mod0()); return 0 }

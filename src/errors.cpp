@@ -83,16 +83,10 @@ void declareErrorRuntime(std::ostringstream& out) {
   out << "declare i32 @far_try_enter()\n";
   out << "declare void @far_try_success()\n";
   out << "declare void @far_throw(i64, i64)\n";
+  out << "declare void @far_store_caught(i64, i64)\n";
   out << "declare i64 @far_caught_tag()\n";
   out << "declare i64 @far_caught_value()\n";
   out << "declare i32 @far_caught_matches(i64)\n";
-  out << "@far_g_caught_tag = global i64 0\n";
-  out << "@far_g_caught_value = global i64 0\n";
-  out << "define void @far_store_caught(i64 %tag, i64 %val) {\n";
-  out << "  store volatile i64 %tag, i64* @far_g_caught_tag\n";
-  out << "  store volatile i64 %val, i64* @far_g_caught_value\n";
-  out << "  ret void\n";
-  out << "}\n";
   out << "declare void @far_panic(i64)\n";
   out << "declare void @far_assert(i64, i64)\n";
   out << "declare void @far_stack_trace()\n";
@@ -109,6 +103,19 @@ void declareErrorRuntime(std::ostringstream& out) {
   out << "declare i64 @far_result_unwrap_or(i64, i64)\n";
   out << "declare i64 @far_result_ok_val(i64)\n";
   out << "declare i64 @far_result_err_val(i64)\n";
+  out << "declare i64 @far_i64_add_checked(i64, i64)\n";
+  out << "declare i64 @far_i64_sub_checked(i64, i64)\n";
+  out << "declare i64 @far_i64_mul_checked(i64, i64)\n";
+  out << "declare i64 @far_i64_div_checked(i64, i64)\n";
+  out << "declare i64 @far_i64_mod_checked(i64, i64)\n";
+  out << "declare i64 @far_i64_neg_checked(i64)\n";
+  out << "declare i64 @far_u64_div_checked(i64, i64)\n";
+  out << "declare i64 @far_u64_mod_checked(i64, i64)\n";
+  out << "declare i64 @far_i64_shl_checked(i64, i64)\n";
+  out << "declare i64 @far_i64_shr_checked(i64, i64)\n";
+  out << "declare i64 @far_u64_shr_checked(i64, i64)\n";
+  out << "declare double @far_f64_div_checked(double, double)\n";
+  out << "declare double @far_f64_rem_checked(double, double)\n";
 }
 
 }  // namespace far

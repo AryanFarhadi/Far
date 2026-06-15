@@ -1,0 +1,6 @@
+﻿constexpr X = comptime (u64(9223372036854775807) * u64(2))
+fun main() {
+  print(X)
+  print(u64(X))
+  return 0
+}

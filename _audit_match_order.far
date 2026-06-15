@@ -1,0 +1,8 @@
+fun test_match_order() -> i64 {
+  match 2 {
+    1 => return 1
+    _ => return 0
+    2 => return 2
+  }
+}
+fun main() { print(test_match_order()); return 0 }

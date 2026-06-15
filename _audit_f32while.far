@@ -1,0 +1,6 @@
+fun test_f32while() -> i64 {
+  flag: f32 = 0.0f
+  while (flag) { x = undefined_f32while }
+  return 0
+}
+fun main() { print(test_f32while()); return 0 }

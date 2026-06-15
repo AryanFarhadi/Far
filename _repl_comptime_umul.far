@@ -1,0 +1,4 @@
+﻿fun main() {
+  print(comptime (u64(9223372036854775807) * u64(2)))
+  return 0
+}

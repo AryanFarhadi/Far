@@ -1,0 +1,9 @@
+﻿fun test_match() -> i64 {
+  x = 1
+  match x {
+    0 => { return 0 }
+    1 => { return 1 }
+    _ => { return undefined_match }
+  }
+}
+fun main() { print(test_match()); return 0 }

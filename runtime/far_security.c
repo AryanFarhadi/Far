@@ -4,6 +4,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <time.h>
+#endif
 
 extern char* far_xor_crypt(const char* data, const char* key);
 extern char* far_hash_md5_hex(const char* data);
@@ -141,46 +146,119 @@ static int64_t g_sec_locks[64];
 static int64_t g_sec_lock_owner[64];
 static int g_sec_lock_n = 0;
 
+static void far_sec_mu_lock(void) {
+  far_spawn_mu_ensure();
+  pthread_mutex_lock(&g_spawn_mu);
+}
+
+static void far_sec_mu_unlock(void) {
+  pthread_mutex_unlock(&g_spawn_mu);
+}
+
 static int sec_lock_slot(int64_t id) {
+  far_sec_mu_lock();
   for (int i = 0; i < g_sec_lock_n; ++i) {
-    if (g_sec_locks[i] == id)
+    if (g_sec_locks[i] == id) {
+      far_sec_mu_unlock();
       return i;
+    }
   }
-  if (g_sec_lock_n >= 64)
+  if (g_sec_lock_n >= 64) {
+    far_sec_mu_unlock();
     return -1;
+  }
   g_sec_locks[g_sec_lock_n] = id;
   g_sec_lock_owner[g_sec_lock_n] = 0;
-  return g_sec_lock_n++;
+  int slot = g_sec_lock_n++;
+  far_sec_mu_unlock();
+  return slot;
 }
 
 int64_t far_sec_safe_lock(int64_t id) {
-  int slot = sec_lock_slot(id);
-  if (slot < 0)
-    return -1;
-  if (g_sec_lock_owner[slot] != 0)
+  for (;;) {
+    far_sec_mu_lock();
+    int slot = -1;
+    for (int i = 0; i < g_sec_lock_n; ++i) {
+      if (g_sec_locks[i] == id) {
+        slot = i;
+        break;
+      }
+    }
+    if (slot < 0) {
+      if (g_sec_lock_n >= 64) {
+        far_sec_mu_unlock();
+        return -1;
+      }
+      slot = g_sec_lock_n++;
+      g_sec_locks[slot] = id;
+      g_sec_lock_owner[slot] = 0;
+    }
+    if (g_sec_lock_owner[slot] == 0) {
+      g_sec_lock_owner[slot] = 1;
+      far_sec_mu_unlock();
+      return 1;
+    }
+    far_sec_mu_unlock();
+#ifdef _WIN32
+    Sleep(1);
+#else
+    struct timespec ts = {0, 1000000};
+    nanosleep(&ts, NULL);
+#endif
+  }
+}
+
+int64_t far_sec_safe_try_lock(int64_t id) {
+  far_sec_mu_lock();
+  int slot = -1;
+  for (int i = 0; i < g_sec_lock_n; ++i) {
+    if (g_sec_locks[i] == id) {
+      slot = i;
+      break;
+    }
+  }
+  if (slot < 0) {
+    if (g_sec_lock_n >= 64) {
+      far_sec_mu_unlock();
+      return -1;
+    }
+    slot = g_sec_lock_n++;
+    g_sec_locks[slot] = id;
+    g_sec_lock_owner[slot] = 0;
+  }
+  if (g_sec_lock_owner[slot] != 0) {
+    far_sec_mu_unlock();
     return 0;
+  }
   g_sec_lock_owner[slot] = 1;
+  far_sec_mu_unlock();
   return 1;
 }
 
 int64_t far_sec_safe_unlock(int64_t id) {
+  far_sec_mu_lock();
   for (int i = 0; i < g_sec_lock_n; ++i) {
     if (g_sec_locks[i] == id) {
       g_sec_lock_owner[i] = 0;
+      far_sec_mu_unlock();
       return 1;
     }
   }
+  far_sec_mu_unlock();
   return 0;
 }
 
-int64_t far_sec_safe_try_lock(int64_t id) { return far_sec_safe_lock(id); }
-
 int64_t far_sec_safe_owned(int64_t id) {
+  far_sec_mu_lock();
+  int64_t owned = 0;
   for (int i = 0; i < g_sec_lock_n; ++i) {
-    if (g_sec_locks[i] == id)
-      return g_sec_lock_owner[i] ? 1 : 0;
+    if (g_sec_locks[i] == id) {
+      owned = g_sec_lock_owner[i] ? 1 : 0;
+      break;
+    }
   }
-  return 0;
+  far_sec_mu_unlock();
+  return owned;
 }
 
 /* --- Permission system --- */
@@ -189,47 +267,72 @@ static int64_t g_sec_perms[64];
 static int64_t g_sec_perm_mask[64];
 static int g_sec_perm_n = 0;
 
-static int sec_perm_slot(int64_t actor) {
-  for (int i = 0; i < g_sec_perm_n; ++i) {
-    if (g_sec_perms[i] == actor)
-      return i;
-  }
-  if (g_sec_perm_n >= 64)
-    return -1;
-  g_sec_perms[g_sec_perm_n] = actor;
-  g_sec_perm_mask[g_sec_perm_n] = 0;
-  return g_sec_perm_n++;
-}
-
 int64_t far_sec_perm_grant(int64_t actor, int64_t perm) {
-  int slot = sec_perm_slot(actor);
-  if (slot < 0)
-    return -1;
+  far_sec_mu_lock();
+  int slot = -1;
+  for (int i = 0; i < g_sec_perm_n; ++i) {
+    if (g_sec_perms[i] == actor) {
+      slot = i;
+      break;
+    }
+  }
+  if (slot < 0) {
+    if (g_sec_perm_n >= 64) {
+      far_sec_mu_unlock();
+      return -1;
+    }
+    slot = g_sec_perm_n++;
+    g_sec_perms[slot] = actor;
+    g_sec_perm_mask[slot] = 0;
+  }
   g_sec_perm_mask[slot] |= perm;
-  return g_sec_perm_mask[slot];
+  int64_t mask = g_sec_perm_mask[slot];
+  far_sec_mu_unlock();
+  return mask;
 }
 
 int64_t far_sec_perm_revoke(int64_t actor, int64_t perm) {
-  int slot = sec_perm_slot(actor);
-  if (slot < 0)
+  far_sec_mu_lock();
+  int slot = -1;
+  for (int i = 0; i < g_sec_perm_n; ++i) {
+    if (g_sec_perms[i] == actor) {
+      slot = i;
+      break;
+    }
+  }
+  if (slot < 0) {
+    far_sec_mu_unlock();
     return -1;
+  }
   g_sec_perm_mask[slot] &= ~perm;
-  return g_sec_perm_mask[slot];
+  int64_t mask = g_sec_perm_mask[slot];
+  far_sec_mu_unlock();
+  return mask;
 }
 
 int64_t far_sec_perm_check(int64_t actor, int64_t perm) {
+  far_sec_mu_lock();
   for (int i = 0; i < g_sec_perm_n; ++i) {
-    if (g_sec_perms[i] == actor)
-      return (g_sec_perm_mask[i] & perm) == perm ? 1 : 0;
+    if (g_sec_perms[i] == actor) {
+      int64_t ok = (g_sec_perm_mask[i] & perm) == perm ? 1 : 0;
+      far_sec_mu_unlock();
+      return ok;
+    }
   }
+  far_sec_mu_unlock();
   return 0;
 }
 
 int64_t far_sec_perm_bits(int64_t actor) {
+  far_sec_mu_lock();
   for (int i = 0; i < g_sec_perm_n; ++i) {
-    if (g_sec_perms[i] == actor)
-      return g_sec_perm_mask[i];
+    if (g_sec_perms[i] == actor) {
+      int64_t bits = g_sec_perm_mask[i];
+      far_sec_mu_unlock();
+      return bits;
+    }
   }
+  far_sec_mu_unlock();
   return 0;
 }
 
@@ -255,6 +358,8 @@ int64_t far_sec_sandbox_active(void) { return g_sec_sandbox_level > 0 ? 1 : 0; }
 int64_t far_sec_sandbox_allow(const char* path) {
   if (!path || !path[0] || g_sec_sandbox_path_n >= 16)
     return -1;
+  if (strlen(path) >= sizeof(g_sec_sandbox_paths[0]))
+    return -1;
   snprintf(g_sec_sandbox_paths[g_sec_sandbox_path_n], sizeof(g_sec_sandbox_paths[0]), "%s", path);
   ++g_sec_sandbox_path_n;
   return g_sec_sandbox_path_n;
@@ -266,7 +371,9 @@ int64_t far_sec_sandbox_can(const char* path) {
   if (!path)
     return 0;
   for (int i = 0; i < g_sec_sandbox_path_n; ++i) {
-    if (strstr(path, g_sec_sandbox_paths[i]) == path)
+    const char* allowed = g_sec_sandbox_paths[i];
+    size_t n = strlen(allowed);
+    if (strncmp(path, allowed, n) == 0 && (path[n] == '\0' || path[n] == '/'))
       return 1;
   }
   return 0;

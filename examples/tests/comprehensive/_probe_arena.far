@@ -2,10 +2,10 @@ fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
 fun t10_arena_reset() -> i64 {
   a = Arena(256)
   p1 = a.alloc(8)
-  unsafe { *p1 = 11 }
+  unsafe { *p1 = i8(11) }
   a.reset()
   p2 = a.alloc(8)
-  unsafe { *p2 = 22 }
+  unsafe { *p2 = i8(22) }
   return eq(*p2, 22)
 }
 fun main() {

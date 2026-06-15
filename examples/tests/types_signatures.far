@@ -21,7 +21,7 @@ fun main() {
   print(add_i32(100, 23))
   print(add_i32(i32(1), i32(2)))
   print(mix_types(u8(10), 20, 30))
-  print(mix_types(5, 15, 25))
+  print(mix_types(u8(5), 15, 25))
   print(i32(ret_f64(9)))
   print(i32(ret_f64(10)))
   print(identity_i64(999))

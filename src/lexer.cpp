@@ -12,7 +12,11 @@ namespace far {
 
 
 
-Lexer::Lexer(std::string source) : source_(std::move(source)) {}
+Lexer::Lexer(std::string source) : source_(std::move(source)) {
+  if (source_.size() >= 3 && static_cast<unsigned char>(source_[0]) == 0xEF &&
+      static_cast<unsigned char>(source_[1]) == 0xBB && static_cast<unsigned char>(source_[2]) == 0xBF)
+    pos_ = 3;
+}
 
 
 
@@ -82,15 +86,49 @@ Token Lexer::readIdent(int line, int col) {
 
   while (pos_ < source_.size()) {
 
-    char ch = source_[pos_];
+    unsigned char ch = static_cast<unsigned char>(source_[pos_]);
 
-    if (std::isalnum(static_cast<unsigned char>(ch)) || ch == '_')
+    if (std::isalnum(ch) || ch == '_') {
 
       advance();
 
-    else
+    } else if (ch >= 0x80) {
+
+      size_t len = 0;
+
+      if ((ch & 0xE0) == 0xC0)
+        len = 2;
+      else if ((ch & 0xF0) == 0xE0)
+        len = 3;
+      else if ((ch & 0xF8) == 0xF0)
+        len = 4;
+      else
+        throw FarError("invalid UTF-8 in identifier", line, col);
+
+      if (pos_ + len > source_.size())
+        throw FarError("invalid UTF-8 in identifier", line, col);
+
+      bool ok = true;
+
+      for (size_t i = 1; i < len; ++i) {
+        unsigned char next = static_cast<unsigned char>(source_[pos_ + i]);
+        if ((next & 0xC0) != 0x80) {
+          ok = false;
+          break;
+        }
+      }
+
+      if (!ok)
+        throw FarError("invalid UTF-8 in identifier", line, col);
+
+      for (size_t i = 0; i < len; ++i)
+        advance();
+
+    } else {
 
       break;
+
+    }
 
   }
 
@@ -230,11 +268,31 @@ Token Lexer::readInt(int line, int col) {
 
     if (std::isdigit(static_cast<unsigned char>(peek()))) {
 
-      while (pos_ < source_.size() &&
+      bool seen_dot = false;
 
-             (std::isdigit(static_cast<unsigned char>(source_[pos_])) || source_[pos_] == '.'))
+      while (pos_ < source_.size()) {
 
-        advance();
+        if (source_[pos_] == '.') {
+
+          if (seen_dot)
+
+            break;
+
+          seen_dot = true;
+
+          advance();
+
+        } else if (std::isdigit(static_cast<unsigned char>(source_[pos_]))) {
+
+          advance();
+
+        } else {
+
+          break;
+
+        }
+
+      }
 
       if (peek() == 'f' || peek() == 'F')
 
@@ -262,11 +320,31 @@ Token Lexer::readFloat(int line, int col) {
 
     advance();
 
-  while (pos_ < source_.size() &&
+  bool seen_dot = (source_[start] == '.');
 
-         (std::isdigit(static_cast<unsigned char>(source_[pos_])) || source_[pos_] == '.'))
+  while (pos_ < source_.size()) {
 
-    advance();
+    if (source_[pos_] == '.') {
+
+      if (seen_dot)
+
+        break;
+
+      seen_dot = true;
+
+      advance();
+
+    } else if (std::isdigit(static_cast<unsigned char>(source_[pos_]))) {
+
+      advance();
+
+    } else {
+
+      break;
+
+    }
+
+  }
 
   if (peek() == 'f' || peek() == 'F')
 
@@ -317,7 +395,7 @@ Token Lexer::readChar(int line, int col) {
   advance(); // opening '
   if (pos_ >= source_.size())
     throw FarError("unterminated character literal", line, col);
-  uint16_t value = 0;
+  uint32_t value = 0;
   if (peek() == '\'')
     throw FarError("empty character literal", line, col);
   if (peek() == '\\') {
@@ -326,7 +404,43 @@ Token Lexer::readChar(int line, int col) {
       throw FarError("unterminated character literal", line, col);
     value = static_cast<unsigned char>(decodeEscape(advance(), line, col));
   } else {
-    value = static_cast<unsigned char>(advance());
+    unsigned char ch = static_cast<unsigned char>(peek());
+    size_t len = 1;
+    if (ch >= 0x80) {
+      if ((ch & 0xE0) == 0xC0)
+        len = 2;
+      else if ((ch & 0xF0) == 0xE0)
+        len = 3;
+      else if ((ch & 0xF8) == 0xF0)
+        len = 4;
+      else
+        throw FarError("invalid UTF-8 in character literal", line, col);
+      if (pos_ + len > source_.size())
+        throw FarError("unterminated character literal", line, col);
+      for (size_t i = 1; i < len; ++i) {
+        unsigned char next = static_cast<unsigned char>(source_[pos_ + i]);
+        if ((next & 0xC0) != 0x80)
+          throw FarError("invalid UTF-8 in character literal", line, col);
+      }
+      if (len == 2) {
+        value = ((ch & 0x1F) << 6) | (static_cast<unsigned char>(source_[pos_ + 1]) & 0x3F);
+      } else if (len == 3) {
+        value = ((ch & 0x0F) << 12) |
+                ((static_cast<unsigned char>(source_[pos_ + 1]) & 0x3F) << 6) |
+                (static_cast<unsigned char>(source_[pos_ + 2]) & 0x3F);
+      } else {
+        value = ((ch & 0x07) << 18) |
+                ((static_cast<unsigned char>(source_[pos_ + 1]) & 0x3F) << 12) |
+                ((static_cast<unsigned char>(source_[pos_ + 2]) & 0x3F) << 6) |
+                (static_cast<unsigned char>(source_[pos_ + 3]) & 0x3F);
+      }
+      for (size_t i = 0; i < len; ++i)
+        advance();
+    } else {
+      value = static_cast<unsigned char>(advance());
+    }
+    if (value > 0xFFFF)
+      throw FarError("character literal codepoint out of range", line, col);
     if (peek() != '\'')
       throw FarError("character literal must contain exactly one character", line, col);
   }
@@ -357,9 +471,12 @@ Token Lexer::readInterpString(int line, int col) {
       advance(); // {
       std::string expr;
       int depth = 1;
+      const int kMaxInterpDepth = 512;
       while (pos_ < source_.size() && depth > 0) {
         char c = peek();
         if (c == '{') {
+          if (depth >= kMaxInterpDepth)
+            throw FarError("interpolation nesting depth exceeded", line, col);
           depth++;
           expr += advance();
         } else if (c == '}') {
@@ -411,7 +528,8 @@ std::vector<Token> Lexer::tokenize() {
 
 
 
-    if (std::isalpha(static_cast<unsigned char>(ch)) || ch == '_') {
+    if (std::isalpha(static_cast<unsigned char>(ch)) || ch == '_' ||
+        static_cast<unsigned char>(ch) >= 0x80) {
 
       tokens.push_back(readIdent(start_line, start_col));
 

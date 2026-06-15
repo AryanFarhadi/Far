@@ -1,0 +1,5 @@
+﻿constexpr EMPTY: Array<i64> = []
+fun main() {
+  for x in EMPTY { y = undefined_const_foreach }
+  return 0
+}

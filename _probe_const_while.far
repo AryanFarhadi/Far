@@ -1,0 +1,8 @@
+﻿fun test_while() -> i64 {
+  flag = 0
+  while (flag) {
+    x = undefined_while_body
+  }
+  return 0
+}
+fun main() { print(test_while()); return 0 }

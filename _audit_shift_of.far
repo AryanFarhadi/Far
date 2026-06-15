@@ -1,0 +1,2 @@
+constexpr SHIFT = comptime (63 << 1)
+fun main() { print(SHIFT); return 0 }

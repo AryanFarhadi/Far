@@ -1,0 +1,9 @@
+fun test_finally_retval() -> i64 {
+  try {
+    return 1
+  } finally {
+    print(2)
+  }
+  return 0
+}
+fun main() { print(test_finally_retval()); return 0 }

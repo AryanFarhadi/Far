@@ -1,0 +1,5 @@
+﻿fun test_div0() -> i64 {
+  x = 0
+  return 10 / x
+}
+fun main() { print(test_div0()); return 0 }

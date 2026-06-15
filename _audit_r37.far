@@ -1,0 +1,14 @@
+fun test_finally() -> i64 {
+  try {
+    return 1
+  } catch (e) {
+    x = undefined_catch
+  } finally {
+    y = undefined_finally
+  }
+  return 0
+}
+fun main() {
+  print(test_finally())
+  return 0
+}

@@ -63,6 +63,16 @@ int64_t far_io_read_i64(void) {
   }
   char* end = NULL;
   long long v = strtoll(line, &end, 10);
+  if (end == line) {
+    free(line);
+    return 0;
+  }
+  while (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r')
+    ++end;
+  if (*end != 0) {
+    free(line);
+    return 0;
+  }
   free(line);
   return (int64_t)v;
 }
@@ -75,6 +85,16 @@ double far_io_read_f64(void) {
   }
   char* end = NULL;
   double v = strtod(line, &end);
+  if (end == line) {
+    free(line);
+    return 0.0;
+  }
+  while (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r')
+    ++end;
+  if (*end != 0) {
+    free(line);
+    return 0.0;
+  }
   free(line);
   return v;
 }
