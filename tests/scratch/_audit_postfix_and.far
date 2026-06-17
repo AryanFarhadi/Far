@@ -1,0 +1,6 @@
+fun test_postfix_and() -> i64 {
+  x = 0
+  if (x && (x++)) { return 1 }
+  return x
+}
+fun main() { print(test_postfix_and()); return 0 }

@@ -1,0 +1,424 @@
+check suite_100.far
+ok
+check suite_10000.far
+ok
+check suite_builtins.far
+ok
+check suite_known_bugs.far
+ok
+check suite_language.far
+ok
+check suite_max.far
+ok
+check types_actors.far
+ok
+check types_aliases.far
+ok
+check types_arrays.far
+ok
+check types_bitwise.far
+ok
+check types_casts.far
+ok
+check types_chain_cast.far
+ok
+check types_char_strings.far
+ok
+check types_classes.far
+ok
+check types_collections.far
+ok
+check types_compare.far
+ok
+check types_compound_ops.far
+ok
+check types_comptime.far
+ok
+check types_concurrency.far
+ok
+check types_constructors.far
+ok
+check types_control_flow.far
+ok
+check types_dict_bracket.far
+ok
+check types_dict_lit.far
+ok
+check types_division.far
+ok
+check types_edge.far
+ok
+check types_enums_flags.far
+ok
+check types_errors.far
+ok
+check types_exceptions.far
+ok
+check types_float.far
+ok
+check types_float_minmax.far
+ok
+check types_foreach.far
+ok
+check types_functions.far
+ok
+check types_generics.far
+ok
+check types_import_std.far
+ok
+check types_indexers.far
+ok
+check types_in_op.far
+ok
+check types_io.far
+ok
+check types_literals.far
+ok
+check types_loops.far
+ok
+check types_math.far
+ok
+check types_memory.far
+ok
+check types_minmax.far
+ok
+check types_mixed.far
+ok
+check types_modern.far
+ok
+check types_modules.far
+ok
+check types_networking.far
+ok
+check types_objects.far
+ok
+check types_operators.far
+ok
+check types_option_result.far
+ok
+check types_patterns.far
+ok
+check types_performance.far
+ok
+check types_reflection.far
+ok
+check types_release.far
+FAIL
+check types_returns.far
+ok
+check types_science.far
+ok
+check types_security.far
+ok
+check types_signatures.far
+ok
+check types_spawn.far
+ok
+check types_stdlib.far
+ok
+check types_stress.far
+ok
+check types_strings.far
+ok
+check types_string_ops.far
+ok
+check types_traits.far
+ok
+check types_unions.far
+ok
+check types_unsigned.far
+ok
+check types_vectors.far
+ok
+check test_builtins_full.far
+ok
+check test_casts_full.far
+ok
+check test_collections_full.far
+ok
+check test_float_math.far
+ok
+check test_http_client.far
+ok
+check test_imports_full.far
+ok
+check test_import_python.far
+ok
+check test_network_full.far
+ok
+check test_ops_arithmetic.far
+ok
+check test_ops_bitwise_logic.far
+ok
+check test_patterns_full.far
+ok
+check test_probe_batch3.far
+ok
+check test_probe_batch4.far
+ok
+check test_probe_batch5.far
+ok
+check test_probe_batch6.far
+ok
+check test_probe_batch7.far
+ok
+check test_probe_edges.far
+ok
+check test_probe_memory.far
+ok
+check test_probe_more.far
+ok
+check test_socket_client.far
+ok
+check test_stdlib_full.far
+ok
+check test_strings_full.far
+ok
+check test_syntax_control.far
+ok
+check test_syntax_oop.far
+ok
+check test_vectors_full.far
+ok
+check _probe_arena.far
+ok
+check _probe_b4a.far
+ok
+check _probe_b4b.far
+ok
+check _probe_batch4_a.far
+ok
+check _probe_batch4_b.far
+ok
+check _probe_bisect.far
+ok
+check _probe_box_size.far
+ok
+check _probe_for_range.far
+ok
+check _probe_nested.far
+ok
+check _probe_ok.far
+ok
+check _probe_pool.far
+ok
+check _probe_strpeq.far
+ok
+check _probe_str_only.far
+ok
+check _probe_str_pluseq.far
+ok
+
+check: 104 passed, 1 failed
+run   suite_100.far
+ok
+run   suite_10000.far
+ok
+run   suite_builtins.far
+ok
+run   suite_known_bugs.far
+ok
+run   suite_language.far
+ok
+run   suite_max.far
+ok
+run   types_actors.far
+ok
+run   types_aliases.far
+ok
+run   types_arrays.far
+ok
+run   types_bitwise.far
+ok
+run   types_casts.far
+ok
+run   types_chain_cast.far
+ok
+run   types_char_strings.far
+ok
+run   types_classes.far
+ok
+run   types_collections.far
+ok
+run   types_compare.far
+ok
+run   types_compound_ops.far
+ok
+run   types_comptime.far
+ok
+run   types_concurrency.far
+ok
+run   types_constructors.far
+ok
+run   types_control_flow.far
+ok
+run   types_dict_bracket.far
+ok
+run   types_dict_lit.far
+ok
+run   types_division.far
+ok
+run   types_edge.far
+ok
+run   types_enums_flags.far
+ok
+run   types_errors.far
+ok
+run   types_exceptions.far
+ok
+run   types_float.far
+ok
+run   types_float_minmax.far
+ok
+run   types_foreach.far
+ok
+run   types_functions.far
+ok
+run   types_generics.far
+ok
+run   types_import_std.far
+ok
+run   types_indexers.far
+ok
+run   types_in_op.far
+ok
+run   types_io.far
+ok
+run   types_literals.far
+ok
+run   types_loops.far
+ok
+run   types_math.far
+ok
+run   types_memory.far
+ok
+run   types_minmax.far
+ok
+run   types_mixed.far
+ok
+run   types_modern.far
+ok
+run   types_modules.far
+ok
+run   types_networking.far
+ok
+run   types_objects.far
+ok
+run   types_operators.far
+ok
+run   types_option_result.far
+ok
+run   types_patterns.far
+ok
+run   types_performance.far
+ok
+run   types_reflection.far
+ok
+run   types_release.far
+FAIL
+run   types_returns.far
+ok
+run   types_science.far
+ok
+run   types_security.far
+ok
+run   types_signatures.far
+ok
+run   types_spawn.far
+ok
+run   types_stdlib.far
+ok
+run   types_stress.far
+ok
+run   types_strings.far
+ok
+run   types_string_ops.far
+ok
+run   types_traits.far
+ok
+run   types_unions.far
+ok
+run   types_unsigned.far
+ok
+run   types_vectors.far
+ok
+run   test_builtins_full.far
+ok
+run   test_casts_full.far
+ok
+run   test_collections_full.far
+ok
+run   test_float_math.far
+ok
+run   test_http_client.far
+ok
+run   test_imports_full.far
+ok
+run   test_import_python.far
+ok
+run   test_network_full.far
+ok
+run   test_ops_arithmetic.far
+ok
+run   test_ops_bitwise_logic.far
+ok
+run   test_patterns_full.far
+ok
+run   test_probe_batch3.far
+ok
+run   test_probe_batch4.far
+ok
+run   test_probe_batch5.far
+ok
+run   test_probe_batch6.far
+ok
+run   test_probe_batch7.far
+ok
+run   test_probe_edges.far
+ok
+run   test_probe_memory.far
+ok
+run   test_probe_more.far
+ok
+run   test_socket_client.far
+ok
+run   test_stdlib_full.far
+ok
+run   test_strings_full.far
+ok
+run   test_syntax_control.far
+ok
+run   test_syntax_oop.far
+ok
+run   test_vectors_full.far
+ok
+run   _probe_arena.far
+ok
+run   _probe_b4a.far
+ok
+run   _probe_b4b.far
+ok
+run   _probe_batch4_a.far
+ok
+run   _probe_batch4_b.far
+ok
+run   _probe_bisect.far
+ok
+run   _probe_box_size.far
+ok
+run   _probe_for_range.far
+ok
+run   _probe_nested.far
+ok
+run   _probe_ok.far
+ok
+run   _probe_pool.far
+ok
+run   _probe_strpeq.far
+ok
+run   _probe_str_only.far
+ok
+run   _probe_str_pluseq.far
+ok
+
+run: 104 passed, 1 failed

@@ -7,13 +7,17 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <mutex>
 #include <sstream>
 #include <string>
+#include <chrono>
+#include <thread>
 #include <vector>
 
 #ifdef _WIN32
@@ -35,13 +39,22 @@ namespace fs = std::filesystem;
 static far::FarTarget g_target = far::hostTarget();
 static fs::path g_exe_dir;
 
+static constexpr std::size_t kMaxSourceBytes = 64u * 1024u * 1024u;
+
 static std::string readFile(const std::string& path) {
-  std::ifstream in(path, std::ios::binary);
+  std::ifstream in(path, std::ios::binary | std::ios::ate);
   if (!in)
     throw std::runtime_error("cannot open file: " + path);
-  std::ostringstream ss;
-  ss << in.rdbuf();
-  return ss.str();
+  std::streamsize size = in.tellg();
+  if (size < 0)
+    throw std::runtime_error("cannot read file size: " + path);
+  if (static_cast<std::size_t>(size) > kMaxSourceBytes)
+    throw std::runtime_error("source file exceeds maximum size (64 MiB): " + path);
+  in.seekg(0, std::ios::beg);
+  std::string content(static_cast<std::size_t>(size), '\0');
+  if (!in.read(content.data(), size))
+    throw std::runtime_error("cannot read file: " + path);
+  return content;
 }
 
 static void writeFile(const std::string& path, const std::string& content) {
@@ -244,37 +257,119 @@ static fs::path programOutputPath(const fs::path& sourcePath) {
   return sourcePath.parent_path() / (sourcePath.stem().string() + g_target.exe_suffix);
 }
 
+static fs::file_time_type runtimeSourceMtime(const fs::path& rt_dir) {
+  static const char* kRtSources[] = {
+      "far_rt.c", "far_stdlib.c", "far_science.c", "far_net.c", "far_modern.c",
+      "far_security.c", "far_perf.c", "far_io.c", "far_pthread_win32.h",
+  };
+  fs::file_time_type newest = fs::file_time_type::min();
+  for (const char* name : kRtSources) {
+    fs::path p = rt_dir / name;
+    if (fs::exists(p)) {
+      auto t = fs::last_write_time(p);
+      if (t > newest)
+        newest = t;
+    }
+  }
+  return newest;
+}
+
+#ifdef _WIN32
+static bool tryCreateBuildLockFile(const fs::path& lock_path) {
+  HANDLE h = CreateFileW(lock_path.wstring().c_str(), GENERIC_WRITE, 0, NULL, CREATE_NEW,
+                         FILE_ATTRIBUTE_NORMAL, NULL);
+  if (h == INVALID_HANDLE_VALUE)
+    return false;
+  CloseHandle(h);
+  return true;
+}
+#else
+#include <fcntl.h>
+#include <unistd.h>
+
+static bool tryCreateBuildLockFile(const fs::path& lock_path) {
+  int fd = open(lock_path.string().c_str(), O_CREAT | O_EXCL | O_WRONLY, 0644);
+  if (fd < 0)
+    return false;
+  close(fd);
+  return true;
+}
+#endif
+
+static void releaseBuildLockFile(const fs::path& lock_path) {
+  std::error_code ec;
+  fs::remove(lock_path, ec);
+}
+
+static void installRuntimeObject(const fs::path& rt_tmp, const fs::path& rt_o) {
+  std::error_code ec;
+  fs::rename(rt_tmp, rt_o, ec);
+  if (!ec)
+    return;
+  fs::remove(rt_o, ec);
+  ec.clear();
+  fs::rename(rt_tmp, rt_o, ec);
+  if (ec)
+    throw std::runtime_error("failed to install runtime object cache");
+}
+
 static fs::path runtimeObject(const std::string& clang) {
   fs::path rt_dir = exeDir() / "runtime";
   fs::path rt_c = rt_dir / "far_rt.c";
-  fs::path rt_net = rt_dir / "far_net.c";
   fs::path rt_o = rt_dir / g_target.object_cache_name;
-  auto source_time = fs::last_write_time(rt_c);
-  if (fs::exists(rt_net)) {
-    auto net_time = fs::last_write_time(rt_net);
-    if (net_time > source_time)
-      source_time = net_time;
+  auto source_time = runtimeSourceMtime(rt_dir);
+  auto object_is_fresh = [&]() {
+    return fs::exists(rt_o) && source_time <= fs::last_write_time(rt_o);
+  };
+  if (object_is_fresh())
+    return rt_o;
+
+  static std::mutex build_mu;
+  std::lock_guard<std::mutex> guard(build_mu);
+  if (object_is_fresh())
+    return rt_o;
+
+  fs::path lock_path = rt_o;
+  lock_path += ".lock";
+  for (int attempt = 0; attempt < 200; ++attempt) {
+    if (object_is_fresh())
+      return rt_o;
+    if (tryCreateBuildLockFile(lock_path))
+      break;
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    if (object_is_fresh())
+      return rt_o;
+    if (attempt == 199)
+      throw std::runtime_error("timeout waiting for runtime object build lock");
   }
-  fs::path rt_hdr = rt_dir / "far_pthread_win32.h";
-  if (fs::exists(rt_hdr)) {
-    auto hdr_time = fs::last_write_time(rt_hdr);
-    if (hdr_time > source_time)
-      source_time = hdr_time;
-  }
-  if (!fs::exists(rt_o) || source_time > fs::last_write_time(rt_o)) {
-    std::string cmd = quoteShellArg(clang) + " -O0 -c \"" + rt_c.string() + "\" -o \"" + rt_o.string() + "\"";
-    cmd += " -I\"" + rt_dir.string() + "\"";
-    if (!g_target.runtime_cflags.empty())
-      cmd += " " + g_target.runtime_cflags;
-    if (!g_target.triple.empty())
-      cmd += " --target=" + g_target.triple;
+
+  struct LockRelease {
+    fs::path path;
+    ~LockRelease() { releaseBuildLockFile(path); }
+  } lock_release{lock_path};
+
+  if (object_is_fresh())
+    return rt_o;
+
+  fs::path rt_tmp = rt_o;
+  rt_tmp += ".tmp";
+  std::string cmd =
+      quoteShellArg(clang) + " -O0 -c \"" + rt_c.string() + "\" -o \"" + rt_tmp.string() + "\"";
+  cmd += " -I\"" + rt_dir.string() + "\"";
+  if (!g_target.runtime_cflags.empty())
+    cmd += " " + g_target.runtime_cflags;
+  if (!g_target.triple.empty())
+    cmd += " --target=" + g_target.triple;
 #ifdef _WIN32
-    if (isMsvcWindowsTriple(g_target.triple))
-      cmd += " -fms-runtime-lib=static";
+  if (isMsvcWindowsTriple(g_target.triple))
+    cmd += " -fms-runtime-lib=static";
 #endif
-    if (runCommand(cmd) != 0)
-      throw std::runtime_error("failed to compile runtime/far_rt.c");
+  if (runCommand(cmd) != 0) {
+    std::error_code ec;
+    fs::remove(rt_tmp, ec);
+    throw std::runtime_error("failed to compile runtime/far_rt.c");
   }
+  installRuntimeObject(rt_tmp, rt_o);
   return rt_o;
 }
 
@@ -328,8 +423,8 @@ static bool needsRebuild(const fs::path& source, const fs::path& output, const f
     return true;
   if (fs::last_write_time(source) > fs::last_write_time(output))
     return true;
-  fs::path rt_c = exeDir() / "runtime" / "far_rt.c";
-  if (fs::exists(rt_c) && fs::last_write_time(rt_c) > fs::last_write_time(output))
+  fs::path rt_dir = exeDir() / "runtime";
+  if (fs::exists(rt_dir) && runtimeSourceMtime(rt_dir) > fs::last_write_time(output))
     return true;
   fs::path rt_o = exeDir() / "runtime" / g_target.object_cache_name;
   if (fs::exists(rt_o) && fs::last_write_time(rt_o) > fs::last_write_time(output))
@@ -437,18 +532,20 @@ static int replLoop() {
     if (line.empty())
       break;
     const std::string& p = line;
-    long long acc = 0;
-    int sign = 1;
-    size_t i = 0;
-    if (i < p.size() && p[i] == '-') {
-      sign = -1;
-      ++i;
+    char* end = nullptr;
+    errno = 0;
+    long long v = strtoll(p.c_str(), &end, 10);
+    if (errno == ERANGE || end == p.c_str()) {
+      std::cout << "0\n";
+      continue;
     }
-    while (i < p.size() && std::isdigit(static_cast<unsigned char>(p[i]))) {
-      acc = acc * 10 + (p[i] - '0');
-      ++i;
+    while (*end == ' ' || *end == '\t')
+      ++end;
+    if (*end != '\0') {
+      std::cout << "0\n";
+      continue;
     }
-    std::cout << acc * sign << "\n";
+    std::cout << v << "\n";
   }
   return 0;
 }

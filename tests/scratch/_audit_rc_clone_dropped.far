@@ -1,0 +1,7 @@
+fun main() {
+  r = Rc<i64>(8)
+  drop(r)
+  c = r.clone()
+  print(c)
+  return 0
+}

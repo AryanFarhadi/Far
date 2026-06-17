@@ -1,0 +1,5 @@
+import oversize_import
+
+fun main() {
+  return 0
+}

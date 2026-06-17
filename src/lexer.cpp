@@ -12,6 +12,16 @@ namespace far {
 
 namespace {
 
+constexpr size_t kMaxStringLiteralLen = 64 * 1024 * 1024;
+constexpr size_t kMaxIdentLen = 65536;
+constexpr size_t kMaxInterpExprLen = 65536;
+constexpr size_t kMaxNumLiteralLen = 4096;
+
+static void checkLexSize(size_t n, size_t max, int line, int col, const char* what) {
+  if (n > max)
+    throw FarError(std::string(what) + " too long", line, col);
+}
+
 void validateUtf8Sequence(unsigned char lead, const unsigned char* cont, size_t cont_len, int line,
                           int col, const char* where) {
   uint32_t cp = 0;
@@ -162,6 +172,9 @@ Token Lexer::readIdent(int line, int col) {
 
   }
 
+  if (pos_ - start > kMaxIdentLen)
+    throw FarError("identifier too long", line, col);
+
   std::string text = source_.substr(start, pos_ - start);
 
   static const std::unordered_map<std::string, TokenKind> keywords = {
@@ -286,9 +299,11 @@ Token Lexer::readInt(int line, int col) {
 
   size_t start = pos_;
 
-  while (pos_ < source_.size() && std::isdigit(static_cast<unsigned char>(source_[pos_])))
-
+  while (pos_ < source_.size() && std::isdigit(static_cast<unsigned char>(source_[pos_]))) {
+    if (pos_ - start >= kMaxNumLiteralLen)
+      throw FarError("integer literal too long", line, col);
     advance();
+  }
 
   if (peek() == '.') {
 
@@ -312,7 +327,8 @@ Token Lexer::readInt(int line, int col) {
           advance();
 
         } else if (std::isdigit(static_cast<unsigned char>(source_[pos_]))) {
-
+          if (pos_ - start >= kMaxNumLiteralLen)
+            throw FarError("float literal too long", line, col);
           advance();
 
         } else {
@@ -363,7 +379,8 @@ Token Lexer::readFloat(int line, int col) {
       advance();
 
     } else if (std::isdigit(static_cast<unsigned char>(source_[pos_]))) {
-
+      if (pos_ - start >= kMaxNumLiteralLen)
+        throw FarError("float literal too long", line, col);
       advance();
 
     } else {
@@ -446,9 +463,11 @@ Token Lexer::readString(int line, int col) {
       if (pos_ >= source_.size())
         throw FarError("unterminated string", line, col);
       value += decodeEscape(advance(), line, col);
+      checkLexSize(value.size(), kMaxStringLiteralLen, line, col, "string literal");
       continue;
     }
     appendUtf8Char(value, line, col);
+    checkLexSize(value.size(), kMaxStringLiteralLen, line, col, "string literal");
   }
   throw FarError("unterminated string", line, col);
 }
@@ -554,9 +573,11 @@ Token Lexer::readInterpString(int line, int col) {
         } else {
           expr += advance();
         }
+        checkLexSize(expr.size(), kMaxInterpExprLen, line, col, "interpolation expression");
       }
       if (depth > 0)
         throw FarError("unterminated interpolation expression", line, col);
+      checkLexSize(expr.size(), kMaxInterpExprLen, line, col, "interpolation expression");
       tok.interp_exprs.push_back(expr);
       continue;
     }
@@ -565,9 +586,11 @@ Token Lexer::readInterpString(int line, int col) {
       if (pos_ >= source_.size())
         throw FarError("unterminated interpolated string", line, col);
       current += decodeEscape(advance(), line, col);
+      checkLexSize(current.size(), kMaxStringLiteralLen, line, col, "interpolated string literal");
       continue;
     }
     appendUtf8Char(current, line, col);
+    checkLexSize(current.size(), kMaxStringLiteralLen, line, col, "interpolated string literal");
   }
   throw FarError("unterminated interpolated string", line, col);
 }
@@ -577,8 +600,12 @@ Token Lexer::readInterpString(int line, int col) {
 std::vector<Token> Lexer::tokenize() {
 
   std::vector<Token> tokens;
+  const size_t kMaxTokens = source_.size() + 16;
 
   while (pos_ < source_.size()) {
+
+    if (tokens.size() >= kMaxTokens)
+      throw FarError("lexer token limit exceeded", line_, col_);
 
     skipWhitespaceAndComments();
 

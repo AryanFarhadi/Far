@@ -1,0 +1,5 @@
+fun dict_get_missing() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  return d.get(99)
+}
+fun main() { print(dict_get_missing()); return 0 }

@@ -29,6 +29,7 @@ struct ComptimeContext {
   std::unordered_map<std::string, const Function*> fns;
   bool in_comptime = true;
   int depth = 0;
+  int64_t loop_iters = 0;
 };
 
 bool tryEvalExpr(ComptimeContext& ctx, const Expr& expr, ComptimeValue& out);

@@ -1,0 +1,4 @@
+fun main() {
+  parallel for i in 0..16777217 { }
+  return 0
+}

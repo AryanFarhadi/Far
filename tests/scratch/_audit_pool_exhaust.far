@@ -1,0 +1,7 @@
+fun main() {
+  pool = Pool<i64>(1)
+  o1 = pool.acquire()
+  o2 = pool.acquire()
+  print(o2)
+  return 0
+}

@@ -27,6 +27,12 @@ fun test_fft() -> i64 {
   spec = fft.forward(sig)
   if (len(spec) != 4) { return 30 }
   if (spec[0] < 1) { return 31 }
+  bad = fft.forward([1, 2, 3])
+  if (bad != 0) { return 32 }
+  back = fft.inverse(sig)
+  if (back == 0) { return 33 }
+  if (len(back) != 4) { return 34 }
+  if (back[0] != 1) { return 35 }
   return 0
 }
 fun test_optimization() -> i64 {
@@ -82,4 +88,4 @@ fun main() {
   if (r != 0) { print(r); return r }
   print(0)
   return 0
-}
+}

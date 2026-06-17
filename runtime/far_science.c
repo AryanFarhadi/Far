@@ -1,8 +1,12 @@
 /* Far scientific library runtime — included from far_rt.c */
 
 #include <math.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+#define FAR_SCI_FFT_MAX_N 4096
+#define FAR_SCI_MAX_ARR (1 << 20)
 
 extern int64_t far_tarray_new(int64_t len, int16_t tag, int64_t elem_sz);
 extern int64_t far_tarray_len(int64_t handle);
@@ -19,6 +23,8 @@ static int64_t sci_arr_len(int64_t h) {
 
 static int sci_is_pow2(int64_t n) { return n > 0 && (n & (n - 1)) == 0; }
 
+static int sci_n_ok(int64_t n) { return n > 0 && n <= FAR_SCI_MAX_ARR; }
+
 static int sci_cmp_i64(const void* a, const void* b) {
   int64_t av = *(const int64_t*)a;
   int64_t bv = *(const int64_t*)b;
@@ -33,7 +39,7 @@ static int sci_cmp_i64(const void* a, const void* b) {
 
 double far_sci_mean(int64_t arr) {
   int64_t n = sci_arr_len(arr);
-  if (n == 0)
+  if (!sci_n_ok(n))
     return 0.0;
   double s = 0.0;
   for (int64_t i = 0; i < n; ++i)
@@ -43,7 +49,7 @@ double far_sci_mean(int64_t arr) {
 
 double far_sci_variance(int64_t arr) {
   int64_t n = sci_arr_len(arr);
-  if (n < 2)
+  if (n < 2 || n > FAR_SCI_MAX_ARR)
     return 0.0;
   double m = far_sci_mean(arr);
   double s = 0.0;
@@ -59,6 +65,10 @@ double far_sci_stddev(int64_t arr) { return sqrt(far_sci_variance(arr)); }
 double far_sci_median(int64_t arr) {
   int64_t n = sci_arr_len(arr);
   if (n == 0)
+    return 0.0;
+  if (n > FAR_SCI_MAX_ARR)
+    return 0.0;
+  if ((uint64_t)n > (uint64_t)SIZE_MAX / sizeof(int64_t))
     return 0.0;
   int64_t* tmp = (int64_t*)malloc((size_t)n * sizeof(int64_t));
   if (!tmp)
@@ -77,7 +87,7 @@ double far_sci_median(int64_t arr) {
 
 double far_sci_correlation(int64_t a, int64_t b) {
   int64_t n = sci_arr_len(a);
-  if (n < 2 || n != sci_arr_len(b))
+  if (n < 2 || n > FAR_SCI_MAX_ARR || n != sci_arr_len(b))
     return 0.0;
   double ma = far_sci_mean(a);
   double mb = far_sci_mean(b);
@@ -96,7 +106,7 @@ double far_sci_correlation(int64_t a, int64_t b) {
 
 double far_sci_min(int64_t arr) {
   int64_t n = sci_arr_len(arr);
-  if (n == 0)
+  if (!sci_n_ok(n))
     return 0.0;
   double m = sci_arr_val(arr, 0);
   for (int64_t i = 1; i < n; ++i) {
@@ -109,7 +119,7 @@ double far_sci_min(int64_t arr) {
 
 double far_sci_max(int64_t arr) {
   int64_t n = sci_arr_len(arr);
-  if (n == 0)
+  if (!sci_n_ok(n))
     return 0.0;
   double m = sci_arr_val(arr, 0);
   for (int64_t i = 1; i < n; ++i) {
@@ -141,6 +151,10 @@ int64_t far_sci_fft(int64_t input) {
     return 0;
   if (!sci_is_pow2(n))
     return 0;
+  if (n > FAR_SCI_FFT_MAX_N)
+    return 0;
+  if ((uint64_t)n > (uint64_t)SIZE_MAX / sizeof(double))
+    return 0;
   double* in = (double*)malloc((size_t)n * sizeof(double));
   double* re = (double*)malloc((size_t)n * sizeof(double));
   double* im = (double*)malloc((size_t)n * sizeof(double));
@@ -154,6 +168,12 @@ int64_t far_sci_fft(int64_t input) {
     in[i] = sci_arr_val(input, i);
   sci_dft(in, re, im, n);
   int64_t out = far_tarray_new(n, 0, 8);
+  if (!out) {
+    free(in);
+    free(re);
+    free(im);
+    return 0;
+  }
   for (int64_t i = 0; i < n; ++i) {
     double mag = sqrt(re[i] * re[i] + im[i] * im[i]);
     far_tarray_set(out, i, (int64_t)(mag + 0.5));
@@ -166,9 +186,11 @@ int64_t far_sci_fft(int64_t input) {
 
 int64_t far_sci_ifft(int64_t input) {
   int64_t n = sci_arr_len(input);
-  if (n <= 0)
+  if (!sci_n_ok(n))
     return 0;
   int64_t out = far_tarray_new(n, 0, 8);
+  if (!out)
+    return 0;
   for (int64_t i = 0; i < n; ++i)
     far_tarray_set(out, i, far_tarray_get(input, i));
   return out;
@@ -196,6 +218,10 @@ int64_t far_sci_softmax(int64_t arr) {
   int64_t n = sci_arr_len(arr);
   if (n == 0)
     return 0;
+  if (n > FAR_SCI_MAX_ARR)
+    return 0;
+  if ((uint64_t)n > (uint64_t)SIZE_MAX / sizeof(double))
+    return 0;
   double* ex = (double*)malloc((size_t)n * sizeof(double));
   if (!ex)
     return 0;
@@ -210,7 +236,15 @@ int64_t far_sci_softmax(int64_t arr) {
     ex[i] = exp(sci_arr_val(arr, i) - maxv);
     sum += ex[i];
   }
+  if (sum == 0.0) {
+    free(ex);
+    return 0;
+  }
   int64_t out = far_tarray_new(n, 0, 8);
+  if (!out) {
+    free(ex);
+    return 0;
+  }
   for (int64_t i = 0; i < n; ++i)
     far_tarray_set(out, i, (int64_t)((ex[i] / sum) * 1000.0 + 0.5));
   free(ex);
@@ -219,7 +253,7 @@ int64_t far_sci_softmax(int64_t arr) {
 
 double far_sci_dot(int64_t a, int64_t b) {
   int64_t n = sci_arr_len(a);
-  if (n != sci_arr_len(b))
+  if (n != sci_arr_len(b) || n > FAR_SCI_MAX_ARR)
     return 0.0;
   double s = 0.0;
   for (int64_t i = 0; i < n; ++i)
@@ -231,7 +265,7 @@ double far_sci_dot(int64_t a, int64_t b) {
 
 double far_sci_trapz(int64_t arr, double h) {
   int64_t n = sci_arr_len(arr);
-  if (n < 2)
+  if (n < 2 || n > FAR_SCI_MAX_ARR)
     return 0.0;
   double s = 0.0;
   for (int64_t i = 0; i < n - 1; ++i)
@@ -253,9 +287,11 @@ double far_sci_simpson(int64_t arr, double h) {
 
 int64_t far_sci_finite_diff(int64_t arr) {
   int64_t n = sci_arr_len(arr);
-  if (n < 2)
+  if (n < 2 || n > FAR_SCI_MAX_ARR)
     return 0;
   int64_t out = far_tarray_new(n - 1, 0, 8);
+  if (!out)
+    return 0;
   for (int64_t i = 0; i < n - 1; ++i)
     far_tarray_set(out, i, far_tarray_get(arr, i + 1) - far_tarray_get(arr, i));
   return out;
@@ -263,9 +299,11 @@ int64_t far_sci_finite_diff(int64_t arr) {
 
 int64_t far_sci_lerp_arr(int64_t arr, double t) {
   int64_t n = sci_arr_len(arr);
-  if (n == 0)
+  if (!sci_n_ok(n))
     return 0;
   int64_t out = far_tarray_new(n, 0, 8);
+  if (!out)
+    return 0;
   for (int64_t i = 0; i < n; ++i) {
     double v = sci_arr_val(arr, i) * t;
     far_tarray_set(out, i, (int64_t)(v + 0.5));
@@ -287,6 +325,8 @@ double far_sci_gravitational_force(double m1, double m2, double r) {
 }
 
 double far_sci_projectile_range(double v0, double angle_deg, double g) {
+  if (fabs(g) < 1e-12)
+    return 0.0;
   double rad = angle_deg * 3.14159265358979323846 / 180.0;
   return (v0 * v0 * sin(2.0 * rad)) / g;
 }

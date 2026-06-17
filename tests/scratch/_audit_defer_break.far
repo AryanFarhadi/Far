@@ -1,0 +1,9 @@
+fun defer_break() -> i64 {
+  n = 0
+  for i in 0..<3 {
+    defer n = n + 1
+    if (i == 1) { break }
+  }
+  return n
+}
+fun main() { print(defer_break()); return 0 }

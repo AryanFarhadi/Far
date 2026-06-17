@@ -54,9 +54,24 @@ std::string emitConcMethod(ConcCodegenCtx ctx, const MethodCall& call, const Typ
     case ConcMethodId::Recv:
       ctx.out << "  %" << tmp << " = call i64 @far_channel_recv(i64 " << recv_val << ")\n";
       break;
+    case ConcMethodId::TryRecv:
+      ctx.out << "  %" << tmp << " = call i64 @far_channel_try_recv(i64 " << recv_val << ")\n";
+      break;
+    case ConcMethodId::TrySend: {
+      std::string v = ctx.emit_expr(*call.args[0]);
+      ctx.out << "  %" << tmp << " = call i64 @far_channel_try_send(i64 " << recv_val << ", i64 " << v
+              << ")\n";
+      break;
+    }
     case ConcMethodId::Close:
       ctx.out << "  call void @far_channel_close(i64 " << recv_val << ")\n";
       return "0";
+    case ConcMethodId::IsClosed:
+      ctx.out << "  %" << tmp << " = call i64 @far_channel_is_closed(i64 " << recv_val << ")\n";
+      break;
+    case ConcMethodId::Pending:
+      ctx.out << "  %" << tmp << " = call i64 @far_channel_pending(i64 " << recv_val << ")\n";
+      break;
     case ConcMethodId::Lock:
       ctx.out << "  call void @far_mutex_lock(i64 " << recv_val << ")\n";
       return "0";
@@ -66,6 +81,9 @@ std::string emitConcMethod(ConcCodegenCtx ctx, const MethodCall& call, const Typ
     case ConcMethodId::Wait:
       ctx.out << "  call void @far_semaphore_wait(i64 " << recv_val << ")\n";
       return "0";
+    case ConcMethodId::TryWait:
+      ctx.out << "  %" << tmp << " = call i64 @far_semaphore_try_wait(i64 " << recv_val << ")\n";
+      break;
     case ConcMethodId::Signal:
       ctx.out << "  call void @far_semaphore_signal(i64 " << recv_val << ")\n";
       return "0";
@@ -91,11 +109,17 @@ std::string emitConcMethod(ConcCodegenCtx ctx, const MethodCall& call, const Typ
       break;
     }
     case ConcMethodId::Submit: {
-      std::string fn_i64 = ctx.emit_expr(*call.args[0]);
-      std::string fn_ptr = ctx.fresh("fnp");
+      std::string fn_ptr;
+      if (call.resolved) {
+        fn_ptr = ctx.fn_ptr(call.resolved_llvm_name, call.resolved);
+      } else {
+        std::string fn_i64 = ctx.emit_expr(*call.args[0]);
+        std::string fnp = ctx.fresh("fnp");
+        ctx.out << "  %" << fnp << " = inttoptr i64 " << fn_i64 << " to i8*\n";
+        fn_ptr = "%" + fnp;
+      }
       std::string arg = ctx.emit_expr(*call.args[1]);
-      ctx.out << "  %" << fn_ptr << " = inttoptr i64 " << fn_i64 << " to i8*\n";
-      ctx.out << "  %" << tmp << " = call i64 @far_threadpool_submit(i64 " << recv_val << ", i8* %"
+      ctx.out << "  %" << tmp << " = call i64 @far_threadpool_submit(i64 " << recv_val << ", i8* "
               << fn_ptr << ", i64 " << arg << ")\n";
       break;
     }

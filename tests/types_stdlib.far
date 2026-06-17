@@ -64,7 +64,8 @@ fun test_json() -> i64 {
 }
 fun test_xml() -> i64 {
   x = xml.tag("k", "v")
-  if (len(x) < 5) { return 60 }
+  if (len(x) != 8) { return 60 }
+  if (x != "<k>v</k>") { return 61 }
   return 0
 }
 fun test_yaml_csv() -> i64 {
@@ -90,10 +91,14 @@ fun test_regex_compress_crypto_hash() -> i64 {
 }
 fun test_proc_env_cli() -> i64 {
   if (proc.pid() <= 0) { return 90 }
-  env.env_set_var("FAR_TEST_KEY", "ok")
+  if (env.env_set_var("FAR_TEST_KEY", "ok") != 0) { return 91 }
   v = env.env_get_var("FAR_TEST_KEY")
-  if (len(v) != 2) { return 91 }
-  if (cli.argc() < 1) { return 92 }
+  if (len(v) != 2) { return 92 }
+  if (cli.argc() < 1) { return 93 }
+  bad = "a\nb"
+  if (env.env_set_var(bad, "x") != -1) { return 94 }
+  if (env.env_set_var("", "x") != -1) { return 95 }
+  if (proc.run("echo\nbad") != -1) { return 96 }
   return 0
 }
 fun test_i18n_bench() -> i64 {

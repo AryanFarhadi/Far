@@ -1,0 +1,5 @@
+fun main() {
+  sem = Semaphore(0)
+  sem.wait()
+  return 0
+}

@@ -1,0 +1,9 @@
+fun defer_continue() -> i64 {
+  n = 0
+  for i in 0..<3 {
+    defer n = n + 1
+    if (i == 1) { continue }
+  }
+  return n
+}
+fun main() { print(defer_continue()); return 0 }

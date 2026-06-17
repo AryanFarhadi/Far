@@ -135,8 +135,17 @@ static std::unique_ptr<Expr> cloneExpr(const Expr& src) {
 }
 
 static void expandExprMacros(Expr& expr, const Program& program) {
+  static thread_local int macro_depth = 0;
+  struct MacroDepthGuard {
+    MacroDepthGuard() {
+      if (++macro_depth > 64)
+        throw FarError("macro expansion depth exceeded");
+    }
+    ~MacroDepthGuard() { --macro_depth; }
+  };
   switch (expr.kind) {
     case Expr::MacroInvokeExprK: {
+      MacroDepthGuard guard;
       const MacroDef* macro = nullptr;
       for (const auto& m : program.macros) {
         if (m.name == expr.macro_invoke.name) {

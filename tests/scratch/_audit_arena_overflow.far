@@ -1,0 +1,6 @@
+fun main() {
+  a = Arena(16)
+  p = a.alloc(32)
+  print(p)
+  return 0
+}

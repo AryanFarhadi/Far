@@ -173,10 +173,19 @@ static std::string emitMixedSignIntegerCompare(
   else
     throw FarError("unknown mixed-sign compare op '" + cmp_op + "'");
   std::string result = fresh("mixres");
-  if (cmp_op == "<" || cmp_op == "<=")
+  if (cmp_op == "<" || cmp_op == "<=") {
     out << "  %" << result << " = and i1 %" << s_nonneg << ", %" << bits << "\n";
-  else
+  } else if (cmp_op == ">") {
+    // Small unsigned values beat any negative signed; large u64 (high bit) uses bit compare.
+    std::string fits = fresh("mixfits");
+    out << "  %" << fits << " = icmp ule " << I64 << " " << unsigned_val << ", "
+        << std::to_string(INT64_MAX) << "\n";
+    std::string neg_fits = fresh("mixnf");
+    out << "  %" << neg_fits << " = and i1 %" << neg << ", %" << fits << "\n";
+    out << "  %" << result << " = or i1 %" << neg_fits << ", %" << bits << "\n";
+  } else {
     out << "  %" << result << " = or i1 %" << neg << ", %" << bits << "\n";
+  }
   std::string z = fresh("mixz");
   out << "  %" << z << " = zext i1 %" << result << " to " << I64 << "\n";
   return "%" + z;
@@ -236,6 +245,10 @@ struct LoopLabels {
   std::string continue_label;
 
   std::string exit_label;
+
+  // defer_stack_ size at loop iteration start; break/continue must flush from here
+  // even when control leaves through a nested fork (e.g. if { break }).
+  size_t defer_base = 0;
 
 };
 
@@ -972,8 +985,11 @@ private:
       }
       injectConstexprGlobalsFromStmts(gen_->program_.comptime_stmts);
       for (const auto& stmt : body) {
+        // Analyze before emit: short-circuit/ternary codegen may update const locals
+        // while emitting conditionally-executed branches (e.g. (x = 1) in && RHS).
+        bool aborts_rest = stmtAbortsRestOfBlock(*stmt);
         emitStmt(*stmt);
-        if (terminated || stmtAbortsRestOfBlock(*stmt)) {
+        if (terminated || aborts_rest) {
           terminated = true;
           break;
         }
@@ -1455,6 +1471,11 @@ private:
 
     void flushDefers() { flushDefersFrom(0); }
 
+    void flushLoopIterationDefers() {
+      if (!loop_stack_.empty())
+        flushDefersFrom(loop_stack_.back().defer_base);
+    }
+
     MemCodegenCtx memCtx() {
       return MemCodegenCtx{gen_->out_, [&](const std::string& p) { return gen_->fresh(p); },
                            [&](const Expr& e) { return emitExpr(e); },
@@ -1763,7 +1784,9 @@ private:
       std::string finally = innermostFinallyLabel();
       if (!finally.empty()) {
         completeTryForReturnToFinally(finally);
-        setPendingReturn(ret, true);
+        // Capture return value before finally: finally may mutate locals (e.g. r = 99)
+        // but must not change an already-selected return operand (return r).
+        setPendingReturn(ret, false);
         flushScopeDefers();
         gen_->out_ << "  br label %" << finally << "\n";
         terminated = true;
@@ -2067,6 +2090,20 @@ private:
 
 
     enum class ConstBool { Unknown, False, True };
+
+    struct ConstLocalsSnapshot {
+      std::unordered_map<std::string, int64_t> ints;
+      std::unordered_map<std::string, double> floats;
+    };
+
+    ConstLocalsSnapshot snapshotConstLocals() const {
+      return {const_int_locals_, const_float_locals_};
+    }
+
+    void restoreConstLocals(const ConstLocalsSnapshot& snap) {
+      const_int_locals_ = snap.ints;
+      const_float_locals_ = snap.floats;
+    }
 
     void trackConstLocal(const std::string& name, const Expr& value) {
       if (value.kind == Expr::Int) {
@@ -2608,6 +2645,7 @@ private:
       gen_->out_ << body_label << ":\n";
 
       size_t iter_defers = defer_stack_.size();
+      loop_stack_.back().defer_base = iter_defers;
       Ctx body_ctx = fork();
 
       for (const auto& s : wh.body)
@@ -3056,6 +3094,7 @@ private:
       storeVar(fo.foreach_var, elem, elem_ty);
 
       size_t iter_defers = defer_stack_.size();
+      loop_stack_.back().defer_base = iter_defers;
       Ctx body_ctx = fork();
       for (const auto& s : fo.body)
         body_ctx.emitStmt(*s);
@@ -3122,6 +3161,7 @@ private:
       gen_->out_ << asc_body << ":\n";
       {
         size_t iter_defers = defer_stack_.size();
+        loop_stack_.back().defer_base = iter_defers;
         Ctx body_ctx = fork();
         for (const auto& s : fo.body)
           body_ctx.emitStmt(*s);
@@ -3133,9 +3173,16 @@ private:
       }
       gen_->out_ << asc_step << ":\n";
       std::string cur = loadVar(fo.range_var);
-      std::string nxt = gen_->fresh("rngan");
-      gen_->out_ << "  %" << nxt << " = add " << I64 << " " << cur << ", 1\n";
-      storeVar(fo.range_var, "%" + nxt, defaultIntType());
+      if (!fo.range_exclusive) {
+        std::string done_cmp = gen_->fresh("rngdone");
+        std::string asc_inc = gen_->fresh("rng.ainc");
+        gen_->out_ << "  %" << done_cmp << " = icmp eq " << I64 << " " << cur << ", " << end << "\n";
+        gen_->out_ << "  br i1 %" << done_cmp << ", label %" << end_label << ", label %" << asc_inc << "\n";
+        gen_->out_ << asc_inc << ":\n";
+        cur = loadVar(fo.range_var);
+      }
+      std::string nxt = emitGuardedSignedAdd(cur, "1");
+      storeVar(fo.range_var, nxt, defaultIntType());
       if (!terminated)
         gen_->out_ << "  br label %" << asc_cond << "\n";
 
@@ -3153,6 +3200,7 @@ private:
       gen_->out_ << desc_body << ":\n";
       {
         size_t iter_defers = defer_stack_.size();
+        loop_stack_.back().defer_base = iter_defers;
         Ctx body_ctx = fork();
         for (const auto& s : fo.body)
           body_ctx.emitStmt(*s);
@@ -3164,9 +3212,16 @@ private:
       }
       gen_->out_ << desc_step << ":\n";
       std::string dcur = loadVar(fo.range_var);
-      std::string dnxt = gen_->fresh("rngdn");
-      gen_->out_ << "  %" << dnxt << " = sub " << I64 << " " << dcur << ", 1\n";
-      storeVar(fo.range_var, "%" + dnxt, defaultIntType());
+      if (!fo.range_exclusive) {
+        std::string done_cmp = gen_->fresh("rngddone");
+        std::string desc_dec = gen_->fresh("rng.ddec");
+        gen_->out_ << "  %" << done_cmp << " = icmp eq " << I64 << " " << dcur << ", " << end << "\n";
+        gen_->out_ << "  br i1 %" << done_cmp << ", label %" << end_label << ", label %" << desc_dec << "\n";
+        gen_->out_ << desc_dec << ":\n";
+        dcur = loadVar(fo.range_var);
+      }
+      std::string dnxt = emitGuardedSignedSub(dcur, "1");
+      storeVar(fo.range_var, dnxt, defaultIntType());
       if (!terminated)
         gen_->out_ << "  br label %" << desc_cond << "\n";
 
@@ -3191,9 +3246,7 @@ private:
         std::string start = emitExpr(*fo.range_start);
         std::string end = emitExpr(*fo.range_end);
         if (!fo.range_exclusive) {
-          std::string adj = gen_->fresh("pend");
-          gen_->out_ << "  %" << adj << " = add " << I64 << " " << end << ", 1\n";
-          end = "%" + adj;
+          end = emitGuardedSignedAdd(end, "1");
         }
         std::string closure;
         if (!fo.parallel_captures.empty()) {
@@ -3258,6 +3311,7 @@ private:
       gen_->out_ << body_label << ":\n";
 
       size_t iter_defers = defer_stack_.size();
+      loop_stack_.back().defer_base = iter_defers;
       Ctx body_ctx = fork();
 
       for (const auto& s : fo.body)
@@ -3313,7 +3367,7 @@ private:
 
         throw FarError("break outside loop");
 
-      flushScopeDefers();
+      flushLoopIterationDefers();
 
       std::string finally = innermostFinallyLabel();
       if (!finally.empty()) {
@@ -3343,7 +3397,7 @@ private:
 
         throw FarError("continue outside loop");
 
-      flushScopeDefers();
+      flushLoopIterationDefers();
 
       std::string finally = innermostFinallyLabel();
       if (!finally.empty()) {
@@ -3617,7 +3671,9 @@ private:
         std::string skip_label = gen_->fresh("nask");
         gen_->out_ << "  br i1 " << is_n << ", label %" << rhs_label << ", label %" << skip_label << "\n";
         gen_->out_ << rhs_label << ":\n";
+        ConstLocalsSnapshot nass_rhs_saved = snapshotConstLocals();
         std::string val = coerceToType(*a.value, target_ty, emitExpr(*a.value));
+        restoreConstLocals(nass_rhs_saved);
         storeTarget(val);
         gen_->out_ << "  br label %" << end_label << "\n";
         gen_->out_ << skip_label << ":\n";
@@ -3931,9 +3987,17 @@ private:
       std::string join = gen_->fresh("tjoin");
       gen_->out_ << "  br i1 " << cond << ", label %" << then_label << ", label %" << else_label << "\n";
       gen_->out_ << then_label << ":\n";
-      emitExprToSlot(*t.then_br, result_ty, slot, st, join);
+      {
+        ConstLocalsSnapshot saved = snapshotConstLocals();
+        emitExprToSlot(*t.then_br, result_ty, slot, st, join);
+        restoreConstLocals(saved);
+      }
       gen_->out_ << else_label << ":\n";
-      emitExprToSlot(*t.else_br, result_ty, slot, st, join);
+      {
+        ConstLocalsSnapshot saved = snapshotConstLocals();
+        emitExprToSlot(*t.else_br, result_ty, slot, st, join);
+        restoreConstLocals(saved);
+      }
       gen_->out_ << join << ":\n";
       gen_->out_ << "  br label %" << done << "\n";
     }
@@ -4418,9 +4482,11 @@ private:
         std::string left_ok = coerceToType(*op.left, result_ty, left);
         gen_->out_ << "  store " << st << " " << left_ok << ", " << st << "* %" << slot << "\n";
         gen_->out_ << "  br label %" << end_label << "\n";
-        gen_->out_ << rhs_label << ":\n";
-        std::string right = coerceToType(*op.right, result_ty, emitExpr(*op.right));
-        gen_->out_ << "  store " << st << " " << right << ", " << st << "* %" << slot << "\n";
+      gen_->out_ << rhs_label << ":\n";
+      ConstLocalsSnapshot nc_rhs_saved = snapshotConstLocals();
+      std::string right = coerceToType(*op.right, result_ty, emitExpr(*op.right));
+      restoreConstLocals(nc_rhs_saved);
+      gen_->out_ << "  store " << st << " " << right << ", " << st << "* %" << slot << "\n";
         gen_->out_ << "  br label %" << end_label << "\n";
         gen_->out_ << end_label << ":\n";
         std::string loaded = gen_->fresh("ncld");
@@ -4921,7 +4987,9 @@ private:
 
       gen_->out_ << rhs_label << ":\n";
 
+      ConstLocalsSnapshot and_rhs_saved = snapshotConstLocals();
       std::string rval = emitExpr(right);
+      restoreConstLocals(and_rhs_saved);
 
       std::string rcond = emitTruthyCond(exprType(right), rval);
 
@@ -4981,7 +5049,9 @@ private:
 
       gen_->out_ << rhs_label << ":\n";
 
+      ConstLocalsSnapshot or_rhs_saved = snapshotConstLocals();
       std::string rval = emitExpr(right);
+      restoreConstLocals(or_rhs_saved);
 
       std::string rcond = emitTruthyCond(exprType(right), rval);
 

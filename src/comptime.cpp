@@ -138,6 +138,13 @@ static bool checkedMulI64(int64_t a, int64_t b, int64_t& out) {
 
 static std::optional<ComptimeValue> evalComptimeStmt(ComptimeContext& ctx, const Stmt& stmt);
 
+static constexpr int64_t kMaxComptimeLoopIters = 1'000'000;
+
+static void bumpComptimeLoopIter(ComptimeContext& ctx) {
+  if (++ctx.loop_iters > kMaxComptimeLoopIters)
+    throw FarError("comptime loop iterations exceeded");
+}
+
 static void pushComptimeDepth(ComptimeContext& ctx) {
   if (++ctx.depth > 32)
     throw FarError("comptime evaluation depth exceeded");
@@ -337,7 +344,7 @@ static void evalComptimeAssign(ComptimeContext& ctx, const AssignExpr& assign) {
     ctx.vars[name] = evalExpr(ctx, *assign.value);
     return;
   }
-  if (assign.op == "??=") {
+  if (assign.op.size() == 3 && assign.op[0] == '?' && assign.op[1] == '?' && assign.op[2] == '=') {
     if (comptimeNullish(ctx.vars[name]))
       ctx.vars[name] = evalExpr(ctx, *assign.value);
     return;
@@ -481,6 +488,7 @@ static std::optional<ComptimeValue> evalComptimeStmt(ComptimeContext& ctx, const
     }
     case Stmt::WhileStmt: {
       while (true) {
+        bumpComptimeLoopIter(ctx);
         ComptimeValue cond = evalExpr(ctx, *stmt.while_stmt.condition);
         if (!comptimeTruthy(cond))
           break;
@@ -502,6 +510,7 @@ static std::optional<ComptimeValue> evalComptimeStmt(ComptimeContext& ctx, const
         bool exclusive = stmt.for_stmt.range_exclusive;
         int64_t i = sv.i64;
         for (;;) {
+          bumpComptimeLoopIter(ctx);
           if (exclusive) {
             if (i >= ev.i64)
               break;
@@ -560,6 +569,7 @@ static std::optional<ComptimeValue> evalComptimeStmt(ComptimeContext& ctx, const
         if (auto result = evalComptimeStmt(ctx, *stmt.for_stmt.init))
           return result;
       while (true) {
+        bumpComptimeLoopIter(ctx);
         if (!stmt.for_stmt.cond)
           break;
         ComptimeValue cond = evalExpr(ctx, *stmt.for_stmt.cond);
@@ -637,6 +647,7 @@ bool tryEvalExpr(ComptimeContext& ctx, const Expr& expr, ComptimeValue& out) {
     return true;
   } catch (const FarError& e) {
     if (e.message.find("depth exceeded") != std::string::npos ||
+        e.message.find("loop iterations exceeded") != std::string::npos ||
         e.message.find("division by zero") != std::string::npos ||
         e.message.find("modulo by zero") != std::string::npos)
       throw;
@@ -689,8 +700,13 @@ static int64_t comptimeMixedSignCompareResult(const TypeDesc& left_ty, const Typ
   if (S < 0) {
     if (effective_op == "<" || effective_op == "<=")
       return 0;
-    if (effective_op == ">" || effective_op == ">=")
+    if (effective_op == ">=")
       return 1;
+    if (effective_op == ">") {
+      if (U <= static_cast<uint64_t>(INT64_MAX))
+        return 1;
+      return U > static_cast<uint64_t>(S) ? 1 : 0;
+    }
   }
   if (effective_op == "<")
     return U < static_cast<uint64_t>(S) ? 1 : 0;
@@ -1035,9 +1051,19 @@ ComptimeValue evalExpr(ComptimeContext& ctx, const Expr& expr) {
         if (op == "*")
           return makeFloatVal(lf * rf);
         if (op == "/") {
-          if (rf == 0.0)
-            throw FarError("comptime division by zero");
+          if (lf != lf || rf != rf)
+            return makeFloatVal(0.0);
+          if (rf == 0.0) {
+            if (lf == 0.0)
+              return makeFloatVal(lf / rf);
+            return makeFloatVal(0.0);
+          }
           return makeFloatVal(lf / rf);
+        }
+        if (op == "%") {
+          if (lf != lf || rf != rf || rf == 0.0)
+            return makeFloatVal(0.0);
+          return makeFloatVal(fmod(lf, rf));
         }
         if (op == "??") {
           if (!comptimeNullish(l))

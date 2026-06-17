@@ -1,0 +1,5 @@
+fun lfqueue_pop_empty() -> i64 {
+  q = LockFreeQueue<i64>(4)
+  return q.pop()
+}
+fun main() { print(lfqueue_pop_empty()); return 0 }

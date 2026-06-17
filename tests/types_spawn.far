@@ -3,6 +3,9 @@ import perf
 fun add_one(x: i64) -> i64 {
   return x + 1
 }
+fun tp_worker(x: i64) -> i64 {
+  return x + 1
+}
 fun eq(a: i64, b: i64) -> i64 {
   if (a != b) { return 1 }
   return 0
@@ -24,11 +27,36 @@ fun t03_spawn_zero() -> i64 {
   h = spawn add_one(0)
   return eq(threads.join(h), 1)
 }
+fun t04_join_invalid_handle() -> i64 {
+  return eq(threads.join(999999), -1)
+}
+fun t05_double_join_same_handle() -> i64 {
+  h = spawn add_one(10)
+  if (threads.join(h) != 11) { return 1 }
+  return eq(threads.join(h), 11)
+}
+fun t06_threadpool_submit_join() -> i64 {
+  p = ThreadPool(1)
+  h = p.submit(tp_worker, 41)
+  if (h < 0) { return 1 }
+  r = threads.join(h)
+  p.shutdown()
+  return eq(r, 42)
+}
+fun t07_threadpool_submit_after_shutdown() -> i64 {
+  p = ThreadPool(1)
+  p.shutdown()
+  return eq(p.submit(tp_worker, 0), -1)
+}
 fun main() {
   r = 0
   r = run(1, t01_spawn_join()); if (r != 0) { return r }
   r = run(2, t02_double_spawn()); if (r != 0) { return r }
   r = run(3, t03_spawn_zero()); if (r != 0) { return r }
+  r = run(4, t04_join_invalid_handle()); if (r != 0) { return r }
+  r = run(5, t05_double_join_same_handle()); if (r != 0) { return r }
+  r = run(6, t06_threadpool_submit_join()); if (r != 0) { return r }
+  r = run(7, t07_threadpool_submit_after_shutdown()); if (r != 0) { return r }
   print(0)
   return 0
-}
+}

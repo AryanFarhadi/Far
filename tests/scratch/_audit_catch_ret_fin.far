@@ -1,0 +1,13 @@
+fun test_catch_ret_fin() -> i64 {
+  r = 0
+  try {
+    throw 1
+  } catch (e) {
+    r = 2
+    return r
+  } finally {
+    r = 99
+  }
+  return 0
+}
+fun main() { print(test_catch_ret_fin()); return 0 }

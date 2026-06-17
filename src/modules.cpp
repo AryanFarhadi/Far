@@ -15,6 +15,8 @@ namespace far {
 
 namespace fs = std::filesystem;
 
+static constexpr std::size_t kMaxSourceBytes = 64u * 1024u * 1024u;
+
 std::string moduleFullName(const Program& program) {
   if (program.package_name.empty())
     return program.module_name;
@@ -56,12 +58,19 @@ bool canImportVisibility(Visibility vis, ImportKind kind, const std::string& imp
 }
 
 static std::string readFileText(const std::string& path) {
-  std::ifstream in(path, std::ios::binary);
+  std::ifstream in(path, std::ios::binary | std::ios::ate);
   if (!in)
     throw FarError("cannot open import: " + path);
-  std::ostringstream ss;
-  ss << in.rdbuf();
-  return ss.str();
+  std::streamsize size = in.tellg();
+  if (size < 0)
+    throw FarError("cannot read import size: " + path);
+  if (static_cast<std::size_t>(size) > kMaxSourceBytes)
+    throw FarError("import file exceeds maximum size (64 MiB): " + path);
+  in.seekg(0, std::ios::beg);
+  std::string content(static_cast<std::size_t>(size), '\0');
+  if (!in.read(content.data(), size))
+    throw FarError("cannot read import: " + path);
+  return content;
 }
 
 struct ModuleSource {
@@ -69,6 +78,30 @@ struct ModuleSource {
   std::string text;
   std::string resolve_base;
 };
+
+static bool importRelPathSafe(const std::string& rel) {
+  if (rel.empty())
+    return false;
+  if (rel.find('\\') != std::string::npos)
+    return false;
+  fs::path p = fs::path(rel).lexically_normal();
+  if (p.is_absolute())
+    return false;
+  for (const auto& part : p) {
+    if (part == "..")
+      return false;
+  }
+  return true;
+}
+
+static bool importPathWithinRoot(const fs::path& root, const fs::path& candidate) {
+  std::error_code ec;
+  fs::path rel = fs::relative(candidate, root, ec);
+  if (ec || rel.empty())
+    return false;
+  std::string s = rel.generic_string();
+  return s.rfind("..", 0) != 0 && s.find("/..") == std::string::npos;
+}
 
 static std::optional<ModuleSource> resolveModuleSource(const std::string& import_path,
                                                        const fs::path& base_dir) {
@@ -83,22 +116,31 @@ static std::optional<ModuleSource> resolveModuleSource(const std::string& import
   std::string rel = dotPathToFilePath(import_path);
   if (rel.size() >= 4 && rel.substr(rel.size() - 4) != ".far")
     rel += ".far";
+  if (!importRelPathSafe(rel))
+    return std::nullopt;
 
-  std::vector<fs::path> candidates;
-  candidates.push_back(base_dir / rel);
-  candidates.push_back(fs::current_path() / rel);
+  struct ImportCandidate {
+    fs::path root;
+    fs::path path;
+  };
+  std::vector<ImportCandidate> candidates;
+  candidates.push_back({fs::absolute(base_dir), base_dir / rel});
+  candidates.push_back({fs::current_path(), fs::current_path() / rel});
   for (fs::path d = fs::absolute(base_dir); !d.empty() && d != d.root_path(); d = d.parent_path())
-    candidates.push_back(d / rel);
+    candidates.push_back({d, d / rel});
 
-  for (const auto& c : candidates) {
-    if (fs::exists(c)) {
-      fs::path abs = fs::absolute(c).lexically_normal();
-      ModuleSource src;
-      src.cache_key = abs.string();
-      src.text = readFileText(src.cache_key);
-      src.resolve_base = abs.parent_path().string();
-      return src;
-    }
+  for (const auto& cand : candidates) {
+    if (!fs::exists(cand.path))
+      continue;
+    fs::path abs = fs::absolute(cand.path).lexically_normal();
+    fs::path root = cand.root.lexically_normal();
+    if (!importPathWithinRoot(root, abs))
+      continue;
+    ModuleSource src;
+    src.cache_key = abs.string();
+    src.text = readFileText(src.cache_key);
+    src.resolve_base = abs.parent_path().string();
+    return src;
   }
   return std::nullopt;
 }

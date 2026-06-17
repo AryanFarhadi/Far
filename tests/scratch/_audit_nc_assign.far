@@ -1,0 +1,6 @@
+fun nc_assign_side() -> i64 {
+  x = 0
+  y = x ?? (x = 1)
+  return x
+}
+fun main() { print(nc_assign_side()); return 0 }

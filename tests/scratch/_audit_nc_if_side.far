@@ -1,0 +1,6 @@
+fun nc_if_side() -> i64 {
+  x = 1
+  if (x ?? (x = 0)) { }
+  return x
+}
+fun main() { print(nc_if_side()); return 0 }

@@ -24,8 +24,17 @@
 
 #include <limits.h>
 
+#include <errno.h>
+
 #include <math.h>
 
+#define FAR_TAG_STRING 16
+#define FAR_EX_TAG_UNWRAP_NONE ((int64_t)0x7FFFFFF0)
+#define FAR_EX_TAG_UNWRAP_ERR ((int64_t)0x7FFFFFF1)
+#define FAR_COLL_MAX_CAP (1 << 24)
+#define FAR_ARENA_MAX_CAP ((int64_t)1 << 26)
+#define FAR_STR_MAX ((size_t)64 * 1024 * 1024)
+#define FAR_MALLOC_MAX ((int64_t)1 << 30)
 
 
 typedef struct {
@@ -38,10 +47,100 @@ typedef struct {
 
 void far_panic(int64_t msg);
 
+int64_t far_i64_add_checked(int64_t a, int64_t b);
+int64_t far_i64_mul_checked(int64_t a, int64_t b);
+int64_t far_i64_mod_checked(int64_t a, int64_t b);
+int64_t far_i64_sub_checked(int64_t a, int64_t b);
+
+static int64_t far_i64_mul_or_zero(int64_t a, int64_t b) {
+#if defined(__GNUC__) || defined(__clang__)
+  int64_t out;
+  if (__builtin_mul_overflow(a, b, &out))
+    return 0;
+  return out;
+#else
+  if (a > 0 && b > 0 && a > INT64_MAX / b)
+    return 0;
+  if (a > 0 && b < 0 && b < INT64_MIN / a)
+    return 0;
+  if (a < 0 && b > 0 && a < INT64_MIN / b)
+    return 0;
+  if (a < 0 && b < 0 && a < INT64_MAX / b)
+    return 0;
+  return a * b;
+#endif
+}
+
+static int far_i64_add_ok(int64_t a, int64_t b, int64_t* out) {
+#if defined(__GNUC__) || defined(__clang__)
+  return !__builtin_add_overflow(a, b, out);
+#else
+  if ((b > 0 && a > INT64_MAX - b) || (b < 0 && a < INT64_MIN - b))
+    return 0;
+  *out = a + b;
+  return 1;
+#endif
+}
+
+static int far_alloc_size_ok(int64_t size) {
+  return size > 0 && size <= FAR_MALLOC_MAX && (uint64_t)size <= (uint64_t)SIZE_MAX;
+}
+
+// Returns span length, 0 if empty, -1 if unrepresentable or unreasonably large.
+static int64_t halfopen_span_checked(int64_t lo, int64_t hi) {
+  if (hi <= lo)
+    return 0;
+  int64_t diff;
+#if defined(__GNUC__) || defined(__clang__)
+  if (__builtin_sub_overflow(hi, lo, &diff))
+    return -1;
+#else
+  if (hi < lo)
+    return -1;
+  diff = hi - lo;
+#endif
+  if (diff > (1 << 24))
+    return -1;
+  return diff;
+}
+
+static int64_t offset_add_checked(int64_t base, int64_t delta) {
+  return far_i64_add_checked(base, delta);
+}
+
 static int64_t cap_double(int64_t cap) {
   if (cap <= 0 || cap > INT64_MAX / 2)
     return -1;
   return cap * 2;
+}
+
+// Half-open range [lo, hi) with fixed step; returns 0 if empty or unrepresentable.
+static int64_t range_span_len(int64_t lo, int64_t hi_exclusive, int64_t step) {
+  if (step == 0)
+    return 0;
+  int64_t abs_step = step > 0 ? step : -step;
+  if (abs_step == 0 || step == INT64_MIN)
+    return 0;
+  if (step > 0) {
+    if (lo >= hi_exclusive)
+      return 0;
+    int64_t diff;
+    if (__builtin_sub_overflow(hi_exclusive, lo, &diff))
+      return 0;
+    int64_t adj;
+    if (__builtin_add_overflow(diff, abs_step - 1, &adj))
+      return 0;
+    return adj / abs_step;
+  }
+  if (lo <= hi_exclusive)
+    return 0;
+  int64_t diff;
+  if (__builtin_sub_overflow(lo, hi_exclusive, &diff))
+    return 0;
+  int64_t adj;
+  if (__builtin_add_overflow(diff, abs_step - 1, &adj))
+    return 0;
+  return adj / abs_step;
 }
 
 void far_print_i64(int64_t value) {
@@ -54,34 +153,87 @@ void far_print_i64(int64_t value) {
 
 double far_sin(double x) { return sin(x); }
 double far_cos(double x) { return cos(x); }
-double far_tan(double x) { return tan(x); }
-double far_asin(double x) { return asin(x); }
-double far_acos(double x) { return acos(x); }
+
+static int far_recip_singular(double v) {
+  return v != v || fabs(v) < 1e-15;
+}
+
+double far_tan(double x) {
+  double c = far_cos(x);
+  if (far_recip_singular(c))
+    return 0.0;
+  double r = far_sin(x) / c;
+  if (r != r)
+    return 0.0;
+  return r;
+}
+double far_asin(double x) {
+  if (x != x || x < -1.0 || x > 1.0)
+    return 0.0;
+  return asin(x);
+}
+double far_acos(double x) {
+  if (x != x || x < -1.0 || x > 1.0)
+    return 0.0;
+  return acos(x);
+}
 double far_atan(double x) { return atan(x); }
 double far_atan2(double y, double x) { return atan2(y, x); }
 double far_sinh(double x) { return sinh(x); }
 double far_cosh(double x) { return cosh(x); }
 double far_tanh(double x) { return tanh(x); }
 double far_asinh(double x) { return asinh(x); }
-double far_acosh(double x) { return acosh(x); }
-double far_atanh(double x) { return atanh(x); }
-double far_sqrt(double x) { return sqrt(x); }
+double far_acosh(double x) {
+  if (x != x || x < 1.0)
+    return 0.0;
+  return acosh(x);
+}
+double far_atanh(double x) {
+  if (x != x || x <= -1.0 || x >= 1.0)
+    return 0.0;
+  return atanh(x);
+}
+double far_sqrt(double x) {
+  if (x != x || x < 0.0)
+    return 0.0;
+  return sqrt(x);
+}
 double far_cbrt(double x) { return cbrt(x); }
 double far_hypot(double x, double y) { return hypot(x, y); }
-double far_pow(double x, double y) { return pow(x, y); }
+double far_pow(double x, double y) {
+  double r = pow(x, y);
+  if (r != r)
+    return 0.0;
+  return r;
+}
 double far_exp(double x) { return exp(x); }
-double far_log(double x) { return log(x); }
-double far_log10(double x) { return log10(x); }
-double far_log2(double x) { return log2(x); }
+
+static double far_log_domain(double x, double (*fn)(double)) {
+  if (x != x || x <= 0.0)
+    return 0.0;
+  return fn(x);
+}
+
+double far_log(double x) { return far_log_domain(x, log); }
+double far_log10(double x) { return far_log_domain(x, log10); }
+double far_log2(double x) { return far_log_domain(x, log2); }
 double far_exp2(double x) { return exp2(x); }
-double far_log1p(double x) { return log1p(x); }
+double far_log1p(double x) {
+  if (x != x || x < -1.0)
+    return 0.0;
+  return log1p(x);
+}
 double far_expm1(double x) { return expm1(x); }
 double far_floor(double x) { return floor(x); }
 double far_ceil(double x) { return ceil(x); }
 double far_round(double x) { return round(x); }
 double far_trunc(double x) { return trunc(x); }
 double far_fabs(double x) { return fabs(x); }
-double far_fmod(double x, double y) { return fmod(x, y); }
+double far_fmod(double x, double y) {
+  if (y == 0.0 || y != y || x != x)
+    return 0.0;
+  return fmod(x, y);
+}
 double far_copysign(double x, double y) { return copysign(x, y); }
 
 int64_t far_ipow(int64_t base, int64_t exp) {
@@ -96,21 +248,21 @@ int64_t far_ipow(int64_t base, int64_t exp) {
 
     if (exp & 1) {
       if (base != 0 && base != 1 && base != -1 && result > INT64_MAX / base)
-        far_panic(0);
+        return 0;
       if (base == -1 && result == INT64_MIN)
-        far_panic(0);
+        return 0;
       result *= base;
     }
 
     if (exp > 1 && base != 0 && base != 1 && base != -1) {
       if (base > 1 && base > INT64_MAX)
-        far_panic(0);
+        return 0;
       if (base < -1 && base < INT64_MIN / 2)
-        far_panic(0);
+        return 0;
       if (base > 1 && base > INT64_MAX / base)
-        far_panic(0);
+        return 0;
       if (base < -1 && base < INT64_MIN / base)
-        far_panic(0);
+        return 0;
     }
     base *= base;
 
@@ -169,25 +321,21 @@ int64_t far_str_equal(const char* a, const char* b) {
 }
 
 int64_t far_str_char_at(const char* s, int64_t index) {
-  if (!s) {
-    far_panic(0);
+  if (!s)
     return 0;
-  }
   int64_t len = (int64_t)strlen(s);
-  if (index < 0 || index >= len) {
-    far_panic(0);
+  if (index < 0 || index >= len)
     return 0;
-  }
   return (unsigned char)s[index];
 }
 
-#define FAR_TAG_STRING 16
-#define FAR_EX_TAG_UNWRAP_NONE ((int64_t)0x7FFFFFF0)
-#define FAR_EX_TAG_UNWRAP_ERR ((int64_t)0x7FFFFFF1)
-
 static int is_string_tag(uint16_t tag) { return tag == FAR_TAG_STRING; }
 
+static int far_str_n_ok(size_t n) { return n <= FAR_STR_MAX; }
+
 static char* str_dup_n(const char* s, size_t n) {
+  if (!far_str_n_ok(n))
+    return NULL;
   char* out = (char*)malloc(n + 1);
   if (!out)
     return NULL;
@@ -199,7 +347,10 @@ static char* str_dup_n(const char* s, size_t n) {
 static char* str_dup(const char* s) {
   if (!s)
     s = "";
-  return str_dup_n(s, strlen(s));
+  size_t n = strlen(s);
+  if (!far_str_n_ok(n))
+    return NULL;
+  return str_dup_n(s, n);
 }
 
 static int64_t coll_store_owned(uint16_t tag, int64_t value) {
@@ -207,11 +358,17 @@ static int64_t coll_store_owned(uint16_t tag, int64_t value) {
     return value;
   const char* s = (const char*)(intptr_t)value;
   char* dup = str_dup(s ? s : "");
-  if (!dup) {
-    far_panic(0);
+  if (!dup)
     return 0;
-  }
   return (int64_t)(intptr_t)dup;
+}
+
+static int coll_try_store(uint16_t tag, int64_t value, int64_t* out) {
+  int64_t stored = coll_store_owned(tag, value);
+  if (is_string_tag(tag) && !stored)
+    return 0;
+  *out = stored;
+  return 1;
 }
 
 static void coll_release_owned(uint16_t tag, int64_t value) {
@@ -220,10 +377,8 @@ static void coll_release_owned(uint16_t tag, int64_t value) {
 }
 
 char* far_str_slice(const char* s, int64_t start, int64_t end) {
-  if (!s) {
-    far_panic(0);
-    return NULL;
-  }
+  if (!s)
+    return str_dup("");
   int64_t len = (int64_t)strlen(s);
   if (start < 0)
     start = 0;
@@ -232,11 +387,11 @@ char* far_str_slice(const char* s, int64_t start, int64_t end) {
   if (start > end)
     start = end;
   int64_t n = end - start;
-  char* out = (char*)malloc((size_t)n + 1);
-  if (!out) {
-    far_panic(0);
+  if (!far_str_n_ok((size_t)n))
     return NULL;
-  }
+  char* out = (char*)malloc((size_t)n + 1);
+  if (!out)
+    return NULL;
   if (n > 0)
     memcpy(out, s + (size_t)start, (size_t)n);
   out[n] = '\0';
@@ -250,7 +405,8 @@ char* far_i64_to_str(int64_t value) {
   snprintf(buf, sizeof(buf), "%" PRId64, value);
   size_t len = strlen(buf);
   char* out = (char*)malloc(len + 1);
-  if (!out) return NULL;
+  if (!out)
+    return NULL;
   memcpy(out, buf, len + 1);
   return out;
 }
@@ -260,7 +416,8 @@ char* far_u64_to_str(int64_t value) {
   snprintf(buf, sizeof(buf), "%" PRIu64, (uint64_t)value);
   size_t len = strlen(buf);
   char* out = (char*)malloc(len + 1);
-  if (!out) return NULL;
+  if (!out)
+    return NULL;
   memcpy(out, buf, len + 1);
   return out;
 }
@@ -269,7 +426,10 @@ int64_t far_str_to_i64(const char* s) {
   if (!s || !*s)
     return 0;
   char* end = NULL;
+  errno = 0;
   long long v = strtoll(s, &end, 10);
+  if (errno == ERANGE)
+    return 0;
   if (end == s)
     return 0;
   while (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r')
@@ -283,7 +443,10 @@ double far_str_to_f64(const char* s) {
   if (!s || !*s)
     return 0.0;
   char* end = NULL;
+  errno = 0;
   double v = strtod(s, &end);
+  if (errno == ERANGE)
+    return 0.0;
   if (end == s)
     return 0.0;
   while (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r')
@@ -298,7 +461,8 @@ char* far_f64_to_str(double value) {
   snprintf(buf, sizeof(buf), "%g", value);
   size_t len = strlen(buf);
   char* out = (char*)malloc(len + 1);
-  if (!out) return NULL;
+  if (!out)
+    return NULL;
   memcpy(out, buf, len + 1);
   return out;
 }
@@ -307,14 +471,16 @@ char* far_bool_to_str(int64_t value) {
   const char* text = value ? "true" : "false";
   size_t len = strlen(text);
   char* out = (char*)malloc(len + 1);
-  if (!out) return NULL;
+  if (!out)
+    return NULL;
   memcpy(out, text, len + 1);
   return out;
 }
 
 char* far_char_to_str(int16_t value) {
   char* out = (char*)malloc(2);
-  if (!out) return NULL;
+  if (!out)
+    return NULL;
   out[0] = (char)(unsigned char)value;
   out[1] = '\0';
   return out;
@@ -327,10 +493,15 @@ char* far_str_concat(const char* a, const char* b) {
   if (!b) b = "";
 
   size_t la = strlen(a), lb = strlen(b);
+  if (!far_str_n_ok(la) || !far_str_n_ok(lb) || la > FAR_STR_MAX - lb)
+    return NULL;
+  if (la > SIZE_MAX - lb - 1)
+    return NULL;
 
   char* out = (char*)malloc(la + lb + 1);
 
-  if (!out) return NULL;
+  if (!out)
+    return NULL;
 
   memcpy(out, a, la);
 
@@ -433,6 +604,23 @@ typedef struct {
 static FarTypedArray* tarray_from_handle(int64_t h) {
   return h ? (FarTypedArray*)(intptr_t)h : NULL;
 }
+
+static int tarray_copy_range(FarTypedArray* dst, uint16_t tag, int64_t* src, int64_t start, int64_t n) {
+  if (!dst || !dst->data || n < 0)
+    return 0;
+  for (int64_t i = 0; i < n; ++i) {
+    int64_t nv;
+    if (!coll_try_store(tag, src[start + i], &nv)) {
+      for (int64_t j = 0; j < i; ++j)
+        coll_release_owned(tag, dst->data[j]);
+      memset(dst->data, 0, (size_t)i * sizeof(int64_t));
+      return 0;
+    }
+    dst->data[i] = nv;
+  }
+  return 1;
+}
+
 static FarList* list_from_handle(int64_t h) { return h ? (FarList*)(intptr_t)h : NULL; }
 static FarDict* dict_from_handle(int64_t h) { return h ? (FarDict*)(intptr_t)h : NULL; }
 static FarSet* set_from_handle(int64_t h) { return h ? (FarSet*)(intptr_t)h : NULL; }
@@ -443,12 +631,15 @@ static FarRange* range_from_handle(int64_t h) { return h ? (FarRange*)(intptr_t)
 
 int64_t far_tarray_new(int64_t len, int16_t tag, int64_t elem_sz) {
   (void)elem_sz;
-  if (len < 0) {
-    far_panic(0);
+  if (len < 0)
     return 0;
-  }
+  if (len > FAR_COLL_MAX_CAP)
+    return 0;
+  if (len > 0 && (uint64_t)len > (uint64_t)SIZE_MAX / sizeof(int64_t))
+    return 0;
   FarTypedArray* arr = (FarTypedArray*)malloc(sizeof(FarTypedArray));
-  if (!arr) return 0;
+  if (!arr)
+    return 0;
   arr->type_tag = (uint16_t)tag;
   arr->len = len;
   arr->data = len > 0 ? (int64_t*)calloc((size_t)len, sizeof(int64_t)) : NULL;
@@ -461,26 +652,27 @@ int64_t far_tarray_new(int64_t len, int16_t tag, int64_t elem_sz) {
 
 int64_t far_tarray_len(int64_t handle) {
   FarTypedArray* arr = tarray_from_handle(handle);
-  return arr ? arr->len : 0;
+  if (!arr)
+    return 0;
+  return arr->len;
 }
 
 int64_t far_tarray_get(int64_t handle, int64_t index) {
   FarTypedArray* arr = tarray_from_handle(handle);
-  if (!arr || !arr->data || index < 0 || index >= arr->len) {
-    far_panic(0);
+  if (!arr || !arr->data || index < 0 || index >= arr->len)
     return 0;
-  }
   return arr->data[index];
 }
 
 void far_tarray_set(int64_t handle, int64_t index, int64_t value) {
   FarTypedArray* arr = tarray_from_handle(handle);
-  if (!arr || !arr->data || index < 0 || index >= arr->len) {
-    far_panic(0);
+  if (!arr || !arr->data || index < 0 || index >= arr->len)
     return;
-  }
+  int64_t nv;
+  if (!coll_try_store(arr->type_tag, value, &nv))
+    return;
   coll_release_owned(arr->type_tag, arr->data[index]);
-  arr->data[index] = coll_store_owned(arr->type_tag, value);
+  arr->data[index] = nv;
 }
 
 void far_tarray_drop(int64_t handle) {
@@ -494,7 +686,8 @@ void far_tarray_drop(int64_t handle) {
 
 int64_t far_tarray_contains(int64_t handle, int64_t value) {
   FarTypedArray* arr = tarray_from_handle(handle);
-  if (!arr || !arr->data) return 0;
+  if (!arr || !arr->data)
+    return 0;
   for (int64_t i = 0; i < arr->len; ++i) {
     if (arr->data[i] == value) return 1;
   }
@@ -516,27 +709,33 @@ void far_print_tarray(int64_t handle) {
 }
 
 int64_t far_list_new(int16_t tag, int64_t cap) {
+  if (cap < 0)
+    return 0;
+  if (cap > FAR_COLL_MAX_CAP)
+    return 0;
+  if (cap > 0 && (uint64_t)cap > (uint64_t)SIZE_MAX / sizeof(int64_t))
+    return 0;
   if (cap < 4) cap = 4;
   FarList* list = (FarList*)malloc(sizeof(FarList));
-  if (!list) {
-    far_panic(0);
+  if (!list)
     return 0;
-  }
   list->type_tag = (uint16_t)tag;
   list->len = 0;
   list->cap = cap;
   list->data = (int64_t*)calloc((size_t)cap, sizeof(int64_t));
   if (!list->data) {
     free(list);
-    far_panic(0);
     return 0;
   }
   return (int64_t)(intptr_t)list;
 }
 
 static int list_grow(FarList* list) {
+  if (list->cap >= FAR_COLL_MAX_CAP)
+    return 0;
   int64_t nc = cap_double(list->cap);
-  if (nc < 0) return 0;
+  if (nc < 0 || nc > FAR_COLL_MAX_CAP)
+    nc = FAR_COLL_MAX_CAP;
   int64_t* nd = (int64_t*)realloc(list->data, (size_t)nc * sizeof(int64_t));
   if (!nd) return 0;
   memset(nd + list->cap, 0, (size_t)(nc - list->cap) * sizeof(int64_t));
@@ -547,22 +746,53 @@ static int list_grow(FarList* list) {
 
 int64_t far_list_len(int64_t handle) {
   FarList* list = list_from_handle(handle);
-  return list ? list->len : 0;
+  if (!list)
+    return 0;
+  return list->len;
+}
+
+static int list_push_stored(FarList* list, int64_t stored_value) {
+  if (!list || !list->data)
+    return 0;
+  if (list->len >= list->cap && !list_grow(list))
+    far_panic(0);
+  list->data[list->len++] = stored_value;
+  return 1;
+}
+
+static int list_push_preowned(FarList* list, int64_t owned_value) {
+  if (!list || !list->data || !is_string_tag(list->type_tag)) {
+    coll_release_owned(list ? list->type_tag : FAR_TAG_STRING, owned_value);
+    return 0;
+  }
+  if (list->len >= list->cap && !list_grow(list)) {
+    coll_release_owned(list->type_tag, owned_value);
+    far_panic(0);
+  }
+  list->data[list->len++] = owned_value;
+  return 1;
 }
 
 void far_list_push(int64_t handle, int64_t value) {
   FarList* list = list_from_handle(handle);
-  if (!list || !list->data) return;
-  if (list->len >= list->cap && !list_grow(list)) {
-    far_panic(0);
+  if (!list || !list->data)
     return;
+  int64_t nv;
+  if (!coll_try_store(list->type_tag, value, &nv))
+    return;
+  if (list->len >= list->cap && !list_grow(list)) {
+    coll_release_owned(list->type_tag, nv);
+    far_panic(0);
   }
-  list->data[list->len++] = coll_store_owned(list->type_tag, value);
+  list->data[list->len++] = nv;
 }
 
 int64_t far_list_pop(int64_t handle) {
   FarList* list = list_from_handle(handle);
-  if (!list || list->len <= 0) return 0;
+  if (!list)
+    return 0;
+  if (list->len <= 0)
+    return 0;
   int64_t v = list->data[--list->len];
   list->data[list->len] = 0;
   return v;
@@ -570,26 +800,26 @@ int64_t far_list_pop(int64_t handle) {
 
 int64_t far_list_get(int64_t handle, int64_t index) {
   FarList* list = list_from_handle(handle);
-  if (!list || index < 0 || index >= list->len) {
-    far_panic(0);
+  if (!list || index < 0 || index >= list->len)
     return 0;
-  }
   return list->data[index];
 }
 
 void far_list_set(int64_t handle, int64_t index, int64_t value) {
   FarList* list = list_from_handle(handle);
-  if (!list || index < 0 || index >= list->len) {
-    far_panic(0);
+  if (!list || index < 0 || index >= list->len)
     return;
-  }
+  int64_t nv;
+  if (!coll_try_store(list->type_tag, value, &nv))
+    return;
   coll_release_owned(list->type_tag, list->data[index]);
-  list->data[index] = coll_store_owned(list->type_tag, value);
+  list->data[index] = nv;
 }
 
 void far_list_clear(int64_t handle) {
   FarList* list = list_from_handle(handle);
-  if (!list) return;
+  if (!list)
+    return;
   for (int64_t i = 0; i < list->len; ++i)
     coll_release_owned(list->type_tag, list->data[i]);
   list->len = 0;
@@ -597,34 +827,46 @@ void far_list_clear(int64_t handle) {
 
 int64_t far_list_slice(int64_t handle, int64_t start, int64_t end) {
   FarList* list = list_from_handle(handle);
-  if (!list) return 0;
+  if (!list)
+    return 0;
   if (start < 0) start = 0;
   if (end > list->len) end = list->len;
   if (end < start) end = start;
   int64_t nlen = end - start;
   int64_t nh = far_tarray_new(nlen, (int16_t)list->type_tag, 8);
-  for (int64_t i = 0; i < nlen; ++i)
-    far_tarray_set(nh, i, coll_store_owned(list->type_tag, list->data[start + i]));
+  if (!nh)
+    return 0;
+  FarTypedArray* arr = tarray_from_handle(nh);
+  if (!tarray_copy_range(arr, list->type_tag, list->data, start, nlen)) {
+    far_tarray_drop(nh);
+    return 0;
+  }
   return nh;
 }
 
 void far_list_insert(int64_t handle, int64_t index, int64_t value) {
   FarList* list = list_from_handle(handle);
-  if (!list) return;
-  if (index < 0) index = 0;
-  if (index > list->len) index = list->len;
-  if (list->len >= list->cap && !list_grow(list)) {
-    far_panic(0);
+  if (!list || !list->data)
     return;
+  if (index < 0)
+    return;
+  if (index > list->len) index = list->len;
+  int64_t nv;
+  if (!coll_try_store(list->type_tag, value, &nv))
+    return;
+  if (list->len >= list->cap && !list_grow(list)) {
+    coll_release_owned(list->type_tag, nv);
+    far_panic(0);
   }
   memmove(list->data + index + 1, list->data + index, (size_t)(list->len - index) * sizeof(int64_t));
-  list->data[index] = coll_store_owned(list->type_tag, value);
+  list->data[index] = nv;
   list->len++;
 }
 
 void far_list_remove_at(int64_t handle, int64_t index) {
   FarList* list = list_from_handle(handle);
-  if (!list || index < 0 || index >= list->len) return;
+  if (!list || index < 0 || index >= list->len)
+    return;
   coll_release_owned(list->type_tag, list->data[index]);
   if (index + 1 < list->len)
     memmove(list->data + index, list->data + index + 1, (size_t)(list->len - index - 1) * sizeof(int64_t));
@@ -675,6 +917,8 @@ char* far_str_tolower(const char* s) {
   if (!s)
     return str_dup("");
   size_t n = strlen(s);
+  if (!far_str_n_ok(n))
+    return NULL;
   char* out = (char*)malloc(n + 1);
   if (!out)
     return NULL;
@@ -688,6 +932,8 @@ char* far_str_toupper(const char* s) {
   if (!s)
     return str_dup("");
   size_t n = strlen(s);
+  if (!far_str_n_ok(n))
+    return NULL;
   char* out = (char*)malloc(n + 1);
   if (!out)
     return NULL;
@@ -698,7 +944,7 @@ char* far_str_toupper(const char* s) {
 }
 
 int64_t far_str_contains(const char* s, const char* sub) {
-  if (!s || !sub)
+  if (!s || !sub || !sub[0])
     return 0;
   return strstr(s, sub) ? 1 : 0;
 }
@@ -728,30 +974,49 @@ int64_t far_str_split(const char* s, const char* sep) {
   if (!sep || !sep[0])
     sep = ",";
   int64_t list = far_list_new(FAR_TAG_STRING, 4);
+  if (!list)
+    return 0;
+  FarList* lst = list_from_handle(list);
   size_t seplen = strlen(sep);
   const char* start = s;
   if (*s == '\0') {
     char* empty = str_dup("");
-    if (empty)
-      far_list_push(list, (int64_t)(intptr_t)empty);
+    if (!empty || !list_push_preowned(lst, (int64_t)(intptr_t)empty)) {
+      free(empty);
+      far_list_drop(list);
+      return 0;
+    }
     return list;
   }
   while (*start) {
+    if (lst->len >= FAR_COLL_MAX_CAP) {
+      far_list_drop(list);
+      return 0;
+    }
     const char* found = strstr(start, sep);
     if (!found) {
       char* part = str_dup(start);
-      if (part)
-        far_list_push(list, (int64_t)(intptr_t)part);
+      if (!part || !list_push_preowned(lst, (int64_t)(intptr_t)part)) {
+        free(part);
+        far_list_drop(list);
+        return 0;
+      }
       break;
     }
     char* part = str_dup_n(start, (size_t)(found - start));
-    if (part)
-      far_list_push(list, (int64_t)(intptr_t)part);
+    if (!part || !list_push_preowned(lst, (int64_t)(intptr_t)part)) {
+      free(part);
+      far_list_drop(list);
+      return 0;
+    }
     start = found + seplen;
     if (*start == '\0') {
       char* empty = str_dup("");
-      if (empty)
-        far_list_push(list, (int64_t)(intptr_t)empty);
+      if (!empty || !list_push_preowned(lst, (int64_t)(intptr_t)empty)) {
+        free(empty);
+        far_list_drop(list);
+        return 0;
+      }
       break;
     }
   }
@@ -783,7 +1048,9 @@ void far_print_list(int64_t handle) {
 static int64_t hash_coll_key(uint16_t tag, int64_t k) {
   if (is_string_tag(tag)) {
     const char* s = (const char*)(intptr_t)k;
-    if (!s) return 0;
+    if (!s) {
+    return 0;
+  }
     uint64_t h = 14695981039346656037ULL;
     for (; *s; ++s) h = (h ^ (unsigned char)*s) * 1099511628211ULL;
     return (int64_t)h;
@@ -793,7 +1060,8 @@ static int64_t hash_coll_key(uint16_t tag, int64_t k) {
 
 int64_t far_dict_new(int16_t key_tag, int16_t val_tag) {
   FarDict* d = (FarDict*)calloc(1, sizeof(FarDict));
-  if (!d) return 0;
+  if (!d)
+    return 0;
   d->key_tag = (uint16_t)key_tag;
   d->val_tag = (uint16_t)val_tag;
   d->cap = 8;
@@ -816,7 +1084,7 @@ static int dict_resize(FarDict* d) {
   int64_t* ov = d->vals;
   uint8_t* ou = d->used;
   int64_t new_cap = cap_double(d->cap);
-  if (new_cap < 0) return 0;
+  if (new_cap < 0 || new_cap > FAR_COLL_MAX_CAP) return 0;
   int64_t* nk = (int64_t*)calloc((size_t)new_cap, sizeof(int64_t));
   int64_t* nv = (int64_t*)calloc((size_t)new_cap, sizeof(int64_t));
   uint8_t* nu = (uint8_t*)calloc((size_t)new_cap, sizeof(uint8_t));
@@ -834,7 +1102,24 @@ static int dict_resize(FarDict* d) {
   for (int64_t i = 0; i < old_cap; ++i) {
     if (ou[i] == 1) {
       int64_t h = hash_coll_key(d->key_tag, ok[i]) & (d->cap - 1);
-      while (d->used[h]) h = (h + 1) & (d->cap - 1);
+      int64_t probe = 0;
+      while (d->used[h]) {
+        if (++probe >= d->cap) {
+          free(nk);
+          free(nv);
+          free(nu);
+          d->cap = old_cap;
+          d->keys = ok;
+          d->vals = ov;
+          d->used = ou;
+          d->len = 0;
+          for (int64_t j = 0; j < old_cap; ++j)
+            if (ou[j] == 1)
+              d->len++;
+          return 0;
+        }
+        h = (h + 1) & (d->cap - 1);
+      }
       d->keys[h] = ok[i];
       d->vals[h] = ov[i];
       d->used[h] = 1;
@@ -849,16 +1134,20 @@ static int dict_resize(FarDict* d) {
 
 int64_t far_dict_len(int64_t handle) {
   FarDict* d = dict_from_handle(handle);
-  return d ? d->len : 0;
+  if (!d)
+    return 0;
+  return d->len;
 }
 
 int64_t far_dict_get(int64_t handle, int64_t key) {
   FarDict* d = dict_from_handle(handle);
-  if (!d || d->cap == 0) return 0;
+  if (!d || d->cap == 0)
+    return 0;
   int64_t h = hash_coll_key(d->key_tag, key) & (d->cap - 1);
   for (int64_t i = 0; i < d->cap; ++i) {
     int64_t slot = (h + i) & (d->cap - 1);
-    if (d->used[slot] == 0) return 0;
+    if (d->used[slot] == 0)
+      return 0;
     if (d->used[slot] == 1 && coll_keys_equal(d->key_tag, d->keys[slot], key)) return d->vals[slot];
   }
   return 0;
@@ -866,40 +1155,55 @@ int64_t far_dict_get(int64_t handle, int64_t key) {
 
 void far_dict_set(int64_t handle, int64_t key, int64_t value) {
   FarDict* d = dict_from_handle(handle);
-  if (!d) return;
-  if (d->len * 4 >= d->cap * 3 && !dict_resize(d)) {
-    far_panic(0);
+  if (!d)
     return;
-  }
-  int64_t h = hash_coll_key(d->key_tag, key) & (d->cap - 1);
-  int64_t first_tomb = -1;
-  for (int64_t i = 0; i < d->cap; ++i) {
-    int64_t slot = (h + i) & (d->cap - 1);
-    if (d->used[slot] == 0) {
-      int64_t ins = first_tomb >= 0 ? first_tomb : slot;
-      d->keys[ins] = coll_store_owned(d->key_tag, key);
-      d->vals[ins] = coll_store_owned(d->val_tag, value);
-      d->used[ins] = 1;
-      d->len++;
-      return;
+  for (int attempt = 0; attempt < 2; ++attempt) {
+    if (d->len * 4 >= d->cap * 3 && !dict_resize(d))
+      far_panic(0);
+    int64_t h = hash_coll_key(d->key_tag, key) & (d->cap - 1);
+    int64_t first_tomb = -1;
+    for (int64_t i = 0; i < d->cap; ++i) {
+      int64_t slot = (h + i) & (d->cap - 1);
+      if (d->used[slot] == 0) {
+        int64_t ins = first_tomb >= 0 ? first_tomb : slot;
+        int64_t nk, nv;
+        if (!coll_try_store(d->key_tag, key, &nk))
+          return;
+        if (!coll_try_store(d->val_tag, value, &nv)) {
+          coll_release_owned(d->key_tag, nk);
+          return;
+        }
+        d->keys[ins] = nk;
+        d->vals[ins] = nv;
+        d->used[ins] = 1;
+        d->len++;
+        return;
+      }
+      if (d->used[slot] == 2) {
+        if (first_tomb < 0)
+          first_tomb = slot;
+        continue;
+      }
+      if (coll_keys_equal(d->key_tag, d->keys[slot], key)) {
+        int64_t nv;
+        if (!coll_try_store(d->val_tag, value, &nv))
+          return;
+        coll_release_owned(d->val_tag, d->vals[slot]);
+        d->vals[slot] = nv;
+        return;
+      }
     }
-    if (d->used[slot] == 2) {
-      if (first_tomb < 0)
-        first_tomb = slot;
-      continue;
-    }
-    if (coll_keys_equal(d->key_tag, d->keys[slot], key)) {
-      coll_release_owned(d->val_tag, d->vals[slot]);
-      d->vals[slot] = coll_store_owned(d->val_tag, value);
-      return;
-    }
+    if (!dict_resize(d))
+      far_panic(0);
   }
   far_panic(0);
 }
 
 int64_t far_dict_contains_key(int64_t handle, int64_t key) {
   FarDict* d = dict_from_handle(handle);
-  if (!d || d->cap == 0) return 0;
+  if (!d)
+    return 0;
+  if (d->cap == 0) return 0;
   int64_t h = hash_coll_key(d->key_tag, key) & (d->cap - 1);
   for (int64_t i = 0; i < d->cap; ++i) {
     int64_t slot = (h + i) & (d->cap - 1);
@@ -911,7 +1215,9 @@ int64_t far_dict_contains_key(int64_t handle, int64_t key) {
 
 void far_dict_remove(int64_t handle, int64_t key) {
   FarDict* d = dict_from_handle(handle);
-  if (!d || d->cap == 0) return;
+  if (!d)
+    return;
+  if (d->cap == 0) return;
   int64_t h = hash_coll_key(d->key_tag, key) & (d->cap - 1);
   for (int64_t i = 0; i < d->cap; ++i) {
     int64_t slot = (h + i) & (d->cap - 1);
@@ -930,19 +1236,51 @@ void far_dict_remove(int64_t handle, int64_t key) {
 
 int64_t far_dict_keys(int64_t handle) {
   FarDict* d = dict_from_handle(handle);
-  if (!d) return 0;
+  if (!d)
+    return 0;
   int64_t nh = far_list_new((int16_t)d->key_tag, d->len > 0 ? d->len : 4);
-  for (int64_t i = 0; i < d->cap; ++i)
-    if (d->used[i] == 1) far_list_push(nh, coll_store_owned(d->key_tag, d->keys[i]));
+  if (!nh)
+    return 0;
+  FarList* lst = list_from_handle(nh);
+  for (int64_t i = 0; i < d->cap; ++i) {
+    if (d->used[i] != 1)
+      continue;
+    int64_t nv;
+    if (!coll_try_store(d->key_tag, d->keys[i], &nv)) {
+      far_list_drop(nh);
+      return 0;
+    }
+    if (!list_push_stored(lst, nv)) {
+      coll_release_owned(d->key_tag, nv);
+      far_list_drop(nh);
+      return 0;
+    }
+  }
   return nh;
 }
 
 int64_t far_dict_values(int64_t handle) {
   FarDict* d = dict_from_handle(handle);
-  if (!d) return 0;
+  if (!d)
+    return 0;
   int64_t nh = far_list_new((int16_t)d->val_tag, d->len > 0 ? d->len : 4);
-  for (int64_t i = 0; i < d->cap; ++i)
-    if (d->used[i] == 1) far_list_push(nh, coll_store_owned(d->val_tag, d->vals[i]));
+  if (!nh)
+    return 0;
+  FarList* lst = list_from_handle(nh);
+  for (int64_t i = 0; i < d->cap; ++i) {
+    if (d->used[i] != 1)
+      continue;
+    int64_t nv;
+    if (!coll_try_store(d->val_tag, d->vals[i], &nv)) {
+      far_list_drop(nh);
+      return 0;
+    }
+    if (!list_push_stored(lst, nv)) {
+      coll_release_owned(d->val_tag, nv);
+      far_list_drop(nh);
+      return 0;
+    }
+  }
   return nh;
 }
 
@@ -963,7 +1301,8 @@ void far_dict_drop(int64_t handle) {
 
 int64_t far_set_new(int16_t key_tag) {
   FarSet* s = (FarSet*)calloc(1, sizeof(FarSet));
-  if (!s) return 0;
+  if (!s)
+    return 0;
   s->key_tag = (uint16_t)key_tag;
   s->cap = 8;
   s->keys = (int64_t*)calloc(8, sizeof(int64_t));
@@ -979,7 +1318,9 @@ int64_t far_set_new(int16_t key_tag) {
 
 int64_t far_set_len(int64_t handle) {
   FarSet* s = set_from_handle(handle);
-  return s ? s->len : 0;
+  if (!s)
+    return 0;
+  return s->len;
 }
 
 static int set_resize(FarSet* s) {
@@ -987,7 +1328,7 @@ static int set_resize(FarSet* s) {
   int64_t* ok = s->keys;
   uint8_t* ou = s->used;
   int64_t new_cap = cap_double(s->cap);
-  if (new_cap < 0) return 0;
+  if (new_cap < 0 || new_cap > FAR_COLL_MAX_CAP) return 0;
   int64_t* nk = (int64_t*)calloc((size_t)new_cap, sizeof(int64_t));
   uint8_t* nu = (uint8_t*)calloc((size_t)new_cap, sizeof(uint8_t));
   if (!nk || !nu) {
@@ -1002,7 +1343,22 @@ static int set_resize(FarSet* s) {
   for (int64_t i = 0; i < old_cap; ++i) {
     if (ou[i] == 1) {
       int64_t h = hash_coll_key(s->key_tag, ok[i]) & (s->cap - 1);
-      while (s->used[h]) h = (h + 1) & (s->cap - 1);
+      int64_t probe = 0;
+      while (s->used[h]) {
+        if (++probe >= s->cap) {
+          free(nk);
+          free(nu);
+          s->cap = old_cap;
+          s->keys = ok;
+          s->used = ou;
+          s->len = 0;
+          for (int64_t j = 0; j < old_cap; ++j)
+            if (ou[j] == 1)
+              s->len++;
+          return 0;
+        }
+        h = (h + 1) & (s->cap - 1);
+      }
       s->keys[h] = ok[i];
       s->used[h] = 1;
       s->len++;
@@ -1015,36 +1371,44 @@ static int set_resize(FarSet* s) {
 
 void far_set_add(int64_t handle, int64_t key) {
   FarSet* s = set_from_handle(handle);
-  if (!s) return;
-  if (s->len * 4 >= s->cap * 3 && !set_resize(s)) {
-    far_panic(0);
+  if (!s)
     return;
-  }
-  int64_t h = hash_coll_key(s->key_tag, key) & (s->cap - 1);
-  int64_t first_tomb = -1;
-  for (int64_t i = 0; i < s->cap; ++i) {
-    int64_t slot = (h + i) & (s->cap - 1);
-    if (s->used[slot] == 0) {
-      int64_t ins = first_tomb >= 0 ? first_tomb : slot;
-      s->keys[ins] = coll_store_owned(s->key_tag, key);
-      s->used[ins] = 1;
-      s->len++;
-      return;
+  for (int attempt = 0; attempt < 2; ++attempt) {
+    if (s->len * 4 >= s->cap * 3 && !set_resize(s))
+      far_panic(0);
+    int64_t h = hash_coll_key(s->key_tag, key) & (s->cap - 1);
+    int64_t first_tomb = -1;
+    for (int64_t i = 0; i < s->cap; ++i) {
+      int64_t slot = (h + i) & (s->cap - 1);
+      if (s->used[slot] == 0) {
+        int64_t ins = first_tomb >= 0 ? first_tomb : slot;
+        int64_t nk;
+        if (!coll_try_store(s->key_tag, key, &nk))
+          return;
+        s->keys[ins] = nk;
+        s->used[ins] = 1;
+        s->len++;
+        return;
+      }
+      if (s->used[slot] == 2) {
+        if (first_tomb < 0)
+          first_tomb = slot;
+        continue;
+      }
+      if (coll_keys_equal(s->key_tag, s->keys[slot], key))
+        return;
     }
-    if (s->used[slot] == 2) {
-      if (first_tomb < 0)
-        first_tomb = slot;
-      continue;
-    }
-    if (coll_keys_equal(s->key_tag, s->keys[slot], key))
-      return;
+    if (!set_resize(s))
+      far_panic(0);
   }
   far_panic(0);
 }
 
 int64_t far_set_contains(int64_t handle, int64_t key) {
   FarSet* s = set_from_handle(handle);
-  if (!s || s->cap == 0) return 0;
+  if (!s)
+    return 0;
+  if (s->cap == 0) return 0;
   int64_t h = hash_coll_key(s->key_tag, key) & (s->cap - 1);
   for (int64_t i = 0; i < s->cap; ++i) {
     int64_t slot = (h + i) & (s->cap - 1);
@@ -1056,7 +1420,9 @@ int64_t far_set_contains(int64_t handle, int64_t key) {
 
 void far_set_remove(int64_t handle, int64_t key) {
   FarSet* s = set_from_handle(handle);
-  if (!s || s->cap == 0) return;
+  if (!s)
+    return;
+  if (s->cap == 0) return;
   int64_t h = hash_coll_key(s->key_tag, key) & (s->cap - 1);
   for (int64_t i = 0; i < s->cap; ++i) {
     int64_t slot = (h + i) & (s->cap - 1);
@@ -1087,14 +1453,19 @@ int64_t far_queue_new(int16_t tag) { return far_list_new(tag, 4); }
 
 int64_t far_queue_len(int64_t handle) {
   FarList* list = list_from_handle(handle);
-  return list ? list->len : 0;
+  if (!list)
+    return 0;
+  return list->len;
 }
 
 void far_queue_enqueue(int64_t handle, int64_t value) { far_list_push(handle, value); }
 
 int64_t far_queue_dequeue(int64_t handle) {
   FarList* list = list_from_handle(handle);
-  if (!list || list->len <= 0) return 0;
+  if (!list)
+    return 0;
+  if (list->len <= 0)
+    return 0;
   int64_t v = list->data[0];
   if (list->len > 1)
     memmove(list->data, list->data + 1, (size_t)(list->len - 1) * sizeof(int64_t));
@@ -1105,7 +1476,8 @@ int64_t far_queue_dequeue(int64_t handle) {
 
 int64_t far_queue_peek(int64_t handle) {
   FarList* list = list_from_handle(handle);
-  if (!list || list->len <= 0) return 0;
+  if (!list || list->len <= 0)
+    return 0;
   return list->data[0];
 }
 
@@ -1119,28 +1491,39 @@ int64_t far_stack_pop(int64_t handle) { return far_list_pop(handle); }
 
 int64_t far_stack_peek(int64_t handle) {
   FarList* list = list_from_handle(handle);
-  if (!list || list->len <= 0) return 0;
+  if (!list || list->len <= 0)
+    return 0;
   return list->data[list->len - 1];
 }
 
 int64_t far_llist_new(int16_t tag) {
   FarLinkedList* ll = (FarLinkedList*)calloc(1, sizeof(FarLinkedList));
-  if (!ll) return 0;
+  if (!ll)
+    return 0;
   ll->type_tag = (uint16_t)tag;
   return (int64_t)(intptr_t)ll;
 }
 
 int64_t far_llist_len(int64_t handle) {
   FarLinkedList* ll = llist_from_handle(handle);
-  return ll ? ll->len : 0;
+  if (!ll)
+    return 0;
+  return ll->len;
 }
 
 void far_llist_push_front(int64_t handle, int64_t value) {
   FarLinkedList* ll = llist_from_handle(handle);
-  if (!ll) return;
+  if (!ll || ll->len >= FAR_COLL_MAX_CAP)
+    return;
   FarLLNode* n = (FarLLNode*)malloc(sizeof(FarLLNode));
-  if (!n) return;
-  n->value = coll_store_owned(ll->type_tag, value);
+  if (!n)
+    return;
+  int64_t nv;
+  if (!coll_try_store(ll->type_tag, value, &nv)) {
+    free(n);
+    return;
+  }
+  n->value = nv;
   n->prev = NULL;
   n->next = ll->head;
   if (ll->head) ll->head->prev = n;
@@ -1151,10 +1534,17 @@ void far_llist_push_front(int64_t handle, int64_t value) {
 
 void far_llist_push_back(int64_t handle, int64_t value) {
   FarLinkedList* ll = llist_from_handle(handle);
-  if (!ll) return;
+  if (!ll || ll->len >= FAR_COLL_MAX_CAP)
+    return;
   FarLLNode* n = (FarLLNode*)malloc(sizeof(FarLLNode));
-  if (!n) return;
-  n->value = coll_store_owned(ll->type_tag, value);
+  if (!n)
+    return;
+  int64_t nv;
+  if (!coll_try_store(ll->type_tag, value, &nv)) {
+    free(n);
+    return;
+  }
+  n->value = nv;
   n->next = NULL;
   n->prev = ll->tail;
   if (ll->tail) ll->tail->next = n;
@@ -1165,7 +1555,10 @@ void far_llist_push_back(int64_t handle, int64_t value) {
 
 int64_t far_llist_pop_front(int64_t handle) {
   FarLinkedList* ll = llist_from_handle(handle);
-  if (!ll || !ll->head) return 0;
+  if (!ll)
+    return 0;
+  if (!ll->head)
+    return 0;
   FarLLNode* n = ll->head;
   int64_t v = n->value;
   ll->head = n->next;
@@ -1178,7 +1571,10 @@ int64_t far_llist_pop_front(int64_t handle) {
 
 int64_t far_llist_pop_back(int64_t handle) {
   FarLinkedList* ll = llist_from_handle(handle);
-  if (!ll || !ll->tail) return 0;
+  if (!ll)
+    return 0;
+  if (!ll->tail)
+    return 0;
   FarLLNode* n = ll->tail;
   int64_t v = n->value;
   ll->tail = n->prev;
@@ -1205,14 +1601,20 @@ void far_llist_drop(int64_t handle) {
 
 int64_t far_slice_new(int64_t src, int64_t start, int64_t end, int16_t tag) {
   FarTypedArray* arr = tarray_from_handle(src);
-  if (!arr) return 0;
+  if (!arr)
+    return 0;
   if (start < 0) start = 0;
   if (end > arr->len) end = arr->len;
   if (end < start) end = start;
   int64_t nlen = end - start;
   int64_t nh = far_tarray_new(nlen, tag, 8);
-  for (int64_t i = 0; i < nlen; ++i)
-    far_tarray_set(nh, i, coll_store_owned((uint16_t)tag, arr->data[start + i]));
+  if (!nh)
+    return 0;
+  FarTypedArray* dst = tarray_from_handle(nh);
+  if (!tarray_copy_range(dst, (uint16_t)tag, arr->data, start, nlen)) {
+    far_tarray_drop(nh);
+    return 0;
+  }
   return nh;
 }
 
@@ -1224,7 +1626,8 @@ void far_range_drop(int64_t handle) {
 int64_t far_range_new(int64_t start, int64_t end, int64_t step) {
   if (step == 0) step = 1;
   FarRange* r = (FarRange*)malloc(sizeof(FarRange));
-  if (!r) return 0;
+  if (!r)
+    return 0;
   r->start = start;
   r->end = end;
   r->step = step;
@@ -1233,24 +1636,31 @@ int64_t far_range_new(int64_t start, int64_t end, int64_t step) {
 
 int64_t far_range_len(int64_t handle) {
   FarRange* r = range_from_handle(handle);
-  if (!r || r->step == 0) return 0;
-  if (r->step > 0) {
-    if (r->start >= r->end) return 0;
-    return (r->end - r->start + r->step - 1) / r->step;
-  }
-  if (r->start <= r->end) return 0;
-  return (r->start - r->end - r->step - 1) / (-r->step);
+  if (!r)
+    return 0;
+  if (r->step == 0) return 0;
+  return range_span_len(r->start, r->end, r->step);
 }
 
 int64_t far_range_contains(int64_t handle, int64_t value) {
   FarRange* r = range_from_handle(handle);
-  if (!r || r->step == 0) return 0;
+  if (!r)
+    return 0;
+  if (r->step == 0) return 0;
   if (r->step > 0) {
     if (value < r->start || value >= r->end) return 0;
-    return ((value - r->start) % r->step) == 0;
+    int64_t off;
+    if (__builtin_sub_overflow(value, r->start, &off))
+      return 0;
+    return (off % r->step) == 0;
   }
   if (value > r->start || value <= r->end) return 0;
-  return ((r->start - value) % (-r->step)) == 0;
+  int64_t abs_step = r->step == INT64_MIN ? 0 : -r->step;
+  if (abs_step == 0) return 0;
+  int64_t off;
+  if (__builtin_sub_overflow(r->start, value, &off))
+    return 0;
+  return (off % abs_step) == 0;
 }
 
 
@@ -1304,6 +1714,7 @@ static FarThreadSlot* g_threads = NULL;
 static size_t g_thread_cap = 0;
 
 static pthread_mutex_t g_spawn_mu;
+static pthread_cond_t g_join_cv;
 
 #ifdef _WIN32
 static INIT_ONCE g_spawn_once = INIT_ONCE_STATIC_INIT;
@@ -1311,7 +1722,8 @@ static BOOL CALLBACK far_spawn_mu_init_once(PINIT_ONCE once, PVOID param, PVOID*
   (void)once;
   (void)param;
   (void)ctx;
-  InitializeCriticalSection(&g_spawn_mu);
+  pthread_mutex_init(&g_spawn_mu, NULL);
+  pthread_cond_init(&g_join_cv, NULL);
   return TRUE;
 }
 static void far_spawn_mu_ensure(void) {
@@ -1319,9 +1731,17 @@ static void far_spawn_mu_ensure(void) {
 }
 #else
 static pthread_once_t g_spawn_once = PTHREAD_ONCE_INIT;
-static void far_spawn_mu_init_fn(void) { pthread_mutex_init(&g_spawn_mu, NULL); }
+static void far_spawn_mu_init_fn(void) {
+  pthread_mutex_init(&g_spawn_mu, NULL);
+  pthread_cond_init(&g_join_cv, NULL);
+}
 static void far_spawn_mu_ensure(void) { pthread_once(&g_spawn_once, far_spawn_mu_init_fn); }
 #endif
+
+#define FAR_CHAN_MAX_CAP (1 << 20)
+#define FAR_POOL_MAX_ELEM ((size_t)1 << 24)
+#define FAR_MAX_THREADS 4096
+#define FAR_MAX_ACTORS 4096
 
 
 
@@ -1341,7 +1761,9 @@ static void* thread_trampoline(void* arg) {
 
     case 4: ctx->result = ((FarFn4)ctx->fn)(ctx->args[0], ctx->args[1], ctx->args[2], ctx->args[3]); break;
 
-    default: ctx->result = 0; break;
+    default:
+      ctx->result = 0;
+      break;
 
   }
 
@@ -1364,11 +1786,20 @@ static void* thread_trampoline(void* arg) {
 
 static int ensure_thread_cap(size_t need) {
 
+  if (need > FAR_MAX_THREADS) return 0;
+
   if (need <= g_thread_cap) return 1;
 
   size_t new_cap = g_thread_cap == 0 ? 8 : g_thread_cap * 2;
 
-  while (new_cap < need) new_cap *= 2;
+  while (new_cap < need) {
+    if (new_cap > SIZE_MAX / 2)
+      return 0;
+    new_cap *= 2;
+  }
+
+  if (new_cap > SIZE_MAX / sizeof(FarThreadSlot))
+    return 0;
 
   FarThreadSlot* nt = (FarThreadSlot*)realloc(g_threads, new_cap * sizeof(FarThreadSlot));
 
@@ -1410,11 +1841,13 @@ int64_t far_thread_count(void) {
 
 int64_t far_spawn(void* fn, int64_t nargs, int64_t a0, int64_t a1, int64_t a2, int64_t a3) {
 
-  if (nargs < 0 || nargs > 4) return -1;
+  if (!fn || nargs < 0 || nargs > 4)
+    return -1;
 
   SpawnCtx* ctx = (SpawnCtx*)malloc(sizeof(SpawnCtx));
 
-  if (!ctx) return -1;
+  if (!ctx)
+    return -1;
 
   ctx->fn = fn;
 
@@ -1443,8 +1876,16 @@ int64_t far_spawn(void* fn, int64_t nargs, int64_t a0, int64_t a1, int64_t a2, i
 
   }
 
+  g_threads[handle].ctx = ctx;
+  g_threads[handle].joined = 0;
+  g_threads[handle].join_result = 0;
+  g_threads[handle].join_done = 0;
+  g_threads[handle].live = 1;
+
   if (pthread_create(&g_threads[handle].thread, NULL, thread_trampoline, ctx) != 0) {
 
+    g_threads[handle].ctx = NULL;
+    g_threads[handle].live = 0;
     pthread_mutex_unlock(&g_spawn_mu);
     free(ctx);
 
@@ -1452,11 +1893,6 @@ int64_t far_spawn(void* fn, int64_t nargs, int64_t a0, int64_t a1, int64_t a2, i
 
   }
 
-  g_threads[handle].ctx = ctx;
-  g_threads[handle].joined = 0;
-  g_threads[handle].join_result = 0;
-  g_threads[handle].join_done = 0;
-  g_threads[handle].live = 1;
   pthread_mutex_unlock(&g_spawn_mu);
 
   return (int64_t)handle;
@@ -1467,13 +1903,22 @@ int64_t far_spawn(void* fn, int64_t nargs, int64_t a0, int64_t a1, int64_t a2, i
 
 int64_t far_join(int64_t handle) {
 
-  if (handle < 0 || (size_t)handle >= g_thread_cap) return 0;
+  if (handle < 0 || (size_t)handle >= g_thread_cap)
+    return -1;
 
   far_spawn_mu_ensure();
   pthread_mutex_lock(&g_spawn_mu);
   FarThreadSlot* slot = &g_threads[(size_t)handle];
 
   if (slot->join_done) {
+    int64_t cached = slot->join_result;
+    pthread_mutex_unlock(&g_spawn_mu);
+    return cached;
+  }
+
+  if (slot->joined) {
+    while (!slot->join_done)
+      pthread_cond_wait(&g_join_cv, &g_spawn_mu);
     int64_t cached = slot->join_result;
     pthread_mutex_unlock(&g_spawn_mu);
     return cached;
@@ -1506,6 +1951,7 @@ int64_t far_join(int64_t handle) {
   slot->join_done = 1;
   slot->live = 0;
   slot->joined = 0;
+  pthread_cond_broadcast(&g_join_cv);
   pthread_mutex_unlock(&g_spawn_mu);
 
   return result;
@@ -1523,8 +1969,11 @@ int64_t far_gen_next(int64_t gen_ptr) {
 
 static int64_t far_dict_dup(int64_t handle) {
   FarDict* d = dict_from_handle(handle);
-  if (!d) return 0;
+  if (!d)
+    return 0;
   int64_t nh = far_dict_new(d->key_tag, d->val_tag);
+  if (!nh)
+    return 0;
   for (int64_t i = 0; i < d->cap; ++i) {
     if (d->used[i] == 1)
       far_dict_set(nh, d->keys[i], d->vals[i]);
@@ -1534,8 +1983,11 @@ static int64_t far_dict_dup(int64_t handle) {
 
 static int64_t far_set_dup(int64_t handle) {
   FarSet* s = set_from_handle(handle);
-  if (!s) return 0;
+  if (!s)
+    return 0;
   int64_t nh = far_set_new(s->key_tag);
+  if (!nh)
+    return 0;
   for (int64_t i = 0; i < s->cap; ++i) {
     if (s->used[i] == 1)
       far_set_add(nh, s->keys[i]);
@@ -1545,8 +1997,11 @@ static int64_t far_set_dup(int64_t handle) {
 
 static int64_t far_llist_dup(int64_t handle) {
   FarLinkedList* ll = llist_from_handle(handle);
-  if (!ll) return 0;
+  if (!ll)
+    return 0;
   int64_t nh = far_llist_new((int16_t)ll->type_tag);
+  if (!nh)
+    return 0;
   for (FarLLNode* n = ll->head; n; n = n->next)
     far_llist_push_back(nh, n->value);
   return nh;
@@ -1554,7 +2009,8 @@ static int64_t far_llist_dup(int64_t handle) {
 
 static int64_t far_range_dup(int64_t handle) {
   FarRange* r = range_from_handle(handle);
-  if (!r) return 0;
+  if (!r)
+    return 0;
   return far_range_new(r->start, r->end, r->step);
 }
 
@@ -1567,17 +2023,24 @@ int64_t far_owned_dup(int64_t form, int64_t value) {
     }
     case 1: { /* Array */
       FarTypedArray* arr = tarray_from_handle(value);
-      if (!arr) return 0;
+      if (!arr)
+        return 0;
       int64_t nh = far_tarray_new(arr->len, (int16_t)arr->type_tag, 8);
-      for (int64_t i = 0; i < arr->len; ++i)
-        far_tarray_set(nh, i, coll_store_owned(arr->type_tag, arr->data[i]));
+      if (!nh)
+        return 0;
+      FarTypedArray* dst = tarray_from_handle(nh);
+      if (!tarray_copy_range(dst, arr->type_tag, arr->data, 0, arr->len)) {
+        far_tarray_drop(nh);
+        return 0;
+      }
       return nh;
     }
     case 2:  /* List */
     case 6:  /* Queue */
     case 7: { /* Stack */
       FarList* list = list_from_handle(value);
-      if (!list) return 0;
+      if (!list)
+        return 0;
       return far_list_slice(value, 0, list->len);
     }
     case 4: return far_dict_dup(value);
@@ -1586,10 +2049,16 @@ int64_t far_owned_dup(int64_t form, int64_t value) {
     case 10: /* Slice */
     case 11: { /* Tuple */
       FarTypedArray* arr = tarray_from_handle(value);
-      if (!arr) return 0;
+      if (!arr)
+        return 0;
       int64_t nh = far_tarray_new(arr->len, (int16_t)arr->type_tag, 8);
-      for (int64_t i = 0; i < arr->len; ++i)
-        far_tarray_set(nh, i, coll_store_owned(arr->type_tag, arr->data[i]));
+      if (!nh)
+        return 0;
+      FarTypedArray* dst = tarray_from_handle(nh);
+      if (!tarray_copy_range(dst, arr->type_tag, arr->data, 0, arr->len)) {
+        far_tarray_drop(nh);
+        return 0;
+      }
       return nh;
     }
     case 12: return far_range_dup(value);
@@ -1647,8 +2116,11 @@ typedef int64_t (*FarFn5)(int64_t, int64_t, int64_t, int64_t, int64_t);
 
 int64_t far_closure_new(void* fn, int64_t ncaps, int64_t f0, int64_t c0, int64_t f1, int64_t c1,
                         int64_t f2, int64_t c2, int64_t f3, int64_t c3) {
+  if (!fn || ncaps < 0 || ncaps > 4)
+    return 0;
   FarClosure* c = (FarClosure*)malloc(sizeof(FarClosure));
-  if (!c) return 0;
+  if (!c)
+    return 0;
   c->fn = fn;
   c->ncaps = (int)ncaps;
   c->cap_forms[0] = f0;
@@ -1664,7 +2136,8 @@ int64_t far_closure_new(void* fn, int64_t ncaps, int64_t f0, int64_t c0, int64_t
 
 void far_closure_drop(int64_t handle) {
   FarClosure* c = (FarClosure*)(intptr_t)handle;
-  if (!c) return;
+  if (!c)
+    return;
   for (int i = 0; i < c->ncaps; ++i)
     far_owned_drop(c->cap_forms[i], c->caps[i]);
   free(c);
@@ -1694,13 +2167,23 @@ int64_t far_parallel(void* fn, int64_t count) {
 
   if (count <= 0) return 0;
 
+  if (!fn)
+    return -1;
+
+  if (count > (1 << 20))
+    return -1;
+
   if (count == 1) return ((FarFn1)fn)(0);
 
   int64_t total = 0;
 
+  if ((uint64_t)count > (uint64_t)SIZE_MAX / sizeof(int64_t))
+    return -1;
+
   int64_t* handles = (int64_t*)malloc((size_t)count * sizeof(int64_t));
 
-  if (!handles) return -1;
+  if (!handles)
+    return -1;
 
   int64_t spawned = 0;
   for (int64_t i = 0; i < count; ++i) {
@@ -1714,9 +2197,15 @@ int64_t far_parallel(void* fn, int64_t count) {
     spawned++;
   }
 
-  for (int64_t i = 0; i < count; ++i)
-
-    total += far_join(handles[i]);
+  for (int64_t i = 0; i < count; ++i) {
+    int64_t jr = far_join(handles[i]);
+    if (!far_i64_add_ok(total, jr, &total)) {
+      for (int64_t j = i + 1; j < count; ++j)
+        (void)far_join(handles[j]);
+      free(handles);
+      return -1;
+    }
+  }
 
   free(handles);
 
@@ -2266,6 +2755,11 @@ int64_t far_iabs(int64_t x) {
 }
 int64_t far_isign(int64_t x) { return x > 0 ? 1 : (x < 0 ? -1 : 0); }
 int64_t far_clamp_i(int64_t x, int64_t lo, int64_t hi) {
+  if (lo > hi) {
+    int64_t t = lo;
+    lo = hi;
+    hi = t;
+  }
   if (x < lo) return lo;
   if (x > hi) return hi;
   return x;
@@ -2273,16 +2767,21 @@ int64_t far_clamp_i(int64_t x, int64_t lo, int64_t hi) {
 int64_t far_is_even(int64_t x) { return (x % 2) == 0; }
 int64_t far_is_odd(int64_t x) { return (x % 2) != 0; }
 int64_t far_mod_pos(int64_t x, int64_t m) {
-  if (m == 0)
+  if (m <= 0)
     return 0;
-  int64_t r = x % m;
-  return r < 0 ? r + m : r;
+  int64_t r = far_i64_mod_checked(x, m);
+  if (r >= 0)
+    return r;
+  int64_t out = 0;
+  if (!far_i64_add_ok(r, m, &out))
+    return 0;
+  return out;
 }
 int64_t far_gcd(int64_t a, int64_t b) {
   if (a == 0)
-    return b < 0 ? -b : b;
+    return far_iabs(b);
   if (b == 0)
-    return a < 0 ? -a : a;
+    return far_iabs(a);
   uint64_t ua = (uint64_t)(a < 0 ? -(uint64_t)a : (uint64_t)a);
   uint64_t ub = (uint64_t)(b < 0 ? -(uint64_t)b : (uint64_t)b);
   while (ub) {
@@ -2290,6 +2789,9 @@ int64_t far_gcd(int64_t a, int64_t b) {
     ub = ua % ub;
     ua = t;
   }
+  /* |INT64_MIN| does not fit in int64_t; match far_iabs(INT64_MIN) -> INT64_MAX. */
+  if (ua > (uint64_t)INT64_MAX)
+    return INT64_MAX;
   return (int64_t)ua;
 }
 int64_t far_lcm(int64_t a, int64_t b) {
@@ -2297,56 +2799,96 @@ int64_t far_lcm(int64_t a, int64_t b) {
   int64_t g = far_gcd(a, b);
   int64_t qa = far_iabs(a / g);
   int64_t qb = far_iabs(b);
-  if (qa != 0 && qb > INT64_MAX / qa) return 0;
-  return qa * qb;
+  return far_i64_mul_or_zero(qa, qb);
 }
 int64_t far_factorial(int64_t n) {
-  if (n < 0) return 0;
+  if (n < 0)
+    return 0;
+  if (n > (1 << 20))
+    return 0;
   int64_t r = 1;
-  for (int64_t i = 2; i <= n; ++i) r *= i;
+  for (int64_t i = 2; i <= n; ++i) {
+    r = far_i64_mul_or_zero(r, i);
+    if (r == 0)
+      return 0;
+  }
   return r;
 }
 int64_t far_binomial(int64_t n, int64_t k) {
   if (k < 0 || k > n) return 0;
+  if (k > (1 << 16) || n > (1 << 24)) return 0;
   if (k == 0 || k == n) return 1;
   k = far_i64_min(k, n - k);
   int64_t num = 1;
   int64_t den = 1;
   for (int64_t i = 1; i <= k; ++i) {
-    num *= (n - k + i);
-    den *= i;
+    num = far_i64_mul_or_zero(num, n - k + i);
+    if (num == 0)
+      return 0;
+    den = far_i64_mul_or_zero(den, i);
+    if (den == 0)
+      return 0;
   }
   return num / den;
 }
 int64_t far_isqrt(int64_t n) {
-  if (n < 0) return 0;
-  if (n < 2) return n;
-  int64_t x = n;
-  int64_t y = (x + 1) / 2;
+  if (n < 0)
+    return 0;
+  if (n < 2)
+    return n;
+  uint64_t un = (uint64_t)n;
+  uint64_t x = un;
+  uint64_t y = (x + 1) / 2;
   while (y < x) {
     x = y;
-    y = (x + n / x) / 2;
+    y = (x + un / x) / 2;
   }
-  return x;
+  return (int64_t)x;
 }
 int64_t far_sum_range(int64_t lo, int64_t hi) {
+  if (halfopen_span_checked(lo, hi) < 0)
+    return 0;
   int64_t total = 0;
-  for (int64_t i = lo; i < hi; ++i) total += i;
+  for (int64_t i = lo; i < hi; ++i) {
+    if (!far_i64_add_ok(total, i, &total))
+      return 0;
+  }
   return total;
 }
-int64_t far_sum_range_inclusive(int64_t lo, int64_t hi) { return far_sum_range(lo, hi + 1); }
+int64_t far_sum_range_inclusive(int64_t lo, int64_t hi) {
+  if (lo > hi) {
+    int64_t t = lo;
+    lo = hi;
+    hi = t;
+  }
+  int64_t end = 0;
+  if (!far_i64_add_ok(hi, 1, &end))
+    return 0;
+  return far_sum_range(lo, end);
+}
 int64_t far_product_range(int64_t lo, int64_t hi) {
+  if (halfopen_span_checked(lo, hi) < 0)
+    return 0;
   int64_t total = 1;
-  for (int64_t i = lo; i < hi; ++i) total *= i;
+  for (int64_t i = lo; i < hi; ++i) {
+    total = far_i64_mul_or_zero(total, i);
+    if (total == 0)
+      return 0;
+  }
   return total;
 }
 static int64_t far_fib_impl(int64_t n) {
-  if (n < 0) return 0;
+  if (n < 0)
+    return 0;
+  if (n > (1 << 20))
+    return 0;
   if (n < 2) return n;
   int64_t a = 0;
   int64_t b = 1;
   for (int64_t i = 2; i <= n; ++i) {
-    int64_t t = a + b;
+    int64_t t = 0;
+    if (!far_i64_add_ok(a, b, &t))
+      return 0;
     a = b;
     b = t;
   }
@@ -2375,9 +2917,37 @@ double far_normalize_deg(double theta) {
   double t = far_fmod(theta, 360.0);
   return t < 0.0 ? t + 360.0 : t;
 }
-double far_sec(double x) { return 1.0 / far_cos(x); }
-double far_csc(double x) { return 1.0 / far_sin(x); }
-double far_cot(double x) { return far_cos(x) / far_sin(x); }
+
+double far_sec(double x) {
+  double c = far_cos(x);
+  if (far_recip_singular(c))
+    return 0.0;
+  double r = 1.0 / c;
+  if (r != r)
+    return 0.0;
+  return r;
+}
+double far_csc(double x) {
+  double s = far_sin(x);
+  if (far_recip_singular(s))
+    return 0.0;
+  double r = 1.0 / s;
+  if (r != r)
+    return 0.0;
+  return r;
+}
+double far_cot(double x) {
+  double s = far_sin(x);
+  if (far_recip_singular(s))
+    return 0.0;
+  double c = far_cos(x);
+  if (c != c)
+    return 0.0;
+  double r = c / s;
+  if (r != r)
+    return 0.0;
+  return r;
+}
 double far_haversine(double lat1, double lon1, double lat2, double lon2) {
   double dlat = far_deg_to_rad(lat2 - lat1);
   double dlon = far_deg_to_rad(lon2 - lon1);
@@ -2391,14 +2961,38 @@ double far_dmax(double a, double b) { return fmax(a, b); }
 double far_dmin3(double a, double b, double c) { return fmin(fmin(a, b), c); }
 double far_dmax3(double a, double b, double c) { return fmax(fmax(a, b), c); }
 double far_clamp_d(double x, double lo, double hi) {
+  if (x != x)
+    return 0.0;
+  if (lo > hi) {
+    double t = lo;
+    lo = hi;
+    hi = t;
+  }
   if (x < lo) return lo;
   if (x > hi) return hi;
   return x;
 }
-double far_saturate(double x) { return far_clamp_d(x, 0.0, 1.0); }
-double far_lerp(double a, double b, double t) { return a + (b - a) * t; }
-double far_inv_lerp(double a, double b, double v) { return (v - a) / (b - a); }
+double far_saturate(double x) {
+  if (x != x)
+    return 0.0;
+  return far_clamp_d(x, 0.0, 1.0);
+}
+double far_lerp(double a, double b, double t) {
+  if (a != a || b != b || t != t)
+    return 0.0;
+  return a + (b - a) * t;
+}
+double far_inv_lerp(double a, double b, double v) {
+  if (a != a || b != b || v != v)
+    return 0.0;
+  double d = b - a;
+  if (d == 0.0)
+    return 0.0;
+  return (v - a) / d;
+}
 double far_remap(double x, double in_lo, double in_hi, double out_lo, double out_hi) {
+  if (x != x || in_lo != in_lo || in_hi != in_hi || out_lo != out_lo || out_hi != out_hi)
+    return out_lo;
   return far_lerp(out_lo, out_hi, far_inv_lerp(in_lo, in_hi, x));
 }
 double far_square(double x) { return x * x; }
@@ -2413,13 +3007,36 @@ double far_dist2(double x1, double y1, double x2, double y2) {
 double far_dist(double x1, double y1, double x2, double y2) {
   return far_sqrt(far_dist2(x1, y1, x2, y2));
 }
-double far_sign_d(double x) { return x > 0.0 ? 1.0 : (x < 0.0 ? -1.0 : 0.0); }
-int64_t far_round_i(double x) { return (int64_t)far_round(x); }
-int64_t far_floor_i(double x) { return (int64_t)far_floor(x); }
-int64_t far_ceil_i(double x) { return (int64_t)far_ceil(x); }
-double far_log_n(double x, double base) { return far_log(x) / far_log(base); }
+double far_sign_d(double x) {
+  if (x != x)
+    return 0.0;
+  return x > 0.0 ? 1.0 : (x < 0.0 ? -1.0 : 0.0);
+}
+
+static int64_t far_d_to_i64_saturating(double x) {
+  if (x != x)
+    return 0;
+  if (x >= (double)INT64_MAX)
+    return INT64_MAX;
+  if (x <= (double)INT64_MIN)
+    return INT64_MIN;
+  return (int64_t)x;
+}
+
+int64_t far_round_i(double x) { return far_d_to_i64_saturating(far_round(x)); }
+int64_t far_floor_i(double x) { return far_d_to_i64_saturating(far_floor(x)); }
+int64_t far_ceil_i(double x) { return far_d_to_i64_saturating(far_ceil(x)); }
+double far_log_n(double x, double base) {
+  if (x != x || base != base)
+    return 0.0;
+  if (base == 1.0 || base == 0.0 || base < 0.0 || x <= 0.0)
+    return 0.0;
+  return far_log(x) / far_log(base);
+}
 double far_exp10(double x) { return far_pow(10.0, x); }
 double far_smoothstep(double edge0, double edge1, double x) {
+  if (edge0 == edge1)
+    return x >= edge0 ? 1.0 : 0.0;
   double t = far_saturate(far_inv_lerp(edge0, edge1, x));
   return t * t * (3.0 - 2.0 * t);
 }
@@ -2435,7 +3052,8 @@ double far_stddev2(double a, double b) { return far_sqrt(far_variance2(a, b)); }
 
 int64_t far_arr_min(int64_t handle) {
   FarTypedArray* arr = tarray_from_handle(handle);
-  if (!arr || arr->len == 0) return 0;
+  if (!arr || arr->len == 0)
+    return 0;
   int64_t m = arr->data[0];
   for (int64_t i = 1; i < arr->len; ++i)
     if (arr->data[i] < m) m = arr->data[i];
@@ -2443,7 +3061,8 @@ int64_t far_arr_min(int64_t handle) {
 }
 int64_t far_arr_max(int64_t handle) {
   FarTypedArray* arr = tarray_from_handle(handle);
-  if (!arr || arr->len == 0) return 0;
+  if (!arr || arr->len == 0)
+    return 0;
   int64_t m = arr->data[0];
   for (int64_t i = 1; i < arr->len; ++i)
     if (arr->data[i] > m) m = arr->data[i];
@@ -2452,19 +3071,25 @@ int64_t far_arr_max(int64_t handle) {
 
 int64_t far_arr_sum(int64_t handle) {
   FarTypedArray* arr = tarray_from_handle(handle);
-  if (!arr) return 0;
+  if (!arr)
+    return 0;
   int64_t total = 0;
-  for (int64_t i = 0; i < arr->len; ++i) total += arr->data[i];
+  for (int64_t i = 0; i < arr->len; ++i) {
+    if (!far_i64_add_ok(total, arr->data[i], &total))
+      return 0;
+  }
   return total;
 }
 int64_t far_arr_mean(int64_t handle) {
   FarTypedArray* arr = tarray_from_handle(handle);
-  if (!arr || arr->len == 0) return 0;
+  if (!arr || arr->len == 0)
+    return 0;
   return far_arr_sum(handle) / arr->len;
 }
 int64_t far_arr_count(int64_t handle, int64_t value) {
   FarTypedArray* arr = tarray_from_handle(handle);
-  if (!arr) return 0;
+  if (!arr)
+    return 0;
   int64_t c = 0;
   for (int64_t i = 0; i < arr->len; ++i)
     if (arr->data[i] == value) ++c;
@@ -2472,7 +3097,8 @@ int64_t far_arr_count(int64_t handle, int64_t value) {
 }
 int64_t far_arr_index_of(int64_t handle, int64_t value) {
   FarTypedArray* arr = tarray_from_handle(handle);
-  if (!arr) return -1;
+  if (!arr)
+    return -1;
   for (int64_t i = 0; i < arr->len; ++i)
     if (arr->data[i] == value) return i;
   return -1;
@@ -2502,18 +3128,19 @@ void far_rect_union(const FarDRect* a, const FarDRect* b, FarDRect* out) {
 }
 
 int64_t far_box_alloc(int64_t size) {
-  if (size <= 0)
+  if (!far_alloc_size_ok(size))
     return 0;
   void* p = calloc(1, (size_t)size);
   if (!p)
-    far_panic(0);
+    return 0;
   return (int64_t)(uintptr_t)p;
 }
 
 int64_t far_union_new(int64_t tag, int64_t f0, int64_t f1, int64_t f2, int64_t f3, int64_t f4,
                       int64_t f5, int64_t f6, int64_t f7) {
   int64_t* p = (int64_t*)malloc(9 * sizeof(int64_t));
-  if (!p) return 0;
+  if (!p)
+    return 0;
   p[0] = tag;
   p[1] = f0;
   p[2] = f1;
@@ -2533,12 +3160,14 @@ void far_union_drop(int64_t handle) {
 }
 
 int64_t far_union_tag(int64_t handle) {
-  if (!handle) return -1;
+  if (!handle)
+    return -1;
   return ((int64_t*)(uintptr_t)handle)[0];
 }
 
 int64_t far_union_field(int64_t handle, int64_t idx) {
-  if (!handle || idx < 0 || idx > 7) return 0;
+  if (!handle || idx < 0 || idx > 7)
+    return 0;
   return ((int64_t*)(uintptr_t)handle)[1 + idx];
 }
 
@@ -2581,10 +3210,11 @@ typedef struct FarPool {
 } FarPool;
 
 int64_t far_malloc(int64_t size) {
-  if (size <= 0) return 0;
+  if (!far_alloc_size_ok(size))
+    return 0;
   void* p = malloc((size_t)size);
   if (!p)
-    far_panic(0);
+    return 0;
   return (int64_t)(uintptr_t)p;
 }
 
@@ -2594,34 +3224,36 @@ void far_free(int64_t ptr) {
 }
 
 int64_t far_realloc(int64_t ptr, int64_t size) {
-  if (size <= 0) {
-    if (ptr)
-      free((void*)(uintptr_t)ptr);
+  if (!far_alloc_size_ok(size))
     return 0;
-  }
   void* p = realloc((void*)(uintptr_t)ptr, (size_t)size);
   if (!p)
-    far_panic(0);
+    return 0;
   return (int64_t)(uintptr_t)p;
 }
 
 void far_ptr_store_i64(int64_t ptr, int64_t val) {
-  if (ptr)
-    *(int64_t*)(uintptr_t)ptr = val;
+  if (!ptr)
+    return;
+  *(int64_t*)(uintptr_t)ptr = val;
 }
 
 int64_t far_ptr_load_i64(int64_t ptr) {
-  if (!ptr) return 0;
+  if (!ptr)
+    return 0;
   return *(int64_t*)(uintptr_t)ptr;
 }
 
 static FarMemBox* box_from(int64_t h) { return (FarMemBox*)(uintptr_t)h; }
 
 int64_t far_box_new(int64_t size) {
+  if (!far_alloc_size_ok(size))
+    return 0;
   FarMemBox* b = (FarMemBox*)malloc(sizeof(FarMemBox));
-  if (!b) return 0;
-  void* data = size > 0 ? calloc(1, (size_t)size) : NULL;
-  if (size > 0 && !data) {
+  if (!b)
+    return 0;
+  void* data = calloc(1, (size_t)size);
+  if (!data) {
     free(b);
     return 0;
   }
@@ -2632,8 +3264,12 @@ int64_t far_box_new(int64_t size) {
 }
 
 int64_t far_box_get(int64_t handle) {
+  if (!handle)
+    return 0;
   FarMemBox* b = box_from(handle);
-  return b && b->alive ? b->data : 0;
+  if (!b || !b->alive)
+    return 0;
+  return b->data;
 }
 
 void far_box_drop(int64_t handle) {
@@ -2644,12 +3280,14 @@ void far_box_drop(int64_t handle) {
   b->data = 0;
   b->size = 0;
   b->alive = 0;
-  free(b);
 }
 
 int64_t far_box_move(int64_t handle) {
+  if (!handle)
+    return 0;
   FarMemBox* b = box_from(handle);
-  if (!b || !b->alive) return 0;
+  if (!b || !b->alive)
+    return 0;
   int64_t data = b->data;
   b->data = 0;
   b->alive = 0;
@@ -2660,10 +3298,13 @@ int64_t far_box_move(int64_t handle) {
 static FarMemRc* rc_from(int64_t h) { return (FarMemRc*)(uintptr_t)h; }
 
 int64_t far_rc_new(int64_t size) {
+  if (!far_alloc_size_ok(size))
+    return 0;
   FarMemRc* r = (FarMemRc*)malloc(sizeof(FarMemRc));
-  if (!r) return 0;
-  void* data = size > 0 ? calloc(1, (size_t)size) : NULL;
-  if (size > 0 && !data) {
+  if (!r)
+    return 0;
+  void* data = calloc(1, (size_t)size);
+  if (!data) {
     free(r);
     return 0;
   }
@@ -2674,13 +3315,18 @@ int64_t far_rc_new(int64_t size) {
 }
 
 int64_t far_rc_get(int64_t handle) {
+  if (!handle)
+    return 0;
   FarMemRc* r = rc_from(handle);
-  return (r && r->rc > 0) ? r->data : 0;
+  if (!r || r->rc <= 0)
+    return 0;
+  return r->data;
 }
 
 int64_t far_rc_clone(int64_t handle) {
   FarMemRc* r = rc_from(handle);
-  if (!r) return 0;
+  if (!r)
+    return 0;
   far_spawn_mu_ensure();
   pthread_mutex_lock(&g_spawn_mu);
   if (r->rc <= 0) {
@@ -2708,17 +3354,22 @@ void far_rc_drop(int64_t handle) {
     if (r->data) free((void*)(uintptr_t)r->data);
     r->data = 0;
     r->rc = 0;
-    free(r);
+    /* Keep header so stale handles cannot UAF on clone/get. */
   }
 }
 
 static FarArena* arena_from(int64_t h) { return (FarArena*)(uintptr_t)h; }
 
 int64_t far_arena_new(int64_t cap) {
+  if (cap <= 0 || cap > FAR_ARENA_MAX_CAP)
+    return 0;
+  if ((uint64_t)cap > (uint64_t)SIZE_MAX)
+    return 0;
   FarArena* a = (FarArena*)malloc(sizeof(FarArena));
-  if (!a) return 0;
-  a->base = cap > 0 ? (char*)malloc((size_t)cap) : NULL;
-  if (cap > 0 && !a->base) {
+  if (!a)
+    return 0;
+  a->base = (char*)malloc((size_t)cap);
+  if (!a->base) {
     free(a);
     return 0;
   }
@@ -2729,23 +3380,34 @@ int64_t far_arena_new(int64_t cap) {
 
 int64_t far_arena_alloc(int64_t handle, int64_t size) {
   FarArena* a = arena_from(handle);
-  if (!a || !a->base || size <= 0) return 0;
+  if (!a || !a->base)
+    return 0;
+  if (size <= 0)
+    return 0;
   int64_t align = 8;
   int64_t off = (a->off + align - 1) & ~(align - 1);
-  if (off < 0 || off > a->cap) return 0;
-  if ((uint64_t)size > (uint64_t)a->cap - (uint64_t)off) return 0;
-  a->off = off + size;
+  if (off < 0 || off > a->cap)
+    return 0;
+  if ((uint64_t)size > (uint64_t)a->cap - (uint64_t)off)
+    return 0;
+  int64_t new_off = 0;
+  if (!far_i64_add_ok(off, size, &new_off))
+    return 0;
+  a->off = new_off;
   return (int64_t)(uintptr_t)(a->base + off);
 }
 
 void far_arena_reset(int64_t handle) {
   FarArena* a = arena_from(handle);
-  if (a) a->off = 0;
+  if (!a)
+    return;
+  a->off = 0;
 }
 
 void far_arena_drop(int64_t handle) {
   FarArena* a = arena_from(handle);
-  if (!a) return;
+  if (!a)
+    return;
   if (a->base) free(a->base);
   free(a);
 }
@@ -2753,10 +3415,20 @@ void far_arena_drop(int64_t handle) {
 static FarPool* pool_from(int64_t h) { return (FarPool*)(uintptr_t)h; }
 
 int64_t far_pool_new(int64_t elem_size, int64_t cap) {
-  if (cap <= 0 || cap > (int64_t)INT32_MAX || elem_size <= 0)
+  if (cap <= 0 || cap > FAR_COLL_MAX_CAP || elem_size <= 0)
+    return 0;
+  if ((uint64_t)elem_size > FAR_POOL_MAX_ELEM)
+    return 0;
+  if ((uint64_t)elem_size > (uint64_t)SIZE_MAX)
+    return 0;
+  if ((uint64_t)cap > (uint64_t)SIZE_MAX / (uint64_t)elem_size)
+    return 0;
+  if ((uint64_t)cap > (uint64_t)SIZE_MAX / sizeof(int64_t) ||
+      (uint64_t)cap > (uint64_t)SIZE_MAX / sizeof(void*))
     return 0;
   FarPool* p = (FarPool*)malloc(sizeof(FarPool));
-  if (!p) return 0;
+  if (!p)
+    return 0;
   p->elem_size = elem_size;
   p->cap = cap;
   p->free_count = cap;
@@ -2785,7 +3457,10 @@ int64_t far_pool_new(int64_t elem_size, int64_t cap) {
 
 int64_t far_pool_acquire(int64_t handle) {
   FarPool* p = pool_from(handle);
-  if (!p || p->free_count <= 0) return 0;
+  if (!p)
+    return 0;
+  if (p->free_count <= 0)
+    return 0;
   p->free_count--;
   int64_t idx = p->free_stack[p->free_count];
   return (int64_t)(uintptr_t)p->objects[idx];
@@ -2793,7 +3468,10 @@ int64_t far_pool_acquire(int64_t handle) {
 
 void far_pool_release(int64_t handle, int64_t obj) {
   FarPool* p = pool_from(handle);
-  if (!p || p->free_count >= p->cap) return;
+  if (!p)
+    return;
+  if (p->free_count >= p->cap)
+    return;
   for (int64_t i = 0; i < p->cap; ++i) {
     if ((int64_t)(uintptr_t)p->objects[i] == obj) {
       for (int64_t j = 0; j < p->free_count; ++j) {
@@ -2808,7 +3486,8 @@ void far_pool_release(int64_t handle, int64_t obj) {
 
 void far_pool_drop(int64_t handle) {
   FarPool* p = pool_from(handle);
-  if (!p) return;
+  if (!p)
+    return;
   for (int64_t i = 0; i < p->cap; ++i)
     if (p->objects[i]) free(p->objects[i]);
   free(p->objects);
@@ -2845,10 +3524,11 @@ static int32_t sanitize_cap(int64_t cap, int64_t default_cap) {
 
 int64_t far_channel_new(int64_t cap) {
   int32_t icap = sanitize_cap(cap, 8);
-  if (icap < 0)
+  if (icap < 0 || icap > FAR_CHAN_MAX_CAP)
     return 0;
   FarChannel* c = (FarChannel*)calloc(1, sizeof(FarChannel));
-  if (!c) return 0;
+  if (!c)
+    return 0;
   c->cap = icap;
   c->buf = (int64_t*)malloc((size_t)icap * sizeof(int64_t));
   if (!c->buf) {
@@ -2864,7 +3544,8 @@ int64_t far_channel_new(int64_t cap) {
 
 int64_t far_channel_send(int64_t handle, int64_t value) {
   FarChannel* c = channel_from(handle);
-  if (!c) return -1;
+  if (!c)
+    return -1;
   pthread_mutex_lock(&c->mu);
   if (c->freeing) {
     pthread_mutex_unlock(&c->mu);
@@ -2893,11 +3574,12 @@ int64_t far_channel_send(int64_t handle, int64_t value) {
 
 int64_t far_channel_recv(int64_t handle) {
   FarChannel* c = channel_from(handle);
-  if (!c) return -1;
+  if (!c)
+    return INT64_MIN;
   pthread_mutex_lock(&c->mu);
   if (c->freeing) {
     pthread_mutex_unlock(&c->mu);
-    return -1;
+    return INT64_MIN;
   }
   c->active++;
   while (c->count == 0 && !c->closed)
@@ -2907,7 +3589,8 @@ int64_t far_channel_recv(int64_t handle) {
     if (c->freeing && c->active == 0)
       pthread_cond_signal(&c->drained);
     pthread_mutex_unlock(&c->mu);
-    return -1;
+    /* Closed and drained: INT64_MIN signals no more values. */
+    return INT64_MIN;
   }
   int64_t value = c->buf[c->head];
   c->head = (c->head + 1) % c->cap;
@@ -2920,14 +3603,91 @@ int64_t far_channel_recv(int64_t handle) {
   return value;
 }
 
+int64_t far_channel_try_recv(int64_t handle) {
+  FarChannel* c = channel_from(handle);
+  if (!c)
+    return INT64_MIN;
+  pthread_mutex_lock(&c->mu);
+  if (c->freeing) {
+    pthread_mutex_unlock(&c->mu);
+    return INT64_MIN;
+  }
+  c->active++;
+  if (c->count == 0) {
+    c->active--;
+    if (c->freeing && c->active == 0)
+      pthread_cond_signal(&c->drained);
+    pthread_mutex_unlock(&c->mu);
+    return INT64_MIN;
+  }
+  int64_t value = c->buf[c->head];
+  c->head = (c->head + 1) % c->cap;
+  c->count--;
+  pthread_cond_signal(&c->not_full);
+  c->active--;
+  if (c->freeing && c->active == 0)
+    pthread_cond_signal(&c->drained);
+  pthread_mutex_unlock(&c->mu);
+  return value;
+}
+
+int64_t far_channel_try_send(int64_t handle, int64_t value) {
+  FarChannel* c = channel_from(handle);
+  if (!c)
+    return -1;
+  pthread_mutex_lock(&c->mu);
+  if (c->freeing) {
+    pthread_mutex_unlock(&c->mu);
+    return -1;
+  }
+  c->active++;
+  if (c->closed || c->count >= c->cap) {
+    c->active--;
+    if (c->freeing && c->active == 0)
+      pthread_cond_signal(&c->drained);
+    pthread_mutex_unlock(&c->mu);
+    return -1;
+  }
+  c->buf[c->tail] = value;
+  c->tail = (c->tail + 1) % c->cap;
+  c->count++;
+  pthread_cond_signal(&c->not_empty);
+  c->active--;
+  if (c->freeing && c->active == 0)
+    pthread_cond_signal(&c->drained);
+  pthread_mutex_unlock(&c->mu);
+  return 0;
+}
+
 void far_channel_close(int64_t handle) {
   FarChannel* c = channel_from(handle);
-  if (!c) return;
+  if (!c)
+    return;
   pthread_mutex_lock(&c->mu);
   c->closed = 1;
   pthread_cond_broadcast(&c->not_empty);
   pthread_cond_broadcast(&c->not_full);
   pthread_mutex_unlock(&c->mu);
+}
+
+int64_t far_channel_is_closed(int64_t handle) {
+  FarChannel* c = channel_from(handle);
+  if (!c)
+    return 0;
+  pthread_mutex_lock(&c->mu);
+  int closed = c->closed;
+  pthread_mutex_unlock(&c->mu);
+  return closed ? 1 : 0;
+}
+
+int64_t far_channel_pending(int64_t handle) {
+  FarChannel* c = channel_from(handle);
+  if (!c)
+    return 0;
+  pthread_mutex_lock(&c->mu);
+  int64_t n = c->count;
+  pthread_mutex_unlock(&c->mu);
+  return n;
 }
 
 void far_channel_drop(int64_t handle) {
@@ -2951,6 +3711,7 @@ void far_channel_drop(int64_t handle) {
 
 typedef struct {
   pthread_mutex_t mu;
+  int locked;
 } FarMutex;
 
 static FarMutex* mutex_from(int64_t handle) {
@@ -2959,24 +3720,44 @@ static FarMutex* mutex_from(int64_t handle) {
 
 int64_t far_mutex_new(void) {
   FarMutex* m = (FarMutex*)calloc(1, sizeof(FarMutex));
-  if (!m) return 0;
+  if (!m)
+    return 0;
   pthread_mutex_init(&m->mu, NULL);
   return (int64_t)(uintptr_t)m;
 }
 
 void far_mutex_lock(int64_t handle) {
   FarMutex* m = mutex_from(handle);
-  if (m) pthread_mutex_lock(&m->mu);
+  if (!m)
+    return;
+  if (m->locked) {
+    far_panic(0);
+    return;
+  }
+  pthread_mutex_lock(&m->mu);
+  m->locked = 1;
 }
 
 void far_mutex_unlock(int64_t handle) {
   FarMutex* m = mutex_from(handle);
-  if (m) pthread_mutex_unlock(&m->mu);
+  if (!m)
+    return;
+  if (!m->locked) {
+    far_panic(0);
+    return;
+  }
+  m->locked = 0;
+  pthread_mutex_unlock(&m->mu);
 }
 
 void far_mutex_drop(int64_t handle) {
   FarMutex* m = mutex_from(handle);
-  if (!m) return;
+  if (!m)
+    return;
+  if (m->locked) {
+    far_panic(0);
+    return;
+  }
   pthread_mutex_destroy(&m->mu);
   free(m);
 }
@@ -2992,8 +3773,11 @@ static FarSemaphore* semaphore_from(int64_t handle) {
 }
 
 int64_t far_semaphore_new(int64_t initial) {
+  if (initial < 0 || initial > (int64_t)INT_MAX)
+    return 0;
   FarSemaphore* s = (FarSemaphore*)calloc(1, sizeof(FarSemaphore));
-  if (!s) return 0;
+  if (!s)
+    return 0;
   s->count = (int)initial;
   pthread_mutex_init(&s->mu, NULL);
   pthread_cond_init(&s->cv, NULL);
@@ -3002,7 +3786,8 @@ int64_t far_semaphore_new(int64_t initial) {
 
 void far_semaphore_wait(int64_t handle) {
   FarSemaphore* s = semaphore_from(handle);
-  if (!s) return;
+  if (!s)
+    return;
   pthread_mutex_lock(&s->mu);
   while (s->count <= 0)
     pthread_cond_wait(&s->cv, &s->mu);
@@ -3010,18 +3795,35 @@ void far_semaphore_wait(int64_t handle) {
   pthread_mutex_unlock(&s->mu);
 }
 
+int64_t far_semaphore_try_wait(int64_t handle) {
+  FarSemaphore* s = semaphore_from(handle);
+  if (!s)
+    return 0;
+  pthread_mutex_lock(&s->mu);
+  if (s->count <= 0) {
+    pthread_mutex_unlock(&s->mu);
+    return 0;
+  }
+  s->count--;
+  pthread_mutex_unlock(&s->mu);
+  return 1;
+}
+
 void far_semaphore_signal(int64_t handle) {
   FarSemaphore* s = semaphore_from(handle);
-  if (!s) return;
+  if (!s)
+    return;
   pthread_mutex_lock(&s->mu);
-  s->count++;
+  if (s->count < INT_MAX)
+    s->count++;
   pthread_cond_signal(&s->cv);
   pthread_mutex_unlock(&s->mu);
 }
 
 void far_semaphore_drop(int64_t handle) {
   FarSemaphore* s = semaphore_from(handle);
-  if (!s) return;
+  if (!s)
+    return;
   pthread_mutex_destroy(&s->mu);
   pthread_cond_destroy(&s->cv);
   free(s);
@@ -3038,7 +3840,8 @@ static FarAtomic* atomic_from(int64_t handle) {
 
 int64_t far_atomic_new(int64_t initial) {
   FarAtomic* a = (FarAtomic*)calloc(1, sizeof(FarAtomic));
-  if (!a) return 0;
+  if (!a)
+    return 0;
   a->value = initial;
   pthread_mutex_init(&a->mu, NULL);
   return (int64_t)(uintptr_t)a;
@@ -3046,7 +3849,8 @@ int64_t far_atomic_new(int64_t initial) {
 
 int64_t far_atomic_load(int64_t handle) {
   FarAtomic* a = atomic_from(handle);
-  if (!a) return 0;
+  if (!a)
+    return 0;
   pthread_mutex_lock(&a->mu);
   int64_t v = a->value;
   pthread_mutex_unlock(&a->mu);
@@ -3055,7 +3859,8 @@ int64_t far_atomic_load(int64_t handle) {
 
 void far_atomic_store(int64_t handle, int64_t value) {
   FarAtomic* a = atomic_from(handle);
-  if (!a) return;
+  if (!a)
+    return;
   pthread_mutex_lock(&a->mu);
   a->value = value;
   pthread_mutex_unlock(&a->mu);
@@ -3063,17 +3868,21 @@ void far_atomic_store(int64_t handle, int64_t value) {
 
 int64_t far_atomic_fetch_add(int64_t handle, int64_t delta) {
   FarAtomic* a = atomic_from(handle);
-  if (!a) return 0;
+  if (!a)
+    return 0;
   pthread_mutex_lock(&a->mu);
   int64_t prev = a->value;
-  a->value += delta;
+  int64_t next = 0;
+  if (far_i64_add_ok(prev, delta, &next))
+    a->value = next;
   pthread_mutex_unlock(&a->mu);
   return prev;
 }
 
 int64_t far_atomic_compare_exchange(int64_t handle, int64_t expected, int64_t desired) {
   FarAtomic* a = atomic_from(handle);
-  if (!a) return 0;
+  if (!a)
+    return 0;
   pthread_mutex_lock(&a->mu);
   int64_t prev = a->value;
   if (prev == expected)
@@ -3084,7 +3893,8 @@ int64_t far_atomic_compare_exchange(int64_t handle, int64_t expected, int64_t de
 
 void far_atomic_drop(int64_t handle) {
   FarAtomic* a = atomic_from(handle);
-  if (!a) return;
+  if (!a)
+    return;
   pthread_mutex_destroy(&a->mu);
   free(a);
 }
@@ -3104,10 +3914,11 @@ static FarLFQueue* lfqueue_from(int64_t handle) {
 
 int64_t far_lfqueue_new(int64_t cap) {
   int32_t icap = sanitize_cap(cap, 16);
-  if (icap < 0)
+  if (icap < 0 || icap > FAR_CHAN_MAX_CAP)
     return 0;
   FarLFQueue* q = (FarLFQueue*)calloc(1, sizeof(FarLFQueue));
-  if (!q) return 0;
+  if (!q)
+    return 0;
   q->cap = icap;
   q->buf = (int64_t*)malloc((size_t)icap * sizeof(int64_t));
   if (!q->buf) {
@@ -3120,7 +3931,8 @@ int64_t far_lfqueue_new(int64_t cap) {
 
 int64_t far_lfqueue_push(int64_t handle, int64_t value) {
   FarLFQueue* q = lfqueue_from(handle);
-  if (!q) return -1;
+  if (!q)
+    return -1;
   pthread_mutex_lock(&q->mu);
   if (q->count >= q->cap) {
     pthread_mutex_unlock(&q->mu);
@@ -3135,7 +3947,8 @@ int64_t far_lfqueue_push(int64_t handle, int64_t value) {
 
 int64_t far_lfqueue_pop(int64_t handle) {
   FarLFQueue* q = lfqueue_from(handle);
-  if (!q) return -1;
+  if (!q)
+    return -1;
   pthread_mutex_lock(&q->mu);
   if (q->count == 0) {
     pthread_mutex_unlock(&q->mu);
@@ -3150,7 +3963,8 @@ int64_t far_lfqueue_pop(int64_t handle) {
 
 void far_lfqueue_drop(int64_t handle) {
   FarLFQueue* q = lfqueue_from(handle);
-  if (!q) return;
+  if (!q)
+    return;
   pthread_mutex_destroy(&q->mu);
   free(q->buf);
   free(q);
@@ -3167,22 +3981,37 @@ static FarThreadPool* threadpool_from(int64_t handle) {
 }
 
 int64_t far_threadpool_new(int64_t nworkers) {
-  if (nworkers <= 0) nworkers = 2;
+  if (nworkers <= 0)
+    nworkers = 2;
+  if (nworkers > 1024)
+    nworkers = 1024;
   FarThreadPool* p = (FarThreadPool*)calloc(1, sizeof(FarThreadPool));
-  if (!p) return 0;
+  if (!p)
+    return 0;
   p->nworkers = (int)nworkers;
   pthread_mutex_init(&p->mu, NULL);
   return (int64_t)(uintptr_t)p;
 }
 
 int64_t far_threadpool_submit(int64_t handle, void* fn, int64_t arg) {
-  (void)handle;
-  return far_spawn(fn, 1, arg, 0, 0, 0);
+  FarThreadPool* p = threadpool_from(handle);
+  if (!p)
+    return -1;
+  pthread_mutex_lock(&p->mu);
+  int shutdown = p->shutdown;
+  pthread_mutex_unlock(&p->mu);
+  if (shutdown)
+    return -1;
+  int64_t task = far_spawn(fn, 1, arg, 0, 0, 0);
+  if (task < 0)
+    return -1;
+  return task;
 }
 
 void far_threadpool_shutdown(int64_t handle) {
   FarThreadPool* p = threadpool_from(handle);
-  if (!p) return;
+  if (!p)
+    return;
   pthread_mutex_lock(&p->mu);
   p->shutdown = 1;
   pthread_mutex_unlock(&p->mu);
@@ -3190,14 +4019,21 @@ void far_threadpool_shutdown(int64_t handle) {
 
 void far_threadpool_drop(int64_t handle) {
   FarThreadPool* p = threadpool_from(handle);
-  if (!p) return;
+  if (!p)
+    return;
   pthread_mutex_destroy(&p->mu);
   free(p);
 }
 
 int64_t far_parallel_for(void* fn, int64_t start, int64_t end) {
   if (end <= start) return 0;
-  int64_t n = end - start;
+  if (!fn)
+    return -1;
+  int64_t n;
+  if (__builtin_sub_overflow(end, start, &n))
+    return -1;
+  if (n > (1 << 24))
+    return -1;
   int64_t max_workers = far_thread_count();
   if (max_workers < 1) max_workers = 1;
   if (max_workers > 64) max_workers = 64;
@@ -3206,10 +4042,19 @@ int64_t far_parallel_for(void* fn, int64_t start, int64_t end) {
     int64_t batch = n - base;
     if (batch > max_workers) batch = max_workers;
     int64_t* handles = (int64_t*)malloc((size_t)batch * sizeof(int64_t));
-    if (!handles) return -1;
+    if (!handles)
+      return -1;
     int64_t spawned = 0;
     for (int64_t i = 0; i < batch; ++i) {
-      handles[i] = far_spawn(fn, 1, start + base + i, 0, 0, 0);
+      int64_t idx = 0;
+      int64_t t = 0;
+      if (!far_i64_add_ok(start, base, &t) || !far_i64_add_ok(t, i, &idx)) {
+        for (int64_t j = 0; j < spawned; ++j)
+          far_join(handles[j]);
+        free(handles);
+        return -1;
+      }
+      handles[i] = far_spawn(fn, 1, idx, 0, 0, 0);
       if (handles[i] < 0) {
         for (int64_t j = 0; j < spawned; ++j)
           far_join(handles[j]);
@@ -3218,8 +4063,15 @@ int64_t far_parallel_for(void* fn, int64_t start, int64_t end) {
       }
       spawned++;
     }
-    for (int64_t i = 0; i < batch; ++i)
-      total += far_join(handles[i]);
+    for (int64_t i = 0; i < batch; ++i) {
+      int64_t jr = far_join(handles[i]);
+      if (!far_i64_add_ok(total, jr, &total)) {
+        for (int64_t j = i + 1; j < batch; ++j)
+          (void)far_join(handles[j]);
+        free(handles);
+        return -1;
+      }
+    }
     free(handles);
   }
   return total;
@@ -3231,7 +4083,13 @@ static int64_t far_pfor_closure_tramp(int64_t closure, int64_t idx) {
 
 int64_t far_parallel_for_cl(int64_t closure, int64_t start, int64_t end) {
   if (end <= start) return 0;
-  int64_t n = end - start;
+  if (!closure)
+    return -1;
+  int64_t n;
+  if (__builtin_sub_overflow(end, start, &n))
+    return -1;
+  if (n > (1 << 24))
+    return -1;
   int64_t max_workers = far_thread_count();
   if (max_workers < 1) max_workers = 1;
   if (max_workers > 64) max_workers = 64;
@@ -3240,10 +4098,19 @@ int64_t far_parallel_for_cl(int64_t closure, int64_t start, int64_t end) {
     int64_t batch = n - base;
     if (batch > max_workers) batch = max_workers;
     int64_t* handles = (int64_t*)malloc((size_t)batch * sizeof(int64_t));
-    if (!handles) return -1;
+    if (!handles)
+      return -1;
     int64_t spawned = 0;
     for (int64_t i = 0; i < batch; ++i) {
-      handles[i] = far_spawn((void*)far_pfor_closure_tramp, 2, closure, start + base + i, 0, 0);
+      int64_t idx = 0;
+      int64_t t = 0;
+      if (!far_i64_add_ok(start, base, &t) || !far_i64_add_ok(t, i, &idx)) {
+        for (int64_t j = 0; j < spawned; ++j)
+          far_join(handles[j]);
+        free(handles);
+        return -1;
+      }
+      handles[i] = far_spawn((void*)far_pfor_closure_tramp, 2, closure, idx, 0, 0);
       if (handles[i] < 0) {
         for (int64_t j = 0; j < spawned; ++j)
           far_join(handles[j]);
@@ -3252,8 +4119,15 @@ int64_t far_parallel_for_cl(int64_t closure, int64_t start, int64_t end) {
       }
       spawned++;
     }
-    for (int64_t i = 0; i < batch; ++i)
-      total += far_join(handles[i]);
+    for (int64_t i = 0; i < batch; ++i) {
+      int64_t jr = far_join(handles[i]);
+      if (!far_i64_add_ok(total, jr, &total)) {
+        for (int64_t j = i + 1; j < batch; ++j)
+          (void)far_join(handles[j]);
+        free(handles);
+        return -1;
+      }
+    }
     free(handles);
   }
   return total;
@@ -3278,11 +4152,18 @@ static FarActorSlot* g_actors = NULL;
 static size_t g_actor_cap = 0;
 
 static int ensure_actor_cap(size_t need) {
+  if (need > FAR_MAX_ACTORS)
+    return 0;
   if (need <= g_actor_cap)
     return 1;
   size_t new_cap = g_actor_cap == 0 ? 8 : g_actor_cap * 2;
-  while (new_cap < need)
+  while (new_cap < need) {
+    if (new_cap > SIZE_MAX / 2)
+      return 0;
     new_cap *= 2;
+  }
+  if (new_cap > SIZE_MAX / sizeof(FarActorSlot))
+    return 0;
   FarActorSlot* nt = (FarActorSlot*)realloc(g_actors, new_cap * sizeof(FarActorSlot));
   if (!nt)
     return 0;
@@ -3307,6 +4188,8 @@ static FarActor* actor_from(int64_t handle) {
 }
 
 int64_t far_actor_spawn(void* fn, int64_t initial_state) {
+  if (!fn)
+    return -1;
   FarActor* a = (FarActor*)calloc(1, sizeof(FarActor));
   if (!a)
     return -1;
@@ -3349,6 +4232,10 @@ void far_actor_tell(int64_t handle, int64_t msg) {
   }
   FarActorHandler handler = a->handler;
   int64_t state = a->state;
+  if (!handler) {
+    pthread_mutex_unlock(&a->mu);
+    return;
+  }
   a->active++;
   pthread_mutex_unlock(&a->mu);
   int64_t new_state = handler(state, msg);
@@ -3366,16 +4253,20 @@ int64_t far_actor_ask(int64_t handle, int64_t msg) {
   FarActor* a = actor_from_locked(handle);
   if (!a) {
     pthread_mutex_unlock(&g_spawn_mu);
-    return -1;
+    return INT64_MIN;
   }
   pthread_mutex_lock(&a->mu);
   pthread_mutex_unlock(&g_spawn_mu);
   if (a->stopped) {
     pthread_mutex_unlock(&a->mu);
-    return -1;
+    return INT64_MIN;
   }
   FarActorHandler handler = a->handler;
   int64_t state = a->state;
+  if (!handler) {
+    pthread_mutex_unlock(&a->mu);
+    return INT64_MIN;
+  }
   a->active++;
   pthread_mutex_unlock(&a->mu);
   int64_t reply = handler(state, msg);
@@ -3460,8 +4351,21 @@ int64_t far_i64_mul_checked(int64_t a, int64_t b) {
     far_panic(0);
   return out;
 #else
-  if (a != 0 && ((a > 0 && b > INT64_MAX / a) || (a < 0 && b < INT64_MAX / a)))
-    far_panic(0);
+  if (a != 0 && b != 0) {
+    if (a == -1 && b == INT64_MIN) {
+      far_panic(0);
+      return 0;
+    }
+    if (b == -1 && a == INT64_MIN) {
+      far_panic(0);
+      return 0;
+    }
+    if ((a > 0 && b > 0 && a > INT64_MAX / b) || (a > 0 && b < 0 && b < INT64_MIN / a) ||
+        (a < 0 && b > 0 && a < INT64_MIN / b) || (a < 0 && b < 0 && a < INT64_MAX / b)) {
+      far_panic(0);
+      return 0;
+    }
+  }
   return a * b;
 #endif
 }
@@ -3526,10 +4430,19 @@ int64_t far_u64_shr_checked(int64_t a, int64_t b) {
 }
 
 double far_f64_div_checked(double a, double b) {
+  if (a != a || b != b)
+    return 0.0;
+  if (b == 0.0) {
+    if (a == 0.0)
+      return a / b;
+    return 0.0;
+  }
   return a / b;
 }
 
 double far_f64_rem_checked(double a, double b) {
+  if (b == 0.0 || b != b || a != a)
+    return 0.0;
   return fmod(a, b);
 }
 
@@ -3637,16 +4550,88 @@ FAR_NOINLINE int64_t far_caught_value(void) {
   return g_far_caught_value;
 }
 
+typedef struct {
+  int64_t value;
+} FarBoxedI64;
+
+#define FAR_OK_BOXED_TAG ((uint64_t)1 << 63)
+#define FAR_ERR_BOXED_TAG ((uint64_t)1 << 62)
+#define FAR_OK_INLINE_MAX ((int64_t)((1ULL << 61) - 1))
+
+static int64_t option_inline_enc(int64_t v) {
+  return (int64_t)(((uint64_t)v << 1) | 1u);
+}
+
+static int64_t option_inline_dec(int64_t enc) {
+  return (int64_t)(((uint64_t)enc ^ 1u) >> 1);
+}
+
+static int ok_is_boxed(int64_t opt) {
+  return ((uint64_t)opt & FAR_OK_BOXED_TAG) != 0;
+}
+
+static int option_is_inline(int64_t opt) {
+  return (opt & 1) && !ok_is_boxed(opt) && !((uint64_t)opt & FAR_ERR_BOXED_TAG);
+}
+
+static int64_t result_err_inline_enc(int64_t v) {
+  return (int64_t)((uint64_t)v << 1);
+}
+
+static int64_t result_err_inline_dec(int64_t enc) {
+  return (int64_t)((uint64_t)enc >> 1);
+}
+
+static int err_is_boxed(int64_t res) {
+  return ((uint64_t)res & FAR_ERR_BOXED_TAG) != 0;
+}
+
+static int result_err_is_inline(int64_t res) {
+  return !(res & 1) && !err_is_boxed(res) && !ok_is_boxed(res);
+}
+
+static FarBoxedI64* boxed_i64_new(int64_t value) {
+  FarBoxedI64* box = (FarBoxedI64*)malloc(sizeof(FarBoxedI64));
+  if (!box)
+    return NULL;
+  box->value = value;
+  return box;
+}
+
+static int64_t ok_boxed_handle(FarBoxedI64* box) {
+  return (int64_t)(FAR_OK_BOXED_TAG | (uintptr_t)box);
+}
+
+static int64_t err_boxed_handle(FarBoxedI64* box) {
+  return (int64_t)(FAR_ERR_BOXED_TAG | (uintptr_t)box);
+}
+
+static FarBoxedI64* ok_boxed_from_handle(int64_t handle) {
+  return (FarBoxedI64*)(uintptr_t)((uint64_t)handle & ~FAR_OK_BOXED_TAG);
+}
+
+static FarBoxedI64* err_boxed_from_handle(int64_t handle) {
+  return (FarBoxedI64*)(uintptr_t)((uint64_t)handle & ~FAR_ERR_BOXED_TAG);
+}
+
 int64_t far_option_some(int64_t value) {
-  return (int64_t)(((uint64_t)(uint64_t)value << 1) | 1u);
+  if (value >= 0) {
+    int64_t enc = option_inline_enc(value);
+    if ((uint64_t)enc <= (uint64_t)FAR_OK_INLINE_MAX)
+      return enc;
+  }
+  FarBoxedI64* box = boxed_i64_new(value);
+  if (!box)
+    far_panic(0);
+  return ok_boxed_handle(box);
 }
 
 int64_t far_option_none(void) { return 0; }
 
-int64_t far_option_is_some(int64_t opt) { return opt & 1; }
+int64_t far_option_is_some(int64_t opt) { return option_is_inline(opt) || ok_is_boxed(opt); }
 
 int64_t far_option_unwrap(int64_t opt) {
-  if (!(opt & 1)) {
+  if (!far_option_is_some(opt)) {
     if (g_try_depth > 0) {
       far_throw(FAR_EX_TAG_UNWRAP_NONE, 0);
       return 0;
@@ -3655,52 +4640,82 @@ int64_t far_option_unwrap(int64_t opt) {
     far_stack_trace();
     exit(1);
   }
-  return (opt ^ 1) >> 1;
+  if (ok_is_boxed(opt))
+    return ok_boxed_from_handle(opt)->value;
+  return option_inline_dec(opt);
 }
 
 int64_t far_option_unwrap_or(int64_t opt, int64_t alt) {
-  return (opt & 1) ? ((opt ^ 1) >> 1) : alt;
+  if (!far_option_is_some(opt))
+    return alt;
+  if (ok_is_boxed(opt))
+    return ok_boxed_from_handle(opt)->value;
+  return option_inline_dec(opt);
 }
 
 int64_t far_result_ok(int64_t value) {
-  return (int64_t)(((uint64_t)(uint64_t)value << 1) | 1u);
+  return far_option_some(value);
 }
 
 int64_t far_result_err(int64_t value) {
-  return (int64_t)((uint64_t)(uint64_t)value << 1);
+  if (value >= 0) {
+    int64_t enc = result_err_inline_enc(value);
+    if ((uint64_t)enc < FAR_ERR_BOXED_TAG && !(enc & 1))
+      return enc;
+  }
+  FarBoxedI64* box = boxed_i64_new(value);
+  if (!box)
+    far_panic(0);
+  return err_boxed_handle(box);
 }
 
-int64_t far_result_is_ok(int64_t res) { return res & 1; }
+int64_t far_result_is_ok(int64_t res) { return option_is_inline(res) || ok_is_boxed(res); }
 
-int64_t far_result_is_err(int64_t res) { return (res & 1) ? 0 : 1; }
+int64_t far_result_is_err(int64_t res) { return result_err_is_inline(res) || err_is_boxed(res); }
 
 int64_t far_result_unwrap(int64_t res) {
-  if (!(res & 1)) {
-    if (g_try_depth > 0) {
-      far_throw(FAR_EX_TAG_UNWRAP_ERR, (res >> 1));
-      return 0;
-    }
-    fprintf(stderr, "unwrap on Err\n");
-    far_stack_trace();
-    exit(1);
+  if (far_result_is_ok(res)) {
+    if (ok_is_boxed(res))
+      return ok_boxed_from_handle(res)->value;
+    return option_inline_dec(res);
   }
-  return (res ^ 1) >> 1;
+  int64_t err = 0;
+  if (err_is_boxed(res))
+    err = err_boxed_from_handle(res)->value;
+  else
+    err = result_err_inline_dec(res);
+  if (g_try_depth > 0) {
+    far_throw(FAR_EX_TAG_UNWRAP_ERR, err);
+    return 0;
+  }
+  fprintf(stderr, "unwrap on Err\n");
+  far_stack_trace();
+  exit(1);
 }
 
 int64_t far_result_unwrap_or(int64_t res, int64_t alt) {
-  return (res & 1) ? ((res ^ 1) >> 1) : alt;
+  if (far_result_is_ok(res)) {
+    if (ok_is_boxed(res))
+      return ok_boxed_from_handle(res)->value;
+    return option_inline_dec(res);
+  }
+  return alt;
 }
 
 int64_t far_result_ok_val(int64_t res) {
-  if (res & 1)
-    return (res ^ 1) >> 1;
-  return 0;
+  if (!far_result_is_ok(res))
+    return 0;
+  if (ok_is_boxed(res))
+    return ok_boxed_from_handle(res)->value;
+  return option_inline_dec(res);
 }
 
 int64_t far_result_err_val(int64_t res) {
-  if (res & 1)
+  if (!far_result_is_err(res))
     return 0;
-  return (int64_t)((uint64_t)res >> 1);
+  if (err_is_boxed(res))
+    return err_boxed_from_handle(res)->value;
+  return result_err_inline_dec(res);
 }
 
 static void far_global_lock(void) {

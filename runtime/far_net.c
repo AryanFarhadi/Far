@@ -2,6 +2,7 @@
 
 #include <ctype.h>
 #include <inttypes.h>
+#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,21 +13,48 @@
 #include <ws2tcpip.h>
 #include <winhttp.h>
 #else
+#include <errno.h>
+#include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <sys/select.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #endif
+
+#define FAR_NET_RECV_MAX ((size_t)16 * 1024 * 1024)
+#define FAR_HTTP_MAX_RESP FAR_NET_RECV_MAX
+#define FAR_NET_MSG_MAX FAR_NET_RECV_MAX
+#define FAR_NET_CONNECT_MS 5000
+#define FAR_NET_IO_MS 15000
 
 static char* far_net_strdup(const char* s) {
   if (!s)
     return NULL;
   size_t n = strlen(s);
+  if (n > FAR_NET_MSG_MAX || n >= SIZE_MAX)
+    return NULL;
   char* out = (char*)malloc(n + 1);
   if (!out)
     return NULL;
   memcpy(out, s, n + 1);
   return out;
+}
+
+static char* far_net_alloc_fmt(int need) {
+  if (need < 0 || (size_t)need >= SIZE_MAX)
+    return NULL;
+  return (char*)malloc((size_t)need + 1);
+}
+
+static int far_net_fmt_matches(int written, int expected) {
+  return written >= 0 && written == expected;
+}
+
+static int far_net_str_len_ok(const char* s) {
+  if (!s)
+    return 1;
+  return strlen(s) <= FAR_NET_MSG_MAX;
 }
 
 #ifdef _WIN32
@@ -55,6 +83,26 @@ typedef struct {
   int https;
 } FarUrl;
 
+static int far_net_no_ctl(const char* s) {
+  if (!s)
+    return 0;
+  for (const char* p = s; *p; ++p) {
+    unsigned char c = (unsigned char)*p;
+    if (c < 32 || c == 127)
+      return 0;
+  }
+  return 1;
+}
+
+static int far_net_slice_no_ctl(const char* start, size_t len) {
+  for (size_t i = 0; i < len; ++i) {
+    unsigned char c = (unsigned char)start[i];
+    if (c < 32 || c == 127)
+      return 0;
+  }
+  return 1;
+}
+
 static const char* far_url_authority_end(const char* p) {
   const char* end = p + strlen(p);
   const char* slash = strchr(p, '/');
@@ -67,6 +115,24 @@ static const char* far_url_authority_end(const char* p) {
   if (hash && hash < end)
     end = hash;
   return end;
+}
+
+static int far_net_host_ok(const char* host, size_t len) {
+  if (!len || !far_net_slice_no_ctl(host, len))
+    return 0;
+  for (size_t i = 0; i < len; ++i) {
+    char c = host[i];
+    if (c == '@' || c == ' ' || c == '\t')
+      return 0;
+  }
+  return 1;
+}
+
+static int far_net_host_str_ok(const char* host) {
+  if (!host)
+    return 0;
+  size_t len = strlen(host);
+  return len < 256 && far_net_host_ok(host, len);
 }
 
 static int far_parse_url(const char* url, FarUrl* out) {
@@ -86,8 +152,8 @@ static int far_parse_url(const char* url, FarUrl* out) {
   const char* colon = strchr(p, ':');
   if (colon && colon < auth_end) {
     size_t hlen = (size_t)(colon - p);
-    if (hlen >= sizeof(out->host))
-      hlen = sizeof(out->host) - 1;
+    if (hlen >= sizeof(out->host) || !far_net_host_ok(p, hlen))
+      return 0;
     memcpy(out->host, p, hlen);
     out->host[hlen] = 0;
     const char* port_str = colon + 1;
@@ -101,29 +167,121 @@ static int far_parse_url(const char* url, FarUrl* out) {
     p = auth_end;
   } else {
     size_t hlen = (size_t)(auth_end - p);
-    if (hlen >= sizeof(out->host))
-      hlen = sizeof(out->host) - 1;
+    if (hlen >= sizeof(out->host) || !far_net_host_ok(p, hlen))
+      return 0;
     memcpy(out->host, p, hlen);
     out->host[hlen] = 0;
     p = auth_end;
   }
-  if (*p == '/' || *p == '?' || *p == '#')
-    snprintf(out->path, sizeof(out->path), "%s", p);
-  else
+  if (*p == '/' || *p == '?' || *p == '#') {
+    if (!far_net_no_ctl(p))
+      return 0;
+    int pw = snprintf(out->path, sizeof(out->path), "%s", p);
+    if (pw < 0 || (size_t)pw >= sizeof(out->path))
+      return 0;
+  } else
     strcpy(out->path, "/");
   return out->host[0] != 0;
 }
 
-static void far_http_host_value(const FarUrl* u, char* out, size_t cap) {
+static int far_http_host_value(const FarUrl* u, char* out, size_t cap) {
   int default_port = u->https ? 443 : 80;
-  if (u->port != default_port)
-    snprintf(out, cap, "%s:%d", u->host, u->port);
-  else
-    snprintf(out, cap, "%s", u->host);
+  int w = (u->port != default_port) ? snprintf(out, cap, "%s:%d", u->host, u->port)
+                                    : snprintf(out, cap, "%s", u->host);
+  return w >= 0 && (size_t)w < cap;
+}
+
+static int far_tcp_set_blocking(NET_SOCK sock, int blocking) {
+#ifdef _WIN32
+  u_long mode = blocking ? 0u : 1u;
+  return ioctlsocket(sock, FIONBIO, &mode) == 0 ? 0 : -1;
+#else
+  int flags = fcntl(sock, F_GETFL, 0);
+  if (flags < 0)
+    return -1;
+  int next = blocking ? (flags & ~O_NONBLOCK) : (flags | O_NONBLOCK);
+  return fcntl(sock, F_SETFL, next) == 0 ? 0 : -1;
+#endif
+}
+
+static int far_tcp_wait_connected(NET_SOCK sock) {
+  fd_set wfds;
+  FD_ZERO(&wfds);
+  FD_SET(sock, &wfds);
+  struct timeval tv;
+  tv.tv_sec = FAR_NET_CONNECT_MS / 1000;
+  tv.tv_usec = (FAR_NET_CONNECT_MS % 1000) * 1000;
+#ifdef _WIN32
+  if (select(0, NULL, &wfds, NULL, &tv) <= 0)
+    return -1;
+#else
+  if (select((int)sock + 1, NULL, &wfds, NULL, &tv) <= 0)
+    return -1;
+#endif
+  int soerr = 0;
+#ifdef _WIN32
+  int slen = sizeof(soerr);
+#else
+  socklen_t slen = sizeof(soerr);
+#endif
+  if (getsockopt(sock, SOL_SOCKET, SO_ERROR, (char*)&soerr, &slen) != 0 || soerr != 0)
+    return -1;
+  return 0;
+}
+
+static void far_tcp_apply_timeouts(NET_SOCK sock) {
+  if (sock == NET_INVALID)
+    return;
+#ifdef _WIN32
+  DWORD ms = (DWORD)FAR_NET_IO_MS;
+  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&ms, sizeof(ms));
+  setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (const char*)&ms, sizeof(ms));
+#else
+  struct timeval tv;
+  tv.tv_sec = FAR_NET_IO_MS / 1000;
+  tv.tv_usec = (FAR_NET_IO_MS % 1000) * 1000;
+  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+  setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+#endif
+}
+
+static int far_tcp_connect_finish(NET_SOCK sock) {
+  if (far_tcp_set_blocking(sock, 1) != 0)
+    return -1;
+  far_tcp_apply_timeouts(sock);
+  return 0;
+}
+
+static int far_tcp_connect_addr(NET_SOCK sock, const struct sockaddr* addr, int addrlen) {
+  if (far_tcp_set_blocking(sock, 0) != 0)
+    return -1;
+#ifdef _WIN32
+  if (connect(sock, addr, addrlen) == 0)
+    return far_tcp_connect_finish(sock);
+  int err = WSAGetLastError();
+  if (err != WSAEWOULDBLOCK && err != WSAEINPROGRESS) {
+    far_tcp_set_blocking(sock, 1);
+    return -1;
+  }
+#else
+  if (connect(sock, addr, addrlen) == 0)
+    return far_tcp_connect_finish(sock);
+  if (errno != EINPROGRESS) {
+    far_tcp_set_blocking(sock, 1);
+    return -1;
+  }
+#endif
+  if (far_tcp_wait_connected(sock) != 0) {
+    far_tcp_set_blocking(sock, 1);
+    return -1;
+  }
+  return far_tcp_connect_finish(sock);
 }
 
 static int64_t far_tcp_socket_connect(const char* host, int port) {
   if (!host || port <= 0 || port > 65535)
+    return -1;
+  if (!far_net_host_str_ok(host))
     return -1;
   far_net_init();
   char portbuf[16];
@@ -139,10 +297,12 @@ static int64_t far_tcp_socket_connect(const char* host, int port) {
     sock = socket(it->ai_family, it->ai_socktype, it->ai_protocol);
     if (sock == NET_INVALID)
       continue;
-    if (connect(sock, it->ai_addr, (int)it->ai_addrlen) == 0)
-      break;
-    NET_CLOSE(sock);
-    sock = NET_INVALID;
+    if (far_tcp_connect_addr(sock, it->ai_addr, (int)it->ai_addrlen) != 0) {
+      NET_CLOSE(sock);
+      sock = NET_INVALID;
+      continue;
+    }
+    break;
   }
   freeaddrinfo(res);
   return (int64_t)sock;
@@ -155,6 +315,8 @@ int64_t far_tcp_connect(const char* host, int64_t port) {
 }
 
 int64_t far_tcp_listen(int64_t port) {
+  if (port <= 0 || port > 65535)
+    return -1;
   far_net_init();
   NET_SOCK sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   if (sock == NET_INVALID)
@@ -165,7 +327,7 @@ int64_t far_tcp_listen(int64_t port) {
   memset(&addr, 0, sizeof(addr));
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-  addr.sin_port = htons((uint16_t)(port > 0 ? port : 0));
+  addr.sin_port = htons((uint16_t)port);
   if (bind(sock, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
     NET_CLOSE(sock);
     return -1;
@@ -191,10 +353,15 @@ static int64_t far_sock_send_all(int64_t sock, const void* data, size_t len) {
     return -1;
   size_t off = 0;
   while (off < len) {
+    size_t remain = len - off;
 #ifdef _WIN32
-    int n = send((SOCKET)sock, (const char*)data + off, (int)(len - off), 0);
+    size_t chunk = remain > (size_t)INT_MAX ? (size_t)INT_MAX : remain;
+    int n = send((SOCKET)sock, (const char*)data + off, (int)chunk, 0);
 #else
-    ssize_t n = send((int)sock, (const char*)data + off, len - off, 0);
+    size_t chunk = remain;
+    if (chunk > (size_t)SSIZE_MAX)
+      chunk = (size_t)SSIZE_MAX;
+    ssize_t n = send((int)sock, (const char*)data + off, chunk, 0);
 #endif
     if (n <= 0)
       return -1;
@@ -206,11 +373,18 @@ static int64_t far_sock_send_all(int64_t sock, const void* data, size_t len) {
 int64_t far_tcp_send(int64_t sock, const char* data) {
   if (sock < 0 || !data)
     return -1;
-  return far_sock_send_all(sock, data, strlen(data));
+  size_t n = strlen(data);
+  if (n > FAR_NET_MSG_MAX)
+    return -1;
+  return far_sock_send_all(sock, data, n);
 }
 
 char* far_tcp_recv(int64_t sock, int64_t max) {
   if (sock < 0 || max <= 0)
+    return NULL;
+  if ((uint64_t)max > FAR_NET_RECV_MAX)
+    return NULL;
+  if ((uint64_t)max > (uint64_t)SIZE_MAX - 1u)
     return NULL;
   size_t cap = (size_t)max;
   char* buf = (char*)malloc(cap + 1);
@@ -238,6 +412,8 @@ int64_t far_tcp_close(int64_t sock) {
 /* --- UDP --- */
 
 int64_t far_udp_bind(int64_t port) {
+  if (port < 0 || port > 65535)
+    return -1;
   far_net_init();
   NET_SOCK sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
   if (sock == NET_INVALID)
@@ -246,7 +422,7 @@ int64_t far_udp_bind(int64_t port) {
   memset(&addr, 0, sizeof(addr));
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = htonl(INADDR_ANY);
-  addr.sin_port = htons((uint16_t)(port > 0 ? port : 0));
+  addr.sin_port = htons((uint16_t)port);
   if (bind(sock, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
     NET_CLOSE(sock);
     return -1;
@@ -255,7 +431,12 @@ int64_t far_udp_bind(int64_t port) {
 }
 
 int64_t far_udp_send(int64_t sock, const char* host, int64_t port, const char* data) {
-  if (sock < 0 || !host || !data || port <= 0)
+  if (sock < 0 || !host || !data || port <= 0 || port > 65535)
+    return -1;
+  if (!far_net_host_str_ok(host))
+    return -1;
+  size_t dlen = strlen(data);
+  if (dlen > FAR_NET_MSG_MAX)
     return -1;
   far_net_init();
   char portbuf[16];
@@ -269,9 +450,13 @@ int64_t far_udp_send(int64_t sock, const char* host, int64_t port, const char* d
   int64_t sent = -1;
   for (struct addrinfo* it = res; it; it = it->ai_next) {
 #ifdef _WIN32
-    int n = sendto((SOCKET)sock, data, (int)strlen(data), 0, it->ai_addr, (int)it->ai_addrlen);
+    int n = sendto((SOCKET)sock, data, (int)(dlen > (size_t)INT_MAX ? (size_t)INT_MAX : dlen), 0,
+                   it->ai_addr, (int)it->ai_addrlen);
 #else
-    ssize_t n = sendto((int)sock, data, strlen(data), 0, it->ai_addr, it->ai_addrlen);
+    size_t chunk = dlen;
+    if (chunk > (size_t)SSIZE_MAX)
+      chunk = (size_t)SSIZE_MAX;
+    ssize_t n = sendto((int)sock, data, chunk, 0, it->ai_addr, it->ai_addrlen);
 #endif
     if (n >= 0) {
       sent = (int64_t)n;
@@ -307,13 +492,26 @@ static char* far_http_exchange(const char* host, int port, const char* req) {
   }
   for (;;) {
     if (len + 256 >= cap) {
-      cap *= 2;
-      char* n = (char*)realloc(resp, cap);
+      if (cap >= FAR_HTTP_MAX_RESP) {
+        free(resp);
+        far_tcp_close(sock);
+        return NULL;
+      }
+      if (cap > SIZE_MAX / 2) {
+        free(resp);
+        far_tcp_close(sock);
+        return NULL;
+      }
+      size_t new_cap = cap * 2;
+      if (new_cap > FAR_HTTP_MAX_RESP)
+        new_cap = FAR_HTTP_MAX_RESP;
+      char* n = (char*)realloc(resp, new_cap);
       if (!n) {
         free(resp);
         far_tcp_close(sock);
         return NULL;
       }
+      cap = new_cap;
       resp = n;
     }
 #ifdef _WIN32
@@ -324,6 +522,8 @@ static char* far_http_exchange(const char* host, int port, const char* req) {
     if (n <= 0)
       break;
     len += (size_t)n;
+    if (len >= FAR_HTTP_MAX_RESP)
+      break;
   }
   resp[len] = '\0';
   far_tcp_close(sock);
@@ -354,9 +554,14 @@ static char* far_http_method_ct(const char* url, const char* method, const char*
     ctype = "text/plain";
   if (!method)
     method = "POST";
+  if (!far_net_no_ctl(method))
+    return NULL;
   size_t body_len = strlen(body);
+  if (body_len > FAR_NET_MSG_MAX)
+    return NULL;
   char host_hdr[520];
-  far_http_host_value(&u, host_hdr, sizeof(host_hdr));
+  if (!far_http_host_value(&u, host_hdr, sizeof(host_hdr)))
+    return NULL;
   int need = snprintf(
       NULL, 0,
       "%s %s HTTP/1.1\r\nHost: %s\r\nContent-Type: %s\r\nContent-Length: %zu\r\nConnection: "
@@ -364,13 +569,17 @@ static char* far_http_method_ct(const char* url, const char* method, const char*
       method, u.path, host_hdr, ctype, body_len, body);
   if (need < 0)
     return NULL;
-  char* req = (char*)malloc((size_t)need + 1);
+  char* req = far_net_alloc_fmt(need);
   if (!req)
     return NULL;
-  snprintf(req, (size_t)need + 1,
+  int w = snprintf(req, (size_t)need + 1,
            "%s %s HTTP/1.1\r\nHost: %s\r\nContent-Type: %s\r\nContent-Length: %zu\r\nConnection: "
            "close\r\n\r\n%s",
            method, u.path, host_hdr, ctype, body_len, body);
+  if (!far_net_fmt_matches(w, need)) {
+    free(req);
+    return NULL;
+  }
   char* resp = far_http_exchange(u.host, u.port, req);
   free(req);
   char* out = far_http_body(resp);
@@ -383,16 +592,21 @@ char* far_http_get(const char* url) {
   if (!far_parse_url(url, &u) || u.https)
     return NULL;
   char host_hdr[520];
-  far_http_host_value(&u, host_hdr, sizeof(host_hdr));
+  if (!far_http_host_value(&u, host_hdr, sizeof(host_hdr)))
+    return NULL;
   int need = snprintf(NULL, 0, "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", u.path,
                       host_hdr);
   if (need < 0)
     return NULL;
-  char* req = (char*)malloc((size_t)need + 1);
+  char* req = far_net_alloc_fmt(need);
   if (!req)
     return NULL;
-  snprintf(req, (size_t)need + 1, "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", u.path,
+  int w = snprintf(req, (size_t)need + 1, "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", u.path,
            host_hdr);
+  if (!far_net_fmt_matches(w, need)) {
+    free(req);
+    return NULL;
+  }
   char* resp = far_http_exchange(u.host, u.port, req);
   free(req);
   char* body = far_http_body(resp);
@@ -439,6 +653,8 @@ static wchar_t* far_to_wide(const char* s) {
   int n = MultiByteToWideChar(CP_UTF8, 0, s, -1, NULL, 0);
   if (n <= 0)
     return NULL;
+  if ((size_t)n > SIZE_MAX / sizeof(wchar_t))
+    return NULL;
   wchar_t* w = (wchar_t*)malloc((size_t)n * sizeof(wchar_t));
   if (!w)
     return NULL;
@@ -449,6 +665,12 @@ static wchar_t* far_to_wide(const char* s) {
 static char* far_https_win(const char* url, const char* method, const char* body, const char* ctype) {
   FarUrl u;
   if (!far_parse_url(url, &u))
+    return NULL;
+  if (!method)
+    method = "GET";
+  if (!far_net_no_ctl(method))
+    return NULL;
+  if (body && body[0] && strlen(body) > FAR_NET_MSG_MAX)
     return NULL;
   wchar_t* whost = far_to_wide(u.host);
   wchar_t* wpath = far_to_wide(u.path);
@@ -486,7 +708,25 @@ static char* far_https_win(const char* url, const char* method, const char* body
   if (body && body[0]) {
     char hdr[256];
     const char* ct = ctype ? ctype : "application/json";
-    snprintf(hdr, sizeof(hdr), "Content-Type: %s\r\n", ct);
+    if (!far_net_no_ctl(ct)) {
+      WinHttpCloseHandle(req);
+      WinHttpCloseHandle(con);
+      WinHttpCloseHandle(ses);
+      free(whost);
+      free(wpath);
+      free(wmethod);
+      return NULL;
+    }
+    int hw = snprintf(hdr, sizeof(hdr), "Content-Type: %s\r\n", ct);
+    if (hw < 0 || (size_t)hw >= sizeof(hdr)) {
+      WinHttpCloseHandle(req);
+      WinHttpCloseHandle(con);
+      WinHttpCloseHandle(ses);
+      free(whost);
+      free(wpath);
+      free(wmethod);
+      return NULL;
+    }
     wchar_t* whdr = far_to_wide(hdr);
     ok = WinHttpSendRequest(req, whdr, (DWORD)-1L, (LPVOID)body, (DWORD)strlen(body),
                             (DWORD)strlen(body), 0);
@@ -509,8 +749,31 @@ static char* far_https_win(const char* url, const char* method, const char* body
     DWORD avail = 0;
     if (!WinHttpQueryDataAvailable(req, &avail) || avail == 0)
       break;
+    if (len >= FAR_HTTP_MAX_RESP)
+      break;
     if (len + avail + 1 >= cap) {
-      cap = len + avail + 1;
+      if (cap >= FAR_HTTP_MAX_RESP) {
+        free(out);
+        out = NULL;
+        break;
+      }
+      if (cap > SIZE_MAX / 2 || avail > SIZE_MAX - len - 1) {
+        free(out);
+        out = NULL;
+        break;
+      }
+      size_t need = len + avail + 1;
+      if (need > FAR_HTTP_MAX_RESP)
+        need = FAR_HTTP_MAX_RESP;
+      while (cap < need) {
+        if (cap > SIZE_MAX / 2) {
+          cap = need;
+          break;
+        }
+        cap *= 2;
+      }
+      if (cap > FAR_HTTP_MAX_RESP)
+        cap = FAR_HTTP_MAX_RESP;
       char* n = (char*)realloc(out, cap);
       if (!n) {
         free(out);
@@ -520,7 +783,10 @@ static char* far_https_win(const char* url, const char* method, const char* body
       out = n;
     }
     DWORD read = 0;
-    if (!WinHttpReadData(req, out + len, avail, &read))
+    DWORD to_read = avail;
+    if (len + to_read > FAR_HTTP_MAX_RESP)
+      to_read = (DWORD)(FAR_HTTP_MAX_RESP - len);
+    if (!WinHttpReadData(req, out + len, to_read, &read))
       break;
     len += read;
   }
@@ -542,13 +808,18 @@ static char* far_https_socket(const char* url, const char* method, const char* b
     return NULL;
   if (!method)
     method = "GET";
+  if (!far_net_no_ctl(method))
+    return NULL;
   if (!body)
     body = "";
   if (!ctype)
     ctype = "application/json";
   size_t body_len = strlen(body);
+  if (body_len > FAR_NET_MSG_MAX)
+    return NULL;
   char host_hdr[520];
-  far_http_host_value(&u, host_hdr, sizeof(host_hdr));
+  if (!far_http_host_value(&u, host_hdr, sizeof(host_hdr)))
+    return NULL;
   int need = snprintf(
       NULL, 0,
       "%s %s HTTP/1.1\r\nHost: %s\r\nContent-Type: %s\r\nContent-Length: %zu\r\nConnection: "
@@ -556,13 +827,17 @@ static char* far_https_socket(const char* url, const char* method, const char* b
       method, u.path, host_hdr, ctype, body_len, body);
   if (need < 0)
     return NULL;
-  char* req = (char*)malloc((size_t)need + 1);
+  char* req = far_net_alloc_fmt(need);
   if (!req)
     return NULL;
-  snprintf(req, (size_t)need + 1,
+  int w = snprintf(req, (size_t)need + 1,
            "%s %s HTTP/1.1\r\nHost: %s\r\nContent-Type: %s\r\nContent-Length: %zu\r\nConnection: "
            "close\r\n\r\n%s",
            method, u.path, host_hdr, ctype, body_len, body);
+  if (!far_net_fmt_matches(w, need)) {
+    free(req);
+    return NULL;
+  }
   char* resp = far_http_exchange(u.host, u.port, req);
   free(req);
   char* out = far_http_body(resp);
@@ -639,21 +914,31 @@ static char* far_recv_http_headers(int64_t sock);
 int64_t far_ws_connect(const char* host, int64_t port, const char* path) {
   if (!host || !path)
     return -1;
+  if (port <= 0 || port > 65535)
+    return -1;
+  if (!far_net_host_str_ok(host) || !far_net_no_ctl(path))
+    return -1;
   int64_t sock = far_tcp_socket_connect(host, (int)(port > 0 ? port : 80));
   if (sock < 0)
     return -1;
   char key[24];
   far_ws_make_key(key, sizeof(key));
   char host_hdr[520];
-  if (port > 0 && port != 80)
-    snprintf(host_hdr, sizeof(host_hdr), "%s:%d", host, (int)port);
-  else
-    snprintf(host_hdr, sizeof(host_hdr), "%s", host);
+  int hh = (port > 0 && port != 80) ? snprintf(host_hdr, sizeof(host_hdr), "%s:%d", host, (int)port)
+                                    : snprintf(host_hdr, sizeof(host_hdr), "%s", host);
+  if (hh < 0 || (size_t)hh >= sizeof(host_hdr)) {
+    far_tcp_close(sock);
+    return -1;
+  }
   char req[1024];
-  snprintf(req, sizeof(req),
-           "GET %s HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: "
-           "%s\r\nSec-WebSocket-Version: 13\r\n\r\n",
-           path, host_hdr, key);
+  int req_len = snprintf(req, sizeof(req),
+                         "GET %s HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: "
+                         "%s\r\nSec-WebSocket-Version: 13\r\n\r\n",
+                         path, host_hdr, key);
+  if (req_len < 0 || (size_t)req_len >= sizeof(req)) {
+    far_tcp_close(sock);
+    return -1;
+  }
   if (far_tcp_send(sock, req) < 0) {
     far_tcp_close(sock);
     return -1;
@@ -672,6 +957,8 @@ int64_t far_ws_send(int64_t sock, const char* text) {
   if (sock < 0 || !text)
     return -1;
   size_t len = strlen(text);
+  if (len > (1u << 24))
+    return -1;
   unsigned char mask[4];
   for (int i = 0; i < 4; ++i)
     mask[i] = (unsigned char)(rand() & 0xFF);
@@ -812,13 +1099,42 @@ int64_t far_ws_close(int64_t sock) { return far_tcp_close(sock); }
 
 /* --- RPC / REST / gRPC --- */
 
+static int far_rpc_params_valid(const char* params) {
+  if (!params)
+    return 0;
+  const char* ps = params;
+  while (*ps == ' ' || *ps == '\t')
+    ++ps;
+  if (*ps == '\0')
+    return 0;
+  for (const char* p = params; *p; ++p) {
+    unsigned char c = (unsigned char)*p;
+    if (c < 32 && c != '\t')
+      return 0;
+  }
+  if (strstr(params, "}{") != NULL)
+    return 0;
+  if (*ps != '{' && *ps != '[' && *ps != '"' && *ps != '-' && (*ps < '0' || *ps > '9') &&
+      strncmp(ps, "null", 4) != 0 && strncmp(ps, "true", 4) != 0 && strncmp(ps, "false", 5) != 0)
+    return 0;
+  return 1;
+}
+
 char* far_rpc_call(const char* host, int64_t port, const char* method, const char* params) {
   if (!host || !method)
     return NULL;
+  if (port <= 0 || port > 65535)
+    return NULL;
+  if (!far_net_host_str_ok(host))
+    return NULL;
   if (!params)
     params = "{}";
+  if (!far_rpc_params_valid(params))
+    return NULL;
+  if (!far_net_no_ctl(method))
+    return NULL;
   for (const char* p = method; *p; ++p) {
-    if (*p == '"' || *p == '\\' || *p == '\n' || *p == '\r')
+    if (*p == '"' || *p == '\\')
       return NULL;
   }
   int need = snprintf(NULL, 0,
@@ -832,7 +1148,9 @@ char* far_rpc_call(const char* host, int64_t port, const char* method, const cha
                params) >= (int)sizeof(body))
     return NULL;
   char url[512];
-  snprintf(url, sizeof(url), "http://%s:%" PRId64 "/rpc", host, port);
+  int url_len = snprintf(url, sizeof(url), "http://%s:%" PRId64 "/rpc", host, port);
+  if (url_len < 0 || (size_t)url_len >= sizeof(url))
+    return NULL;
   return far_http_post(url, body);
 }
 
@@ -849,16 +1167,21 @@ char* far_rest_delete(const char* url) {
   if (!far_parse_url(url, &u) || u.https)
     return NULL;
   char host_hdr[520];
-  far_http_host_value(&u, host_hdr, sizeof(host_hdr));
+  if (!far_http_host_value(&u, host_hdr, sizeof(host_hdr)))
+    return NULL;
   int need = snprintf(NULL, 0, "DELETE %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", u.path,
                       host_hdr);
   if (need < 0)
     return NULL;
-  char* req = (char*)malloc((size_t)need + 1);
+  char* req = far_net_alloc_fmt(need);
   if (!req)
     return NULL;
-  snprintf(req, (size_t)need + 1, "DELETE %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", u.path,
+  int w = snprintf(req, (size_t)need + 1, "DELETE %s HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n", u.path,
            host_hdr);
+  if (!far_net_fmt_matches(w, need)) {
+    free(req);
+    return NULL;
+  }
   char* resp = far_http_exchange(u.host, u.port, req);
   free(req);
   char* body = far_http_body(resp);
@@ -869,13 +1192,26 @@ char* far_rest_delete(const char* url) {
 char* far_grpc_call(const char* host, int64_t port, const char* method, const char* payload) {
   if (!host || !method)
     return NULL;
+  if (port <= 0 || port > 65535)
+    return NULL;
+  if (!far_net_host_str_ok(host))
+    return NULL;
+  if (!far_net_no_ctl(method))
+    return NULL;
   if (!payload)
     payload = "";
+  if (!far_net_no_ctl(payload))
+    return NULL;
   int64_t sock = far_tcp_socket_connect(host, (int)port);
   if (sock < 0)
     return NULL;
   char frame[4096];
-  snprintf(frame, sizeof(frame), "GRPC\n%s\n%zu\n%s", method, strlen(payload), payload);
+  int frame_len = snprintf(frame, sizeof(frame), "GRPC\n%s\n%zu\n%s", method, strlen(payload),
+                           payload);
+  if (frame_len < 0 || (size_t)frame_len >= sizeof(frame)) {
+    far_tcp_close(sock);
+    return NULL;
+  }
   if (far_tcp_send(sock, frame) < 0) {
     far_tcp_close(sock);
     return NULL;
@@ -894,29 +1230,50 @@ char* far_net_pack(const char* service, const char* method, const char* body) {
     method = "";
   if (!body)
     body = "";
-  size_t n = strlen(service) + strlen(method) + strlen(body) + 32;
+  if (!far_net_no_ctl(service) || !far_net_no_ctl(method) || !far_net_no_ctl(body))
+    return NULL;
+  if (!far_net_str_len_ok(service) || !far_net_str_len_ok(method) || !far_net_str_len_ok(body))
+    return NULL;
+  size_t sl = strlen(service);
+  size_t ml = strlen(method);
+  size_t bl = strlen(body);
+  if (sl > SIZE_MAX - ml - bl - 32)
+    return NULL;
+  size_t n = sl + ml + bl + 32;
   char* out = (char*)malloc(n);
   if (!out)
     return NULL;
-  snprintf(out, n, "FARPKT\nservice:%s\nmethod:%s\nbody:%s\n", service, method, body);
+  int w = snprintf(out, n, "FARPKT\nservice:%s\nmethod:%s\nbody:%s\n", service, method, body);
+  if (w < 0 || (size_t)w >= n) {
+    free(out);
+    return NULL;
+  }
   return out;
 }
 
-static const char* far_net_field(const char* packed, const char* key) {
-  if (!packed || !key)
+static char* far_net_unpack_ordered(const char* packed, int field_idx) {
+  static const char* kFields[] = {"service:", "method:", "body:"};
+  if (!packed || strncmp(packed, "FARPKT\n", 7) != 0 || field_idx < 0 || field_idx > 2)
     return NULL;
-  size_t klen = strlen(key);
-  const char* p = packed;
-  while (*p) {
-    const char* line = p;
-    while (*p && *p != '\n')
+  const char* p = packed + 7;
+  for (int i = 0; i <= field_idx; ++i) {
+    if (i > 0) {
+      if (*p != '\n')
+        return NULL;
       ++p;
-    if ((size_t)(p - line) >= klen + 1 && strncmp(line, key, klen) == 0 && line[klen] == ':') {
-      p = line + klen + 1;
+    }
+    const char* prefix = kFields[i];
+    size_t plen = strlen(prefix);
+    if (strncmp(p, prefix, plen) != 0)
+      return NULL;
+    p += plen;
+    if (i == field_idx) {
       const char* end = p;
       while (*end && *end != '\n')
         ++end;
       size_t n = (size_t)(end - p);
+      if (n > FAR_NET_MSG_MAX)
+        return NULL;
       char* out = (char*)malloc(n + 1);
       if (!out)
         return NULL;
@@ -924,21 +1281,28 @@ static const char* far_net_field(const char* packed, const char* key) {
       out[n] = '\0';
       return out;
     }
-    if (*p == '\n')
+    while (*p && *p != '\n')
       ++p;
   }
   return NULL;
 }
 
-char* far_net_unpack_method(const char* packed) { return (char*)far_net_field(packed, "method"); }
+char* far_net_unpack_method(const char* packed) {
+  return far_net_unpack_ordered(packed, 1);
+}
 
-char* far_net_unpack_body(const char* packed) { return (char*)far_net_field(packed, "body"); }
+char* far_net_unpack_body(const char* packed) {
+  return far_net_unpack_ordered(packed, 2);
+}
 
 static size_t far_json_escaped_len(const char* data) {
   if (!data)
     return 0;
+  if (!far_net_str_len_ok(data))
+    return SIZE_MAX;
   size_t n = 0;
   for (const char* p = data; *p; ++p) {
+    size_t add = 1;
     switch (*p) {
       case '"':
       case '\\':
@@ -947,15 +1311,16 @@ static size_t far_json_escaped_len(const char* data) {
       case '\n':
       case '\r':
       case '\t':
-        n += 2;
+        add = 2;
         break;
       default:
         if ((unsigned char)*p < 0x20)
-          n += 6;
-        else
-          n += 1;
+          add = 6;
         break;
     }
+    if (n > SIZE_MAX - add)
+      return SIZE_MAX;
+    n += add;
   }
   return n;
 }
@@ -1005,18 +1370,31 @@ static void far_json_write_escaped(char* out, const char* data) {
 char* far_net_serialize(const char* data) {
   if (!data)
     return far_net_strdup("{}");
+  if (!far_net_str_len_ok(data))
+    return NULL;
   size_t elen = far_json_escaped_len(data);
+  if (elen >= SIZE_MAX)
+    return NULL;
   char* escaped = (char*)malloc(elen + 1);
   if (!escaped)
     return NULL;
   far_json_write_escaped(escaped, data);
+  if (elen > SIZE_MAX - 16) {
+    free(escaped);
+    return NULL;
+  }
   size_t n = elen + 16;
   char* out = (char*)malloc(n);
   if (!out) {
     free(escaped);
     return NULL;
   }
-  snprintf(out, n, "{\"data\":\"%s\"}", escaped);
+  int w = snprintf(out, n, "{\"data\":\"%s\"}", escaped);
+  if (w < 0 || (size_t)w >= n) {
+    free(escaped);
+    free(out);
+    return NULL;
+  }
   free(escaped);
   return out;
 }
@@ -1051,8 +1429,92 @@ static const char* far_net_json_find_key(const char* json, const char* key) {
   return NULL;
 }
 
+static int far_net_json_hex4(const char* p, uint32_t* out) {
+  *out = 0;
+  for (int i = 0; i < 4; ++i) {
+    char c = p[i];
+    int v;
+    if (c >= '0' && c <= '9')
+      v = c - '0';
+    else if (c >= 'a' && c <= 'f')
+      v = c - 'a' + 10;
+    else if (c >= 'A' && c <= 'F')
+      v = c - 'A' + 10;
+    else
+      return 0;
+    *out = (*out << 4) | (uint32_t)v;
+  }
+  return 1;
+}
+
+static int far_net_deser_reserve(char** out, size_t* cap, size_t* len, size_t extra) {
+  if (*len + extra > FAR_NET_MSG_MAX)
+    return 0;
+  if (*len + extra >= *cap) {
+    if (*cap > SIZE_MAX / 2)
+      return 0;
+    size_t nc = *cap ? *cap : 64;
+    while (nc < *len + extra + 1) {
+      if (nc > SIZE_MAX / 2) {
+        nc = *len + extra + 1;
+        break;
+      }
+      nc *= 2;
+    }
+    char* bigger = (char*)realloc(*out, nc);
+    if (!bigger)
+      return 0;
+    *out = bigger;
+    *cap = nc;
+  }
+  return 1;
+}
+
+static int far_net_deser_push(char** out, size_t* cap, size_t* len, char c) {
+  if (!far_net_deser_reserve(out, cap, len, 1))
+    return 0;
+  (*out)[(*len)++] = c;
+  return 1;
+}
+
+static int far_net_json_codepoint_ok(uint32_t cp) {
+  return cp <= 0x10FFFFu && !(cp >= 0xD800u && cp <= 0xDFFFu);
+}
+
+static int far_net_deser_push_cp(char** out, size_t* cap, size_t* len, uint32_t cp) {
+  if (!far_net_json_codepoint_ok(cp))
+    return 0;
+  char buf[4];
+  size_t n = 0;
+  if (cp <= 0x7F)
+    buf[n++] = (char)cp;
+  else if (cp <= 0x7FF) {
+    buf[0] = (char)(0xC0 | (cp >> 6));
+    buf[1] = (char)(0x80 | (cp & 0x3F));
+    n = 2;
+  } else if (cp <= 0xFFFF) {
+    buf[0] = (char)(0xE0 | (cp >> 12));
+    buf[1] = (char)(0x80 | ((cp >> 6) & 0x3F));
+    buf[2] = (char)(0x80 | (cp & 0x3F));
+    n = 3;
+  } else {
+    buf[0] = (char)(0xF0 | (cp >> 18));
+    buf[1] = (char)(0x80 | ((cp >> 12) & 0x3F));
+    buf[2] = (char)(0x80 | ((cp >> 6) & 0x3F));
+    buf[3] = (char)(0x80 | (cp & 0x3F));
+    n = 4;
+  }
+  if (!far_net_deser_reserve(out, cap, len, n))
+    return 0;
+  memcpy(*out + *len, buf, n);
+  *len += n;
+  return 1;
+}
+
 char* far_net_deserialize(const char* json, const char* key) {
-  if (!json || !key)
+  if (!json || !key || !key[0])
+    return NULL;
+  if (!far_net_no_ctl(key))
     return NULL;
   const char* p = far_net_json_find_key(json, key);
   if (!p)
@@ -1069,8 +1531,22 @@ char* far_net_deserialize(const char* json, const char* key) {
   if (!out)
     return NULL;
   while (*p && *p != '"') {
-    if (*p == '\\' && p[1]) {
+    if (*p == '\\') {
+      if (!p[1]) {
+        free(out);
+        return NULL;
+      }
       ++p;
+      if (*p == 'u' && p[1] && p[2] && p[3] && p[4] && p[5]) {
+        uint32_t cp = 0;
+        if (far_net_json_hex4(p + 1, &cp) &&
+            far_net_deser_push_cp(&out, &cap, &len, cp)) {
+          p += 5;
+          continue;
+        }
+        free(out);
+        return NULL;
+      }
       char ch = *p;
       switch (ch) {
         case 'b':
@@ -1088,32 +1564,29 @@ char* far_net_deserialize(const char* json, const char* key) {
         case 't':
           ch = '\t';
           break;
-        default:
+        case '"':
+        case '\\':
+        case '/':
           break;
-      }
-      if (len + 1 >= cap) {
-        cap *= 2;
-        char* bigger = (char*)realloc(out, cap);
-        if (!bigger) {
+        default:
           free(out);
           return NULL;
-        }
-        out = bigger;
       }
-      out[len++] = ch;
-      ++p;
-      continue;
-    }
-    if (len + 1 >= cap) {
-      cap *= 2;
-      char* bigger = (char*)realloc(out, cap);
-      if (!bigger) {
+      if (!far_net_deser_push(&out, &cap, &len, ch)) {
         free(out);
         return NULL;
       }
-      out = bigger;
+      ++p;
+      continue;
     }
-    out[len++] = *p++;
+    if (!far_net_deser_push(&out, &cap, &len, *p++)) {
+      free(out);
+      return NULL;
+    }
+  }
+  if (*p != '"') {
+    free(out);
+    return NULL;
   }
   out[len] = '\0';
   return out;

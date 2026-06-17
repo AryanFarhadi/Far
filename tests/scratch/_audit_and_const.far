@@ -1,0 +1,6 @@
+fun test_and_const() -> i64 {
+  x = 0
+  if (x) { return 1 }
+  return x
+}
+fun main() { print(test_and_const()); return 0 }

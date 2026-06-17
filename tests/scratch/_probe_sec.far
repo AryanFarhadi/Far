@@ -1,0 +1,7 @@
+﻿fun main() {
+  c = math.cos(math.pi() / 2.0)
+  s = math.sec(math.pi() / 2.0)
+  print(c)
+  print(s)
+  return 0
+}

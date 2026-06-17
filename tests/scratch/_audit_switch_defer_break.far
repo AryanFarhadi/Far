@@ -1,0 +1,14 @@
+fun switch_defer_break() -> i64 {
+  n = 0
+  for i in 0..<2 {
+    switch i {
+      case 0:
+        defer n = n + 1
+        break
+      default:
+        n = n + 10
+    }
+  }
+  return n
+}
+fun main() { print(switch_defer_break()); return 0 }

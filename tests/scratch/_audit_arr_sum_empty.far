@@ -1,0 +1,5 @@
+import math
+fun main() {
+  print(math.arr_sum([]))
+  return 0
+}

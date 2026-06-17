@@ -1,0 +1,6 @@
+fun ternary_assign_side() -> i64 {
+  x = 0
+  y = 0 ? (x = 1) : (x = 2)
+  return x
+}
+fun main() { print(ternary_assign_side()); return 0 }

@@ -1,0 +1,6 @@
+fun while_and_assign() -> i64 {
+  x = 0
+  while (x && (x = 1)) { }
+  return x
+}
+fun main() { print(while_and_assign()); return 0 }

@@ -20,6 +20,8 @@ static char* far_sec_strdup(const char* s) {
   if (!s)
     return NULL;
   size_t n = strlen(s);
+  if (n > FAR_STR_MAX || n >= SIZE_MAX)
+    return NULL;
   char* out = (char*)malloc(n + 1);
   if (!out)
     return NULL;
@@ -81,7 +83,16 @@ int64_t far_sec_bounds_slice(int64_t start, int64_t len, int64_t cap) {
     return 0;
   if (start > cap)
     return 0;
+  int64_t end;
+#if defined(__GNUC__) || defined(__clang__)
+  if (__builtin_add_overflow(start, len, &end))
+    return 0;
+#else
   if (len > cap - start)
+    return 0;
+  end = start + len;
+#endif
+  if (end > cap)
     return 0;
   return 1;
 }
@@ -373,7 +384,7 @@ int64_t far_sec_sandbox_can(const char* path) {
   for (int i = 0; i < g_sec_sandbox_path_n; ++i) {
     const char* allowed = g_sec_sandbox_paths[i];
     size_t n = strlen(allowed);
-    if (strncmp(path, allowed, n) == 0 && (path[n] == '\0' || path[n] == '/'))
+    if (strncmp(path, allowed, n) == 0 && (path[n] == '\0' || path[n] == '/' || path[n] == '\\'))
       return 1;
   }
   return 0;

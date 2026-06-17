@@ -1,0 +1,7 @@
+fun f() -> i64 {
+  x = 0
+  if (0) { return 99 }
+  else if (x && (x = 1)) { return 98 }
+  return x
+}
+fun main() { print(f()); return 0 }

@@ -1,6 +1,7 @@
 /* Far console I/O runtime — included from far_rt.c */
 
 #include <ctype.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -62,7 +63,12 @@ int64_t far_io_read_i64(void) {
     return 0;
   }
   char* end = NULL;
+  errno = 0;
   long long v = strtoll(line, &end, 10);
+  if (errno == ERANGE) {
+    free(line);
+    return 0;
+  }
   if (end == line) {
     free(line);
     return 0;
@@ -84,7 +90,12 @@ double far_io_read_f64(void) {
     return 0.0;
   }
   char* end = NULL;
+  errno = 0;
   double v = strtod(line, &end);
+  if (errno == ERANGE) {
+    free(line);
+    return 0.0;
+  }
   if (end == line) {
     free(line);
     return 0.0;

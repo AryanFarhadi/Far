@@ -1,0 +1,11 @@
+fun defer_continue_in_if() -> i64 {
+  n = 0
+  for i in 0..<3 {
+    if (i == 1) {
+      defer n = n + 1
+      continue
+    }
+  }
+  return n
+}
+fun main() { print(defer_continue_in_if()); return 0 }

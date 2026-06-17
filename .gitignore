@@ -25,6 +25,7 @@ debug-*.log
 /*.c
 short_*.txt
 far_comprehensive_fs_tmp.txt
+tests/negative/oversize_import.far
 benchmark/bin/
 tokdump.exe
 vec_min_test.exe

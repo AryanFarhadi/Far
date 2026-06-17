@@ -570,6 +570,32 @@ static bool rangeForConstEmpty(int64_t start, int64_t end, bool exclusive) {
   return exclusive ? (start >= end) : (start > end);
 }
 
+static bool parallelForConstSpanTooLarge(int64_t start, int64_t end, bool exclusive) {
+  if (rangeForConstEmpty(start, end, exclusive))
+    return false;
+  int64_t hi = end;
+  if (!exclusive) {
+#if defined(__GNUC__) || defined(__clang__)
+    if (__builtin_add_overflow(end, 1, &hi))
+      return true;
+#else
+    if (end == INT64_MAX)
+      return true;
+    hi = end + 1;
+#endif
+  }
+  int64_t diff;
+#if defined(__GNUC__) || defined(__clang__)
+  if (__builtin_sub_overflow(hi, start, &diff))
+    return true;
+#else
+  if (hi < start)
+    return true;
+  diff = hi - start;
+#endif
+  return diff > (1 << 24);
+}
+
 static std::optional<int64_t> rangeForConstSampleValue(int64_t start, int64_t end, bool exclusive) {
   if (rangeForConstEmpty(start, end, exclusive))
     return std::nullopt;
@@ -1715,6 +1741,11 @@ class TypeChecker {
           checkExpr(*stmt.for_stmt.range_end);
           auto range_start = constIntFromExpr(*stmt.for_stmt.range_start, const_locals_);
           auto range_end = constIntFromExpr(*stmt.for_stmt.range_end, const_locals_);
+          if (!stmt.for_stmt.range_exclusive && range_end && *range_end == INT64_MAX)
+            throw FarError("inclusive parallel for range cannot end at INT64_MAX");
+          if (range_start && range_end &&
+              parallelForConstSpanTooLarge(*range_start, *range_end, stmt.for_stmt.range_exclusive))
+            throw FarError("parallel for range too large");
           bool skip_body = range_start && range_end &&
                            rangeForConstEmpty(*range_start, *range_end, stmt.for_stmt.range_exclusive);
           Function* pfor = findSyntheticByLlvm(program_, stmt.for_stmt.parallel_fn);
@@ -2092,6 +2123,8 @@ class TypeChecker {
       case Expr::Binary: {
         const std::string& op = expr.bin_op.op;
         TypeDesc lt = checkExpr(*expr.bin_op.left);
+        if ((op == "<" || op == ">" || op == "<=" || op == ">=") && isPrim(lt, FarTypeId::Bool))
+          throwAt(expr, "chained comparison is not supported; combine comparisons with &&");
         TypeDesc rt;
         if (op == "and" || op == "&&") {
           ConstBool lb = constBoolFromExpr(*expr.bin_op.left, const_locals_);
@@ -2194,10 +2227,6 @@ class TypeChecker {
                  ((isPrimitiveDesc(lt) && isFloatType(lt.primitive)) ||
                   (isPrimitiveDesc(rt) && isFloatType(rt.primitive))))
           throw FarError("operator '" + op + "' requires integer operands");
-        else if (op == "%" &&
-                 ((isPrimitiveDesc(lt) && isFloatType(lt.primitive)) ||
-                  (isPrimitiveDesc(rt) && isFloatType(rt.primitive))))
-          throw FarError("operator '%' requires integer operands");
         else if (isUserDesc(lt)) {
           const UserMethod* om = obj_reg_.lookupMethod(lt, userOpMethodName(op));
           if (om)
@@ -2957,6 +2986,30 @@ class TypeChecker {
         throw FarError("unknown method '" + expr.method_call.method + "' on " + typeDescName(obj_ty));
       if (static_cast<int>(expr.method_call.args.size()) != mi->nargs)
         throw FarError(expr.method_call.method + "() argument count mismatch");
+      if (obj_ty.form == TypeForm::ThreadPool && mi->id == ConcMethodId::Submit) {
+        Expr& fn_expr = *expr.method_call.args[0];
+        if (fn_expr.kind != Expr::Variable)
+          throwAt(fn_expr, "submit() requires a function name as first argument");
+        const std::string& fname = fn_expr.var.name;
+        auto it = fn_overloads_.find(fname);
+        if (it == fn_overloads_.end() || it->second.empty())
+          throwAt(fn_expr, "undefined function '" + fname + "'");
+        const Function* picked = nullptr;
+        for (const Function* f : it->second) {
+          if ((!f->link_public && !current_fn_) || f->params.size() != 1)
+            continue;
+          picked = f;
+          break;
+        }
+        if (!picked)
+          throwAt(fn_expr, "submit() function must take exactly one argument");
+        TypeDesc arg_ty = checkExpr(*expr.method_call.args[1]);
+        if (!canAssignTypes(arg_ty, picked->params[0].type))
+          throw FarError("submit() argument type mismatch");
+        expr.method_call.resolved = picked;
+        expr.method_call.resolved_llvm_name = mangleFunction(*picked);
+        return TypeDesc::prim(FarTypeId::I64);
+      }
       TypeDesc arg_ty = TypeDesc::prim(FarTypeId::I64);
       for (const auto& a : expr.method_call.args)
         arg_ty = checkExpr(*a);

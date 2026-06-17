@@ -1,0 +1,8 @@
+actor Counter {
+  fun on_msg(msg: i64) -> i64 { return msg + 1 }
+}
+fun main() {
+  c = Counter()
+  c.stop()
+  return 0
+}

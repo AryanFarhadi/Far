@@ -1,0 +1,6 @@
+fun closed_recv() -> i64 {
+  ch = Channel<i64>(1)
+  ch.close()
+  return ch.recv()
+}
+fun main() { print(closed_recv()); return 0 }

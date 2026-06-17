@@ -1,0 +1,7 @@
+fun llist_pop_empty() -> i64 {
+  ll: LinkedList<i64> = LinkedList<i64>()
+  ll.push_back(1)
+  ll.pop_front()
+  return ll.pop_front()
+}
+fun main() { print(llist_pop_empty()); return 0 }

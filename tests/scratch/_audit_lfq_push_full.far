@@ -1,0 +1,7 @@
+fun lfq_push_full() -> i64 {
+  q = LockFreeQueue<i64>(1)
+  q.push(1)
+  q.push(2)
+  return 0
+}
+fun main() { print(lfq_push_full()); return 0 }

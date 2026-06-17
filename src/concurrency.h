@@ -27,6 +27,11 @@ enum class ConcMethodId {
   Ask,
   Stop,
   Await,
+  TryRecv,
+  TrySend,
+  TryWait,
+  IsClosed,
+  Pending,
 };
 
 struct ConcMethodInfo {

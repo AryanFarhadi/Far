@@ -1,0 +1,6 @@
+fun main() {
+  b = Box<i64>(8)
+  drop(b)
+  print(b.get())
+  return 0
+}

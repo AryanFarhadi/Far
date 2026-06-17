@@ -1,0 +1,2 @@
+fun div_i64min() -> i64 { return (-9223372036854775808) / -1 }
+fun main() { print(div_i64min()); return 0 }

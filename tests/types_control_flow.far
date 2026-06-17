@@ -158,6 +158,51 @@ fun t18_while_switch_break() -> i64 {
   return eq(s, 32)
 }
 
+fun t19_and_assign_in_if_condition() -> i64 {
+  x = 0
+  if (x && (x = 1)) { return 1 }
+  return eq(x, 0)
+}
+
+fun t20_finally_return_before_mutation() -> i64 {
+  r = 0
+  try {
+    r = 1
+    return r
+  } finally {
+    r = 99
+  }
+  return 0
+}
+
+fun t21_defer_on_break() -> i64 {
+  n = 0
+  for i in 0..<3 {
+    defer n = n + 1
+    if (i == 1) { break }
+  }
+  return eq(n, 2)
+}
+
+fun t22_or_assign_in_while_condition() -> i64 {
+  x = 1
+  n = 0
+  while (x || (n = 99)) {
+    n = n + 1
+    if (n == 3) { break }
+  }
+  return eq(n, 3)
+}
+
+fun t23_and_assign_in_while_condition() -> i64 {
+  x = 1
+  n = 0
+  while (x && (n = n + 1)) {
+    x = 0
+  }
+  return eq(n, 1)
+}
+
 fun main() {
   r = 0
   r = run(1, t01_if_else()); if (r != 0) { return r }
@@ -178,6 +223,11 @@ fun main() {
   r = run(16, t16_switch_break_no_loop()); if (r != 0) { return r }
   r = run(17, eq(t17_return_in_const_switch(), 42)); if (r != 0) { return r }
   r = run(18, t18_while_switch_break()); if (r != 0) { return r }
+  r = run(19, t19_and_assign_in_if_condition()); if (r != 0) { return r }
+  r = run(20, eq(t20_finally_return_before_mutation(), 1)); if (r != 0) { return r }
+  r = run(21, t21_defer_on_break()); if (r != 0) { return r }
+  r = run(22, t22_or_assign_in_while_condition()); if (r != 0) { return r }
+  r = run(23, t23_and_assign_in_while_condition()); if (r != 0) { return r }
   print(0)
   return 0
 }

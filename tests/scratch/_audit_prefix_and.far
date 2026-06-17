@@ -1,0 +1,6 @@
+fun prefix_and_side() -> i64 {
+  x = 0
+  if (x && (++x)) { return 1 }
+  return x
+}
+fun main() { print(prefix_and_side()); return 0 }

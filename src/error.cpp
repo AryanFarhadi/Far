@@ -13,6 +13,8 @@ namespace {
 
 thread_local std::vector<DiagnosticFrame> g_diag_stack;
 
+constexpr size_t kMaxDiagLineLen = 200;
+
 int lineNumberWidth(int line) {
   int w = 1;
   int n = std::max(line, 1);
@@ -27,6 +29,13 @@ std::string trimRight(std::string s) {
   while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\r'))
     s.pop_back();
   return s;
+}
+
+std::string truncateDiagLine(const std::string& s) {
+  std::string text = trimRight(s);
+  if (text.size() <= kMaxDiagLineLen)
+    return text;
+  return text.substr(0, kMaxDiagLineLen - 3) + "...";
 }
 
 }  // namespace
@@ -79,10 +88,12 @@ void printDiagnostic(std::ostream& out, const FarError& err) {
     out << err.file << ':' << err.line << ':' << std::max(err.col, 1) << ": error: " << err.message << '\n';
     if (!err.source_line.empty()) {
       const int width = lineNumberWidth(err.line);
-      std::string text = trimRight(err.source_line);
+      std::string text = truncateDiagLine(err.source_line);
       out << std::setw(width) << err.line << " | " << text << '\n';
       out << std::setw(width) << ' ' << " | ";
       int caret_col = std::max(err.col, 1);
+      if (static_cast<size_t>(caret_col) > text.size())
+        caret_col = static_cast<int>(text.size()) + 1;
       out << std::string(static_cast<size_t>(caret_col - 1), ' ') << '^' << '\n';
     }
     return;
@@ -96,8 +107,12 @@ void printDiagnostic(std::ostream& out, const FarError& err) {
   if (err.line > 0) {
     out << "line " << err.line << ':' << std::max(err.col, 1) << ": error: " << err.message << '\n';
     if (!err.source_line.empty()) {
-      out << "    | " << trimRight(err.source_line) << '\n';
-      out << "    | " << std::string(static_cast<size_t>(std::max(err.col, 1) - 1), ' ') << '^' << '\n';
+      std::string text = truncateDiagLine(err.source_line);
+      out << "    | " << text << '\n';
+      int caret_col = std::max(err.col, 1);
+      if (static_cast<size_t>(caret_col) > text.size())
+        caret_col = static_cast<int>(text.size()) + 1;
+      out << "    | " << std::string(static_cast<size_t>(caret_col - 1), ' ') << '^' << '\n';
     }
     return;
   }

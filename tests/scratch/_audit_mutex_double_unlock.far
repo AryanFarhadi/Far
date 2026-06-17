@@ -1,0 +1,8 @@
+fun mutex_double_unlock() -> i64 {
+  m = Mutex()
+  m.lock()
+  m.unlock()
+  m.unlock()
+  return 0
+}
+fun main() { print(mutex_double_unlock()); return 0 }

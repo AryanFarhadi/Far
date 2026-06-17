@@ -2784,17 +2784,33 @@ std::unique_ptr<Expr> Parser::parsePrimary() {
 
 static std::string readFileText(const std::string& path) {
 
-  std::ifstream in(path, std::ios::binary);
+  static constexpr std::size_t kMaxSourceBytes = 64u * 1024u * 1024u;
+
+  std::ifstream in(path, std::ios::binary | std::ios::ate);
 
   if (!in)
 
     throw FarError("cannot open import: " + path);
 
-  std::ostringstream ss;
+  std::streamsize size = in.tellg();
 
-  ss << in.rdbuf();
+  if (size < 0)
 
-  return ss.str();
+    throw FarError("cannot read import size: " + path);
+
+  if (static_cast<std::size_t>(size) > kMaxSourceBytes)
+
+    throw FarError("import file exceeds maximum size (64 MiB): " + path);
+
+  in.seekg(0, std::ios::beg);
+
+  std::string content(static_cast<std::size_t>(size), '\0');
+
+  if (!in.read(content.data(), size))
+
+    throw FarError("cannot read import: " + path);
+
+  return content;
 
 }
 

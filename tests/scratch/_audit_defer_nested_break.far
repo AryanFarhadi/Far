@@ -1,0 +1,12 @@
+fun defer_nested_break() -> i64 {
+  n = 0
+  for i in 0..<3 {
+    defer n = n + 10
+    if (i == 1) {
+      defer n = n + 1
+      break
+    }
+  }
+  return n
+}
+fun main() { print(defer_nested_break()); return 0 }

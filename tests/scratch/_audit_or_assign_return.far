@@ -1,0 +1,6 @@
+fun if_or_assign_return() -> i64 {
+  x = 0
+  if (true || (x = 1)) { return 99 }
+  return x
+}
+fun main() { print(if_or_assign_return()); return 0 }

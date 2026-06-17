@@ -1,0 +1,1 @@
+fun main() { print(threads.join(0)); return 0 }

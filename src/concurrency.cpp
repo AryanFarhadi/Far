@@ -15,7 +15,10 @@ static const ConcConstructorInfo kConcConstructors[] = {
 };
 
 static const ConcMethodInfo kChannelMethods[] = {
-    {ConcMethodId::Send, "send", 1}, {ConcMethodId::Recv, "recv", 0}, {ConcMethodId::Close, "close", 0},
+    {ConcMethodId::Send, "send", 1}, {ConcMethodId::Recv, "recv", 0},
+    {ConcMethodId::TryRecv, "try_recv", 0}, {ConcMethodId::TrySend, "try_send", 1},
+    {ConcMethodId::Close, "close", 0}, {ConcMethodId::IsClosed, "is_closed", 0},
+    {ConcMethodId::Pending, "pending", 0},
 };
 
 static const ConcMethodInfo kMutexMethods[] = {
@@ -24,6 +27,7 @@ static const ConcMethodInfo kMutexMethods[] = {
 
 static const ConcMethodInfo kSemaphoreMethods[] = {
     {ConcMethodId::Wait, "wait", 0}, {ConcMethodId::Signal, "signal", 0},
+    {ConcMethodId::TryWait, "try_wait", 0},
 };
 
 static const ConcMethodInfo kAtomicMethods[] = {
@@ -113,7 +117,7 @@ TypeDesc concMethodRetType(TypeForm form, ConcMethodId id, const TypeDesc& recv,
   (void)arg;
   switch (form) {
     case TypeForm::Channel:
-      if (id == ConcMethodId::Recv && !recv.args.empty())
+      if ((id == ConcMethodId::Recv || id == ConcMethodId::TryRecv) && !recv.args.empty())
         return recv.args[0];
       return TypeDesc::prim(FarTypeId::I64);
     case TypeForm::Atomic:
@@ -139,7 +143,11 @@ void declareConcurrencyRuntime(std::ostringstream& out) {
   out << "declare i64 @far_channel_new(i64)\n";
   out << "declare i64 @far_channel_send(i64, i64)\n";
   out << "declare i64 @far_channel_recv(i64)\n";
+  out << "declare i64 @far_channel_try_recv(i64)\n";
+  out << "declare i64 @far_channel_try_send(i64, i64)\n";
   out << "declare void @far_channel_close(i64)\n";
+  out << "declare i64 @far_channel_is_closed(i64)\n";
+  out << "declare i64 @far_channel_pending(i64)\n";
   out << "declare void @far_channel_drop(i64)\n";
   out << "declare i64 @far_mutex_new()\n";
   out << "declare void @far_mutex_lock(i64)\n";
@@ -147,6 +155,7 @@ void declareConcurrencyRuntime(std::ostringstream& out) {
   out << "declare void @far_mutex_drop(i64)\n";
   out << "declare i64 @far_semaphore_new(i64)\n";
   out << "declare void @far_semaphore_wait(i64)\n";
+  out << "declare i64 @far_semaphore_try_wait(i64)\n";
   out << "declare void @far_semaphore_signal(i64)\n";
   out << "declare void @far_semaphore_drop(i64)\n";
   out << "declare i64 @far_atomic_new(i64)\n";

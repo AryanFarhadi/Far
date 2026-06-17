@@ -1,0 +1,6 @@
+fun main() {
+  r = Rc<i64>(8)
+  drop(r)
+  print(r.get())
+  return 0
+}

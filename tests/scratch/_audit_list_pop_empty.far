@@ -1,0 +1,7 @@
+fun list_pop_empty() -> i64 {
+  a: List<i64> = List<i64>()
+  a.push(1)
+  a.pop()
+  return a.pop()
+}
+fun main() { print(list_pop_empty()); return 0 }

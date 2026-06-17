@@ -41,7 +41,7 @@ static const char* far_mod_skip_ws(const char* p) {
 }
 
 static const char* far_mod_field(const char* text, const char* key, char* out, size_t cap) {
-  if (!text || !key || !out || cap == 0)
+  if (!text || !key || !key[0] || !out || cap == 0)
     return NULL;
   size_t klen = strlen(key);
   char* pattern = (char*)malloc(klen + 2);
@@ -98,6 +98,11 @@ int64_t far_mod_pat_eq(int64_t value, int64_t literal) { return value == literal
 int64_t far_mod_pat_wildcard(void) { return -1; }
 
 int64_t far_mod_pat_in_range(int64_t value, int64_t lo, int64_t hi) {
+  if (lo > hi) {
+    int64_t t = lo;
+    lo = hi;
+    hi = t;
+  }
   return (value >= lo && value <= hi) ? 1 : 0;
 }
 
@@ -118,9 +123,11 @@ int64_t far_mod_immut_is_sealed(int64_t sealed) { return sealed != 0 ? 1 : 0; }
 
 /* --- Readonly types --- */
 
-int64_t far_mod_readonly_wrap(int64_t value) { return (value << 1) | 1; }
+int64_t far_mod_readonly_wrap(int64_t value) {
+  return (int64_t)(((uint64_t)value << 1) | 1u);
+}
 
-int64_t far_mod_readonly_get(int64_t wrapped) { return wrapped >> 1; }
+int64_t far_mod_readonly_get(int64_t wrapped) { return (int64_t)((uint64_t)wrapped >> 1); }
 
 int64_t far_mod_readonly_is(int64_t wrapped) { return wrapped & 1; }
 
@@ -159,6 +166,8 @@ int64_t far_mod_live_tick(int64_t gen) { return (gen == g_live_gen) ? 0 : 1; }
 
 /* --- Package manager --- */
 
+#define FAR_MOD_READ_MAX ((size_t)64 * 1024 * 1024)
+
 char* far_mod_pkg_read(const char* path) {
   if (!path)
     return NULL;
@@ -182,7 +191,8 @@ char* far_mod_pkg_read(const char* path) {
     fclose(f);
     return NULL;
   }
-  if ((unsigned long long)n > (unsigned long long)SIZE_MAX - 1) {
+  if ((unsigned long long)n > (unsigned long long)FAR_MOD_READ_MAX ||
+      (unsigned long long)n > (unsigned long long)SIZE_MAX - 1) {
     fclose(f);
     return NULL;
   }
@@ -361,6 +371,8 @@ int64_t far_mod_prof_mem_kb(void) {
 
 /* --- Formatter --- */
 
+#define FAR_FMT_MAX_INDENT 65536
+
 char* far_mod_fmt_trim(const char* text) {
   if (!text)
     return far_mod_strdup("");
@@ -382,8 +394,12 @@ char* far_mod_fmt_indent(const char* text, int64_t spaces) {
     return far_mod_strdup("");
   if (spaces < 0)
     spaces = 0;
+  if (spaces > FAR_FMT_MAX_INDENT)
+    spaces = FAR_FMT_MAX_INDENT;
   size_t pad = (size_t)spaces;
   size_t n = strlen(text);
+  if (pad > SIZE_MAX - n - 1)
+    return NULL;
   char* out = (char*)malloc(pad + n + 1);
   if (!out)
     return NULL;
@@ -431,17 +447,29 @@ int64_t far_mod_repl_eval(const char* expr) {
   if (!expr)
     return 0;
   const char* p = far_mod_skip_ws(expr);
-  int64_t acc = 0;
   int sign = 1;
   if (*p == '-') {
     sign = -1;
     ++p;
   }
+  uint64_t uacc = 0;
   while (*p && isdigit((unsigned char)*p)) {
-    acc = acc * 10 + (*p - '0');
+    int digit = *p - '0';
+    if (uacc > (UINT64_MAX - (uint64_t)digit) / 10)
+      return 0;
+    uacc = uacc * 10 + (uint64_t)digit;
     ++p;
   }
-  return acc * sign;
+  if (sign < 0) {
+    if (uacc > (uint64_t)INT64_MAX + 1u)
+      return 0;
+    if (uacc == (uint64_t)INT64_MAX + 1u)
+      return INT64_MIN;
+    return -(int64_t)uacc;
+  }
+  if (uacc > (uint64_t)INT64_MAX)
+    return 0;
+  return (int64_t)uacc;
 }
 
 int64_t far_mod_repl_history_add(const char* line) {

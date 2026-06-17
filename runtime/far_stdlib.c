@@ -1,6 +1,8 @@
 /* Far standard library runtime — included from far_rt.c */
 
 #include <ctype.h>
+#include <errno.h>
+#include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,17 +23,63 @@
 #include <unistd.h>
 #endif
 
+#define FAR_JSON_MAX_OUT ((size_t)64 * 1024 * 1024)
+#define FAR_JSON_MAX_DOC FAR_JSON_MAX_OUT
+#define FAR_YAML_MAX_VAL (1 << 20)
+#define FAR_XML_MAX_VAL FAR_YAML_MAX_VAL
+#define FAR_XML_MAX_DOC ((size_t)1 << 20)
+#define FAR_CSV_MAX_FIELD FAR_YAML_MAX_VAL
+#define FAR_CSV_MAX_LINE ((size_t)1 << 20)
+#define FAR_ENV_NAME_MAX 4096
+#define FAR_ENV_VAL_MAX 65536
+#define FAR_PROC_CMD_MAX 8192
+#define FAR_ARG_VAL_MAX 65536
+#ifndef FAR_STR_MAX
+#define FAR_STR_MAX ((size_t)64 * 1024 * 1024)
+#endif
+
 static uint32_t g_rand_state = 123456789u;
 
 static char* far_strdup(const char* s) {
   if (!s)
     return NULL;
   size_t n = strlen(s);
+  if (n > FAR_STR_MAX || n >= SIZE_MAX)
+    return NULL;
   char* out = (char*)malloc(n + 1);
   if (!out)
     return NULL;
   memcpy(out, s, n + 1);
   return out;
+}
+
+static int far_stdlib_no_ctl(const char* s) {
+  if (!s)
+    return 0;
+  for (const char* p = s; *p; ++p) {
+    unsigned char c = (unsigned char)*p;
+    if (c < 32 || c == 127)
+      return 0;
+  }
+  return 1;
+}
+
+static int far_stdlib_strlen_ok(const char* s, size_t max) {
+  if (!s)
+    return 0;
+  return strlen(s) <= max;
+}
+
+static int far_env_name_ok(const char* name) {
+  if (!name || !name[0])
+    return 0;
+  if (!far_stdlib_no_ctl(name))
+    return 0;
+  if (!far_stdlib_strlen_ok(name, FAR_ENV_NAME_MAX))
+    return 0;
+  if (strchr(name, '='))
+    return 0;
+  return 1;
 }
 
 static int64_t far_ptr_to_i64(const char* p) { return (int64_t)(intptr_t)p; }
@@ -153,7 +201,8 @@ int64_t far_date_second(int64_t ms) {
   return s;
 }
 
-/* --- filesystem --- */
+#define FAR_FS_READ_MAX ((size_t)64 * 1024 * 1024)
+#define FAR_STD_NET_SEND_MAX ((size_t)16 * 1024 * 1024)
 
 extern int64_t far_sec_sandbox_active(void);
 extern int64_t far_sec_sandbox_can(const char* path);
@@ -189,7 +238,8 @@ char* far_fs_read(const char* path) {
     fclose(f);
     return NULL;
   }
-  if ((unsigned long long)sz > (unsigned long long)SIZE_MAX - 1) {
+  if ((unsigned long long)sz > (unsigned long long)FAR_FS_READ_MAX ||
+      (unsigned long long)sz > (unsigned long long)SIZE_MAX - 1) {
     fclose(f);
     return NULL;
   }
@@ -219,6 +269,10 @@ int64_t far_fs_write(const char* path, const char* content) {
     return -1;
   if (content) {
     size_t n = strlen(content);
+    if (n > FAR_FS_READ_MAX) {
+      fclose(f);
+      return -1;
+    }
     if (fwrite(content, 1, n, f) != n) {
       fclose(f);
       return -1;
@@ -338,10 +392,15 @@ static int64_t far_net_send_all(int64_t sock, const char* data, size_t len) {
     return -1;
   size_t off = 0;
   while (off < len) {
+    size_t remain = len - off;
 #ifdef _WIN32
-    int n = send((SOCKET)sock, data + off, (int)(len - off), 0);
+    size_t chunk = remain > (size_t)INT_MAX ? (size_t)INT_MAX : remain;
+    int n = send((SOCKET)sock, data + off, (int)chunk, 0);
 #else
-    ssize_t n = send((int)sock, data + off, len - off, 0);
+    size_t chunk = remain;
+    if (chunk > (size_t)SSIZE_MAX)
+      chunk = (size_t)SSIZE_MAX;
+    ssize_t n = send((int)sock, data + off, chunk, 0);
 #endif
     if (n <= 0)
       return -1;
@@ -353,11 +412,18 @@ static int64_t far_net_send_all(int64_t sock, const char* data, size_t len) {
 int64_t far_net_send(int64_t sock, const char* data) {
   if (sock < 0 || !data)
     return -1;
-  return far_net_send_all(sock, data, strlen(data));
+  size_t n = strlen(data);
+  if (n > FAR_STD_NET_SEND_MAX)
+    return -1;
+  return far_net_send_all(sock, data, n);
 }
 
 char* far_net_recv(int64_t sock, int64_t max) {
   if (sock < 0 || max <= 0)
+    return NULL;
+  if ((uint64_t)max > FAR_STD_NET_SEND_MAX)
+    return NULL;
+  if ((uint64_t)max > (uint64_t)SIZE_MAX - 1u)
     return NULL;
   size_t cap = (size_t)max;
   char* buf = (char*)malloc(cap + 1);
@@ -435,25 +501,25 @@ static size_t far_stdlib_json_escaped_len(const char* data) {
   if (!data)
     return n;
   for (const char* p = data; *p; ++p) {
+    size_t add = 1;
     switch (*p) {
       case '"':
       case '\\':
-        n += 2;
-        break;
       case '\b':
       case '\f':
       case '\n':
       case '\r':
       case '\t':
-        n += 2;
+        add = 2;
         break;
       default:
         if ((unsigned char)*p < 0x20)
-          n += 6;
-        else
-          n += 1;
+          add = 6;
         break;
     }
+    if (n > SIZE_MAX - add)
+      return SIZE_MAX;
+    n += add;
   }
   return n;
 }
@@ -461,7 +527,10 @@ static size_t far_stdlib_json_escaped_len(const char* data) {
 char* far_json_escape(const char* s) {
   if (!s)
     return far_strdup("\"\"");
-  size_t cap = far_stdlib_json_escaped_len(s) + 1;
+  size_t cap = far_stdlib_json_escaped_len(s);
+  if (cap >= SIZE_MAX)
+    return NULL;
+  cap += 1;
   char* out = (char*)malloc(cap);
   if (!out)
     return NULL;
@@ -484,6 +553,8 @@ char* far_json_stringify_str(const char* s) { return far_json_escape(s); }
 
 static const char* far_json_find_key(const char* json, const char* key) {
   if (!json || !key)
+    return NULL;
+  if (!far_stdlib_strlen_ok(json, FAR_JSON_MAX_DOC))
     return NULL;
   size_t klen = strlen(key);
   const char* p = json;
@@ -513,13 +584,18 @@ static const char* far_json_find_key(const char* json, const char* key) {
 }
 
 int64_t far_json_get_i64(const char* json, const char* key) {
+  if (!json || !key || !key[0] || !far_stdlib_no_ctl(key))
+    return 0;
   const char* p = far_json_find_key(json, key);
   if (!p)
     return 0;
   while (*p == ' ' || *p == '\t')
     ++p;
   char* end = NULL;
+  errno = 0;
   long long v = strtoll(p, &end, 10);
+  if (errno == ERANGE)
+    return 0;
   if (end == p)
     return 0;
   while (*end == ' ' || *end == '\t')
@@ -548,10 +624,21 @@ static int far_json_hex4(const char* p, uint32_t* out) {
 }
 
 static int far_json_append_bytes(char** out, size_t* cap, size_t* len, const char* bytes, size_t n) {
+  if (*len >= FAR_JSON_MAX_OUT || n > FAR_JSON_MAX_OUT - *len)
+    return 0;
+  if (n > SIZE_MAX - *len - 1)
+    return 0;
   if (*len + n >= *cap) {
-    size_t nc = *cap * 2;
-    while (*len + n >= nc)
-      nc *= 2;
+    size_t need = *len + n + 1;
+    size_t nc = *cap;
+    while (nc < need) {
+      if (nc > SIZE_MAX / 2)
+        nc = need;
+      else
+        nc *= 2;
+      if (nc < need)
+        return 0;
+    }
     char* bigger = (char*)realloc(*out, nc);
     if (!bigger)
       return 0;
@@ -563,7 +650,13 @@ static int far_json_append_bytes(char** out, size_t* cap, size_t* len, const cha
   return 1;
 }
 
+static int far_json_codepoint_ok(uint32_t cp) {
+  return cp <= 0x10FFFFu && !(cp >= 0xD800u && cp <= 0xDFFFu);
+}
+
 static int far_json_append_codepoint(char** out, size_t* cap, size_t* len, uint32_t cp) {
+  if (!far_json_codepoint_ok(cp))
+    return 0;
   char buf[4];
   size_t n = 0;
   if (cp <= 0x7F) {
@@ -589,6 +682,8 @@ static int far_json_append_codepoint(char** out, size_t* cap, size_t* len, uint3
 }
 
 char* far_json_get_str(const char* json, const char* key) {
+  if (!json || !key || !key[0] || !far_stdlib_no_ctl(key))
+    return NULL;
   const char* p = far_json_find_key(json, key);
   if (!p)
     return NULL;
@@ -603,18 +698,28 @@ char* far_json_get_str(const char* json, const char* key) {
   if (!out)
     return NULL;
   while (*p && *p != '"') {
-    if (*p == '\\' && p[1]) {
+    if (*p == '\\') {
+      if (!p[1]) {
+        free(out);
+        return NULL;
+      }
       ++p;
-      if (*p == 'u' && p[1] && p[2] && p[3] && p[4]) {
-        uint32_t cp = 0;
-        if (far_json_hex4(p + 1, &cp)) {
-          if (!far_json_append_codepoint(&out, &cap, &len, cp)) {
-            free(out);
-            return NULL;
-          }
-          p += 5;
-          continue;
+      if (*p == 'u') {
+        if (!p[1] || !p[2] || !p[3] || !p[4]) {
+          free(out);
+          return NULL;
         }
+        uint32_t cp = 0;
+        if (!far_json_hex4(p + 1, &cp)) {
+          free(out);
+          return NULL;
+        }
+        if (!far_json_append_codepoint(&out, &cap, &len, cp)) {
+          free(out);
+          return NULL;
+        }
+        p += 5;
+        continue;
       }
       char ch = *p;
       switch (ch) {
@@ -633,8 +738,13 @@ char* far_json_get_str(const char* json, const char* key) {
         case 't':
           ch = '\t';
           break;
-        default:
+        case '"':
+        case '\\':
+        case '/':
           break;
+        default:
+          free(out);
+          return NULL;
       }
       if (!far_json_append_bytes(&out, &cap, &len, &ch, 1)) {
         free(out);
@@ -649,6 +759,10 @@ char* far_json_get_str(const char* json, const char* key) {
     }
     ++p;
   }
+  if (*p != '"') {
+    free(out);
+    return NULL;
+  }
   out[len] = '\0';
   return out;
 }
@@ -658,7 +772,12 @@ char* far_json_get_str(const char* json, const char* key) {
 char* far_xml_escape(const char* s) {
   if (!s)
     return far_strdup("");
-  size_t cap = strlen(s) * 6 + 1;
+  size_t slen = strlen(s);
+  if (slen > FAR_XML_MAX_VAL)
+    return NULL;
+  if (slen > (SIZE_MAX - 1) / 6)
+    return NULL;
+  size_t cap = slen * 6 + 1;
   char* out = (char*)malloc(cap);
   if (!out)
     return NULL;
@@ -690,25 +809,53 @@ char* far_xml_escape(const char* s) {
   return out;
 }
 
+static int far_xml_name_ok(const char* name) {
+  if (!name || !name[0] || !far_stdlib_no_ctl(name))
+    return 0;
+  for (const char* p = name; *p; ++p) {
+    char c = *p;
+    if (c == ' ' || c == '\t' || c == '<' || c == '>' || c == '/' || c == '"' || c == '\'')
+      return 0;
+  }
+  return 1;
+}
+
 char* far_xml_tag(const char* name, const char* body) {
   if (!name)
     name = "";
   if (!body)
     body = "";
+  if (!far_xml_name_ok(name))
+    return NULL;
   char* en = far_xml_escape(body);
-  size_t n = strlen(name) * 2 + (en ? strlen(en) : 0) + 5;
+  if (!en)
+    return NULL;
+  size_t nlen = strlen(name);
+  size_t elen = strlen(en);
+  if (nlen > (SIZE_MAX - elen - 6) / 2) {
+    free(en);
+    return NULL;
+  }
+  size_t n = nlen * 2 + elen + 6;
   char* out = (char*)malloc(n);
   if (!out) {
     free(en);
     return NULL;
   }
-  snprintf(out, n, "<%s>%s</%s>", name, en ? en : "", name);
+  int w = snprintf(out, n, "<%s>%s</%s>", name, en, name);
+  if (w < 0 || (size_t)w >= n) {
+    free(en);
+    free(out);
+    return NULL;
+  }
   free(en);
   return out;
 }
 
 char* far_xml_get_attr(const char* xml, const char* attr) {
-  if (!xml || !attr)
+  if (!xml || !attr || !attr[0] || !far_stdlib_no_ctl(attr))
+    return NULL;
+  if (!far_stdlib_strlen_ok(xml, FAR_XML_MAX_DOC))
     return NULL;
   size_t alen = strlen(attr);
   const char* p = xml;
@@ -724,6 +871,8 @@ char* far_xml_get_attr(const char* xml, const char* attr) {
       if (!end)
         return NULL;
       size_t n = (size_t)(end - p);
+      if (n > FAR_XML_MAX_VAL)
+        return NULL;
       char* out = (char*)malloc(n + 1);
       if (!out)
         return NULL;
@@ -740,7 +889,9 @@ char* far_xml_get_attr(const char* xml, const char* attr) {
 /* --- yaml --- */
 
 char* far_yaml_get(const char* yaml, const char* key) {
-  if (!yaml || !key)
+  if (!yaml || !key || !key[0] || !far_stdlib_no_ctl(key))
+    return NULL;
+  if (!far_stdlib_strlen_ok(yaml, FAR_YAML_MAX_VAL * 64))
     return NULL;
   size_t klen = strlen(key);
   const char* p = yaml;
@@ -758,6 +909,8 @@ char* far_yaml_get(const char* yaml, const char* key) {
       while (*end && *end != '\n' && *end != '\r')
         ++end;
       size_t n = (size_t)(end - p);
+      if (n > FAR_YAML_MAX_VAL)
+        return NULL;
       char* out = (char*)malloc(n + 1);
       if (!out)
         return NULL;
@@ -778,6 +931,8 @@ char* far_yaml_get(const char* yaml, const char* key) {
 int64_t far_csv_count(const char* line) {
   if (!line || !*line)
     return 0;
+  if (strlen(line) > FAR_CSV_MAX_LINE)
+    return 0;
   int64_t n = 1;
   for (const char* p = line; *p; ++p)
     if (*p == ',')
@@ -788,12 +943,16 @@ int64_t far_csv_count(const char* line) {
 char* far_csv_field(const char* line, int64_t index) {
   if (!line || index < 0)
     return NULL;
+  if (strlen(line) > FAR_CSV_MAX_LINE)
+    return NULL;
   const char* start = line;
   int64_t field = 0;
   for (const char* p = line;; ++p) {
     if (*p == ',' || *p == '\0') {
       if (field == index) {
         size_t n = (size_t)(p - start);
+        if (n > FAR_CSV_MAX_FIELD)
+          return NULL;
         char* out = (char*)malloc(n + 1);
         if (!out)
           return NULL;
@@ -819,29 +978,60 @@ void far_log_debug(const char* msg) { fprintf(stdout, "[DEBUG] %s\n", msg ? msg 
 
 /* --- regex (glob: * and ?) --- */
 
-static int far_glob_match(const char* pat, const char* text) {
+#define FAR_GLOB_MAX_STEPS (1 << 20)
+#define FAR_GLOB_MAX_TEXT (1 << 20)
+#define FAR_GLOB_MAX_PAT (1 << 16)
+
+static int far_glob_match_steps(const char* pat, const char* text, int* steps) {
+  if (*steps <= 0)
+    return 0;
+  --(*steps);
   if (!pat || !text)
     return 0;
   if (!*pat)
     return *text == '\0';
   if (*pat == '*') {
-  if (far_glob_match(pat + 1, text))
+    if (far_glob_match_steps(pat + 1, text, steps))
       return 1;
-    return *text && far_glob_match(pat, text + 1);
+    return *text && far_glob_match_steps(pat, text + 1, steps);
   }
-  if (*pat == '?' || *pat == *text)
-    return far_glob_match(pat + 1, text + 1);
+  if (*pat == '?') {
+    if (!*text)
+      return 0;
+    return far_glob_match_steps(pat + 1, text + 1, steps);
+  }
+  if (*pat == *text)
+    return far_glob_match_steps(pat + 1, text + 1, steps);
   return 0;
 }
 
+static int far_glob_match(const char* pat, const char* text) {
+  if (!pat || strlen(pat) > FAR_GLOB_MAX_PAT)
+    return 0;
+  if (!text || strlen(text) > FAR_GLOB_MAX_TEXT)
+    return 0;
+  int steps = FAR_GLOB_MAX_STEPS;
+  return far_glob_match_steps(pat, text, &steps);
+}
+
 int64_t far_regex_match(const char* pattern, const char* text) {
+  if (!pattern || !text)
+    return 0;
+  if (strlen(pattern) > FAR_GLOB_MAX_PAT)
+    return 0;
+  if (strlen(text) > FAR_GLOB_MAX_TEXT)
+    return 0;
   return far_glob_match(pattern, text) ? 1 : 0;
 }
 
 int64_t far_regex_find(const char* pattern, const char* text) {
   if (!pattern || !text)
     return -1;
+  if (strlen(pattern) > FAR_GLOB_MAX_PAT)
+    return -1;
   size_t len = strlen(text);
+  if (len > FAR_GLOB_MAX_TEXT)
+    return -1;
   for (size_t i = 0; i < len; ++i) {
     if (far_glob_match(pattern, text + i))
       return (int64_t)i;
@@ -851,10 +1041,48 @@ int64_t far_regex_find(const char* pattern, const char* text) {
 
 /* --- compression (RLE: byte 0xFF repeats next byte count times) --- */
 
+#define FAR_RLE_MAX_OUT ((size_t)64 * 1024 * 1024)
+#define FAR_RLE_MAX_IN FAR_RLE_MAX_OUT
+
+static int far_rle_reserve(char** out, size_t* cap, size_t need) {
+  if (need > FAR_RLE_MAX_OUT)
+    return 0;
+  if (need <= *cap)
+    return 1;
+  size_t nc = *cap ? *cap : 64;
+  while (nc < need) {
+    if (nc > FAR_RLE_MAX_OUT / 2)
+      nc = need;
+    else
+      nc *= 2;
+    if (nc < need || nc > FAR_RLE_MAX_OUT)
+      return 0;
+  }
+  char* bigger = (char*)realloc(*out, nc);
+  if (!bigger)
+    return 0;
+  *out = bigger;
+  *cap = nc;
+  return 1;
+}
+
+static int far_rle_push(char** out, size_t* cap, size_t* len, char c) {
+  if (*len >= FAR_RLE_MAX_OUT)
+    return 0;
+  if (!far_rle_reserve(out, cap, *len + 1))
+    return 0;
+  (*out)[(*len)++] = c;
+  return 1;
+}
+
 char* far_compress_rle(const char* data) {
   if (!data)
     return far_strdup("");
   size_t in_len = strlen(data);
+  if (in_len > FAR_RLE_MAX_IN)
+    return NULL;
+  if (in_len > (SIZE_MAX - 4) / 3)
+    return NULL;
   char* out = (char*)malloc(in_len * 3 + 4);
   if (!out)
     return NULL;
@@ -864,7 +1092,7 @@ char* far_compress_rle(const char* data) {
     size_t run = 1;
     while (i + run < in_len && (unsigned char)data[i + run] == c && run < 255)
       ++run;
-    if (run >= 3 || c == 0xFF) {
+    if (run >= 3 || c == 0xFF || c == 0) {
       out[j++] = (char)0xFF;
       out[j++] = (char)c;
       out[j++] = (char)run;
@@ -881,23 +1109,39 @@ char* far_compress_rle(const char* data) {
 char* far_decompress_rle(const char* data) {
   if (!data)
     return far_strdup("");
-  size_t cap = strlen(data) * 86 + 1;
-  char* out = (char*)malloc(cap);
-  if (!out)
+  size_t in_len = strlen(data);
+  if (in_len > FAR_RLE_MAX_IN)
     return NULL;
-  size_t j = 0;
-  for (size_t i = 0; data[i];) {
-    if ((unsigned char)data[i] == 0xFF && data[i + 1] && data[i + 2]) {
+  size_t cap = 0;
+  size_t len = 0;
+  char* out = NULL;
+  for (size_t i = 0; i < in_len;) {
+    if ((unsigned char)data[i] == 0xFF && i + 2 < in_len) {
       unsigned char c = (unsigned char)data[i + 1];
       int run = (unsigned char)data[i + 2];
-      for (int k = 0; k < run; ++k)
-        out[j++] = (char)c;
+      if (run <= 0) {
+        free(out);
+        return NULL;
+      }
+      for (int k = 0; k < run; ++k) {
+        if (!far_rle_push(&out, &cap, &len, (char)c)) {
+          free(out);
+          return NULL;
+        }
+      }
       i += 3;
     } else {
-      out[j++] = data[i++];
+      if (!far_rle_push(&out, &cap, &len, data[i++])) {
+        free(out);
+        return NULL;
+      }
     }
   }
-  out[j] = '\0';
+  if (!far_rle_reserve(&out, &cap, len + 1)) {
+    free(out);
+    return NULL;
+  }
+  out[len] = '\0';
   return out;
 }
 
@@ -910,6 +1154,10 @@ char* far_xor_crypt(const char* data, const char* key) {
     return far_strdup(data);
   size_t dl = strlen(data);
   size_t kl = strlen(key);
+  if (dl > FAR_JSON_MAX_OUT || kl > FAR_JSON_MAX_OUT)
+    return NULL;
+  if (dl >= SIZE_MAX - 1)
+    return NULL;
   char* out = (char*)malloc(dl + 1);
   if (!out)
     return NULL;
@@ -925,7 +1173,8 @@ int64_t far_hash_fnv(const char* s) {
   if (!s)
     return 0;
   uint64_t h = 14695981039346656037ULL;
-  for (; *s; ++s) {
+  size_t scanned = 0;
+  for (; *s && scanned < FAR_STR_MAX; ++s, ++scanned) {
     h ^= (unsigned char)*s;
     h *= 1099511628211ULL;
   }
@@ -936,7 +1185,8 @@ int64_t far_hash_crc32(const char* s) {
   if (!s)
     return 0;
   uint32_t crc = 0xFFFFFFFFu;
-  for (; *s; ++s) {
+  size_t scanned = 0;
+  for (; *s && scanned < FAR_STR_MAX; ++s, ++scanned) {
     crc ^= (unsigned char)*s;
     for (int k = 0; k < 8; ++k)
       crc = (crc >> 1) ^ (0xEDB88320u & (~(crc & 1u) + 1u));
@@ -958,7 +1208,9 @@ char* far_hash_md5_hex(const char* s) {
 /* --- process --- */
 
 int64_t far_proc_run(const char* cmd) {
-  if (!cmd)
+  if (!cmd || !far_stdlib_no_ctl(cmd))
+    return -1;
+  if (!far_stdlib_strlen_ok(cmd, FAR_PROC_CMD_MAX))
     return -1;
   return (int64_t)system(cmd);
 }
@@ -974,14 +1226,20 @@ int64_t far_proc_pid(void) {
 /* --- environment --- */
 
 char* far_env_get(const char* name) {
-  if (!name)
+  if (!far_env_name_ok(name))
     return NULL;
   const char* v = getenv(name);
-  return v ? far_strdup(v) : NULL;
+  if (!v)
+    return NULL;
+  if (!far_stdlib_strlen_ok(v, FAR_ENV_VAL_MAX))
+    return NULL;
+  return far_strdup(v);
 }
 
 int64_t far_env_set(const char* name, const char* value) {
-  if (!name)
+  if (!far_env_name_ok(name))
+    return -1;
+  if (value && !far_stdlib_strlen_ok(value, FAR_ENV_VAL_MAX))
     return -1;
 #ifdef _WIN32
   return _putenv_s(name, value ? value : "") == 0 ? 0 : -1;
@@ -991,7 +1249,7 @@ int64_t far_env_set(const char* name, const char* value) {
 }
 
 int64_t far_env_has(const char* name) {
-  if (!name)
+  if (!far_env_name_ok(name))
     return 0;
   return getenv(name) ? 1 : 0;
 }
@@ -1025,13 +1283,19 @@ char* far_args_get(int64_t index) {
   if (g_far_argc > 0 && g_far_argv) {
     if (index >= g_far_argc)
       return NULL;
+    if (!far_stdlib_strlen_ok(g_far_argv[index], FAR_ARG_VAL_MAX))
+      return NULL;
     return far_strdup(g_far_argv[index]);
   }
   if (index >= __argc || !__argv)
     return NULL;
+  if (!far_stdlib_strlen_ok(__argv[index], FAR_ARG_VAL_MAX))
+    return NULL;
   return far_strdup(__argv[index]);
 #else
   if (!g_far_argv || index >= g_far_argc)
+    return NULL;
+  if (!far_stdlib_strlen_ok(g_far_argv[index], FAR_ARG_VAL_MAX))
     return NULL;
   return far_strdup(g_far_argv[index]);
 #endif

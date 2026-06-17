@@ -1,0 +1,2 @@
+fun slice_oob() -> i64 { a=[1,2,3]; return a[0..10][0] }
+fun main() { print(slice_oob()); return 0 }

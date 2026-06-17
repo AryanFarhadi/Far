@@ -1,0 +1,5 @@
+fun dict_bracket_missing() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  return d[99]
+}
+fun main() { print(dict_bracket_missing()); return 0 }

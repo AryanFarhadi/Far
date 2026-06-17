@@ -1,0 +1,2 @@
+fun prec_pow() -> i64 { return 2 ** 3 ** 2 }
+fun main() { print(prec_pow()); return 0 }
