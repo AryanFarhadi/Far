@@ -202,18 +202,20 @@ Far is **AOT-compiled**, not interpreted. The pipeline is:
 .far  →  Far compiler (C++)  →  LLVM IR  →  clang -O2  →  native binary
 ```
 
-So numeric hot loops perform **on par with C** compiled by the same Clang version. Small differences (±10%) in benchmarks are normal codegen and measurement noise — not a separate “VM speed”.
+So numeric hot loops are compiled to native code — same pipeline as C. The benchmark suite below compares real wall-clock times; gaps vs C depend on workload and codegen maturity.
 
 ### Benchmark suite
 
-Compare **C**, **Far**, and **Python** on identical workloads:
+Compare **C**, **Far**, and **Python** on identical numeric workloads (same checksums across all three):
 
-| Benchmark | Default workload |
-|-----------|------------------|
-| `fib_iter` | 30M iterative Fibonacci steps (`u64`) |
-| `collatz_sum` | Sum Collatz steps for `1..8M` |
-| `sum_squares` | Σ i² mod 1 000 000 007 over 80M terms |
-| `nested_loop` | O(n³) triple loop, n = 520 |
+| Benchmark | Default workload | What it measures |
+|-----------|------------------|------------------|
+| `fib_iter` | 30M steps | Iterative Fibonacci (`u64` wrap) |
+| `collatz_sum` | n = 1..8M | Total Collatz steps |
+| `sum_squares` | 80M terms | Σ i² mod 1 000 000 007 |
+| `nested_loop` | 520³ | Triple nested XOR accumulator |
+
+**Requirements:** `clang` and `python` on PATH (in addition to `far.exe`).
 
 **Windows:**
 
@@ -226,23 +228,46 @@ benchmark\run_benchmark.bat
 
 ```bash
 ./build.sh
-benchmark/run_benchmark.sh
+chmod +x benchmark/run_benchmark.sh
+./benchmark/run_benchmark.sh
+```
+
+Sample output:
+
+```
+Lang     Benchmark          ms  checksum
+------------------------------------------------
+C        fib_iter             16 ms  result=10731788025614611713
+Far      fib_iter             31 ms  result=10731788025614611713
+Python   fib_iter           1231 ms  result=10731788025614611713
+...
 ```
 
 ### Example results (Windows x64, Clang -O2)
 
-Typical wall-clock times on a modern desktop — **your numbers will vary**:
+Measured on one desktop — **your numbers will vary** (timer resolution, CPU, thermal throttling):
 
 | Benchmark | C | Far | Python |
 |-----------|---|-----|--------|
-| fib_iter (30M) | ~20 ms | ~21 ms | ~1.4 s |
-| collatz_sum (8M) | ~1.3 s | ~1.2 s | ~65 s |
-| sum_squares (80M) | ~275 ms | ~241 ms | ~8.8 s |
-| nested_loop (520³) | ~85 ms | ~92 ms | ~8 s |
+| `fib_iter` (30M) | 0–20 ms | ~31 ms | ~1.2 s |
+| `collatz_sum` (8M) | ~1.0 s | ~9 s | ~60 s |
+| `sum_squares` (80M) | ~313 ms | ~422 ms | ~4.5 s |
+| `nested_loop` (520³) | ~31 ms | ~187 ms | ~6.8 s |
 
-All three native implementations print the same checksum (`result=...`), so the work is equivalent. Python is slower because it runs in the **CPython interpreter**.
+All implementations print the same `result=` checksum. Python is slower because it runs in the **CPython interpreter**; Far and C both emit native binaries via `clang -O2`.
 
-Scale C/Python via environment variables (`BENCH_FIB_N`, `BENCH_COLLATZ_LIMIT`, …). Far uses constants at the top of each `.far` file in `benchmark/`.
+**Scale C and Python** with environment variables:
+
+| Variable | Default |
+|----------|---------|
+| `BENCH_FIB_N` | 30000000 |
+| `BENCH_COLLATZ_LIMIT` | 8000000 |
+| `BENCH_SUM_SQUARES_N` | 80000000 |
+| `BENCH_NESTED_N` | 520 |
+
+Far reads workload sizes from constants inside each `.far` file in `benchmark/` — edit those to match when scaling.
+
+Built artifacts go to `benchmark/bin/` (gitignored).
 
 More: [`benchmark/README.md`](benchmark/README.md)
 
@@ -279,12 +304,15 @@ far/
 ├── examples/
 │   ├── program.far   Sample entry program
 ├── benchmark/        C / Far / Python performance suite
-│   └── modules/      Sample packages
+│   ├── *.c, *.far, *.py   Four workloads (fib, collatz, sum_squares, nested_loop)
+│   ├── run_benchmark.bat / run_benchmark.sh
+│   └── bin/          Built binaries (gitignored)
 ├── vscode/           VS Code extension + IntelliSense data
 ├── install/          Windows installer scripts
 ├── build.bat         Build far.exe (Windows)
 ├── build.sh          Build ./far (Linux)
-└── run_tests.bat     Run test suite
+├── run_tests.bat     Run test suite
+└── run_benchmark.bat Run C / Far / Python benchmarks (Windows)
 ```
 
 ---
