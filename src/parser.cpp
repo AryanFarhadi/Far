@@ -350,6 +350,33 @@ void Parser::consumeOptionalSemi() {
 
 }
 
+bool Parser::isConstexprLetStart() const {
+  if (!check(TokenKind::Constexpr) || pos_ + 1 >= tokens_.size())
+    return false;
+  if (tokens_[pos_ + 1].kind != TokenKind::Ident)
+    return false;
+  if (pos_ + 2 >= tokens_.size())
+    return false;
+  const TokenKind next = tokens_[pos_ + 2].kind;
+  return next == TokenKind::Eq || next == TokenKind::Colon;
+}
+
+std::unique_ptr<Stmt> Parser::parseConstexprLet() {
+  match(TokenKind::Constexpr);
+  auto s = std::make_unique<Stmt>();
+  s->kind = Stmt::LetStmt;
+  s->let.name = expect(TokenKind::Ident).value;
+  if (match(TokenKind::Colon)) {
+    s->let.type = parseType();
+    s->let.explicit_type = true;
+  }
+  expect(TokenKind::Eq);
+  s->let.value = parseExpr();
+  s->let.is_constexpr = true;
+  consumeOptionalSemi();
+  return s;
+}
+
 
 
 Visibility Parser::parseVisibility() {
@@ -609,18 +636,8 @@ Program Parser::parse() {
       program.codegen_stmts.push_back(std::move(block));
       continue;
     }
-    if (check(TokenKind::Constexpr) && pos_ + 1 < tokens_.size() &&
-        tokens_[pos_ + 1].kind == TokenKind::Ident && pos_ + 2 < tokens_.size() &&
-        tokens_[pos_ + 2].kind == TokenKind::Eq) {
-      match(TokenKind::Constexpr);
-      auto s = std::make_unique<Stmt>();
-      s->kind = Stmt::LetStmt;
-      s->let.name = expect(TokenKind::Ident).value;
-      expect(TokenKind::Eq);
-      s->let.value = parseExpr();
-      s->let.is_constexpr = true;
-      consumeOptionalSemi();
-      program.comptime_stmts.push_back(std::move(s));
+    if (isConstexprLetStart()) {
+      program.comptime_stmts.push_back(parseConstexprLet());
       continue;
     }
     if (check(TokenKind::Public) || check(TokenKind::Private) || check(TokenKind::Protected) ||
@@ -1110,6 +1127,11 @@ Function Parser::parseFunction() {
   fn.is_async = is_async;
   fn.is_coroutine = is_coro;
   fn.name = qualifyName(expect(TokenKind::Ident).value);
+  if (fn.name == "main") {
+    if (saw_main_)
+      throw FarError("duplicate definition of fun main()", tokens_[pos_ - 1].line, tokens_[pos_ - 1].col);
+    saw_main_ = true;
+  }
   fn.type_params = parseTypeParams();
   current_type_params_ = fn.type_params;
   expect(TokenKind::LParen);
@@ -1214,6 +1236,8 @@ std::unique_ptr<Stmt> Parser::parseIfStmt() {
 
   }
 
+  consumeOptionalSemi();
+
   return s;
 
 }
@@ -1239,7 +1263,7 @@ std::unique_ptr<Stmt> Parser::parseForStmt() {
 
     expect(TokenKind::In);
 
-    auto first = parseExpr();
+    auto first = parseExpr(true);
 
     if (check(TokenKind::DotDot) || check(TokenKind::DotDotLt)) {
       auto start = std::move(first);
@@ -1265,9 +1289,11 @@ std::unique_ptr<Stmt> Parser::parseForStmt() {
       if (is_parallel) {
         s->for_stmt.is_parallel = true;
         s->for_stmt.parallel_var = var;
+        consumeOptionalSemi();
         return s;
       }
 
+      consumeOptionalSemi();
       return s;
     }
 
@@ -1285,6 +1311,8 @@ std::unique_ptr<Stmt> Parser::parseForStmt() {
     s->for_stmt.foreach_var = var;
 
     s->for_stmt.foreach_iter = std::move(first);
+
+    consumeOptionalSemi();
 
     return s;
 
@@ -1377,6 +1405,8 @@ std::unique_ptr<Stmt> Parser::parseForStmt() {
 
   expect(TokenKind::RBrace);
 
+  consumeOptionalSemi();
+
   return s;
 
 }
@@ -1409,6 +1439,7 @@ std::unique_ptr<Stmt> Parser::parseTryStmt() {
   }
   if (!s->try_stmt.has_catch && !s->try_stmt.has_finally)
     throw FarError("try requires catch and/or finally");
+  consumeOptionalSemi();
   return s;
 }
 
@@ -1422,6 +1453,20 @@ std::unique_ptr<Pattern> Parser::parsePattern() {
     auto p = std::make_unique<Pattern>();
     p->kind = PatKind::Literal;
     p->literal = parseIntLiteral(tokens_[pos_ - 1].value, tokens_[pos_ - 1].line, tokens_[pos_ - 1].col);
+    return p;
+  }
+  if (match(TokenKind::Float)) {
+    std::string text = tokens_[pos_ - 1].value;
+    if (!text.empty() && (text.back() == 'f' || text.back() == 'F'))
+      text.pop_back();
+    auto p = std::make_unique<Pattern>();
+    p->kind = PatKind::Literal;
+    p->literal_is_float = true;
+    try {
+      p->float_literal = std::stod(text);
+    } catch (const std::exception&) {
+      throw FarError("invalid float literal", tokens_[pos_ - 1].line, tokens_[pos_ - 1].col);
+    }
     return p;
   }
   if (match(TokenKind::LParen)) {
@@ -1553,6 +1598,7 @@ std::unique_ptr<Stmt> Parser::parseMatchStmt() {
     s->match_stmt.arms.push_back(std::move(arm));
   }
   expect(TokenKind::RBrace);
+  consumeOptionalSemi();
   return s;
 }
 
@@ -1577,6 +1623,7 @@ std::unique_ptr<Stmt> Parser::parseSwitchStmt() {
     s->match_stmt.arms.push_back(std::move(arm));
   }
   expect(TokenKind::RBrace);
+  consumeOptionalSemi();
   return s;
 }
 
@@ -1649,6 +1696,8 @@ std::unique_ptr<Stmt> Parser::parseStmt() {
 
     expect(TokenKind::RBrace);
 
+    consumeOptionalSemi();
+
     return s;
 
   }
@@ -1708,22 +1757,12 @@ std::unique_ptr<Stmt> Parser::parseStmt() {
     expect(TokenKind::LBrace);
     s->unsafe.body = parseBlock();
     expect(TokenKind::RBrace);
-    return s;
-  }
-
-  if (check(TokenKind::Constexpr) && pos_ + 1 < tokens_.size() &&
-      tokens_[pos_ + 1].kind == TokenKind::Ident && pos_ + 2 < tokens_.size() &&
-      tokens_[pos_ + 2].kind == TokenKind::Eq) {
-    match(TokenKind::Constexpr);
-    auto s = std::make_unique<Stmt>();
-    s->kind = Stmt::LetStmt;
-    s->let.name = expect(TokenKind::Ident).value;
-    expect(TokenKind::Eq);
-    s->let.value = parseExpr();
-    s->let.is_constexpr = true;
     consumeOptionalSemi();
     return s;
   }
+
+  if (isConstexprLetStart())
+    return parseConstexprLet();
 
   if ((check(TokenKind::Ident) || check(TokenKind::TypeName)) && pos_ + 1 < tokens_.size()) {
 
@@ -1864,7 +1903,8 @@ static std::unique_ptr<Expr> desugarPipeline(std::unique_ptr<Expr> left, std::un
 }
 
 void Parser::pushParseDepth(int line, int col) {
-  if (++parse_depth_ > 512)
+  static const int kMaxParseDepth = 64;
+  if (++parse_depth_ > kMaxParseDepth)
     throw FarError("parser recursion depth exceeded", line, col);
 }
 
@@ -1873,16 +1913,16 @@ void Parser::popParseDepth() {
     --parse_depth_;
 }
 
-std::unique_ptr<Expr> Parser::parseExpr() {
+std::unique_ptr<Expr> Parser::parseExpr(bool allow_range_continuation) {
   pushParseDepth(current().line, current().col);
   struct Guard {
     Parser& p;
     ~Guard() { p.popParseDepth(); }
   } guard{*this};
-  return parseAssign();
+  return parseAssign(allow_range_continuation);
 }
 
-std::unique_ptr<Expr> Parser::parseAssign() {
+std::unique_ptr<Expr> Parser::parseAssign(bool allow_range_continuation) {
   auto left = parsePipeline();
   if (isAssignOpToken(current().kind)) {
     std::string op = tokens_[pos_].value;
@@ -1892,6 +1932,8 @@ std::unique_ptr<Expr> Parser::parseAssign() {
     auto right = parseAssign();
     return Expr::makeAssign(std::move(op), std::move(left), std::move(right));
   }
+  if (!allow_range_continuation && (check(TokenKind::DotDot) || check(TokenKind::DotDotLt)))
+    throw FarError("range syntax is only valid in for loops", current().line, current().col);
   return left;
 }
 
@@ -2090,6 +2132,8 @@ std::unique_ptr<Expr> Parser::parseUnary() {
   }
   if (match(TokenKind::Bang))
     return Expr::makeBinOp("!", Expr::makeInt(0), parseUnary());
+  if (match(TokenKind::Not))
+    return Expr::makeBinOp("!", Expr::makeInt(0), parseUnary());
   if (match(TokenKind::Star))
     return Expr::makePrefix("*", parseUnary());
   if (match(TokenKind::Amp))
@@ -2163,6 +2207,17 @@ std::unique_ptr<Expr> Parser::parseUnary() {
     return e;
   }
   if (match(TokenKind::Comptime)) {
+    if (check(TokenKind::LBrace)) {
+      expect(TokenKind::LBrace);
+      auto e = std::make_unique<Expr>();
+      e->kind = Expr::ComptimeExprK;
+      e->comptime_expr.block = parseBlock();
+      expect(TokenKind::RBrace);
+      if (e->comptime_expr.block.empty())
+        throw FarError("comptime block must not be empty", current().line, current().col);
+      e->comptime_expr.is_block = true;
+      return e;
+    }
     auto inner = parseExpr();
     auto e = std::make_unique<Expr>();
     e->kind = Expr::ComptimeExprK;

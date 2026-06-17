@@ -1,0 +1,13 @@
+fun main() -> i64 {
+  s = 0
+  try {
+    switch 1 {
+      case 1: break
+      default: s += 1
+    }
+    s += 50
+  } finally {
+    s += 100
+  }
+  return s
+}

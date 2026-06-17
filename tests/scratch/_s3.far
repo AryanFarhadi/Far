@@ -1,0 +1,15 @@
+fun main() -> i64 {
+  s = 0
+  for i in 0..<3 {
+    try {
+      switch i {
+        case 1: break
+        default: s += 1
+      }
+    } finally {
+      s += 10
+    }
+    s += 100
+  }
+  return s
+}

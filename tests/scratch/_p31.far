@@ -1,0 +1,10 @@
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun main() -> i64 {
+  outer = 0
+  try {
+    try { throw 1 } finally { throw 2 }
+  } catch (e) {
+    outer = 1
+  }
+  return eq(outer, 1)
+}

@@ -1,0 +1,17 @@
+﻿fun main() -> i64 {
+  s = 0
+  try {
+    for (i in 0..3) {
+      try {
+        if (i == 1) { throw 1 }
+      } catch (e) {
+        s += 10
+      } finally {
+        s += 1
+      }
+    }
+  } finally {
+    s += 100
+  }
+  return s
+}

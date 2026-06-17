@@ -1,6 +1,0 @@
-﻿fun test_oob() -> i64 {
-  lst: List<i64> = List<i64>()
-  lst.push(1)
-  return lst.get(99)
-}
-fun main() { print(test_oob()); return 0 }

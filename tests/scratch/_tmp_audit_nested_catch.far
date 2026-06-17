@@ -1,0 +1,9 @@
+﻿fun main() -> i64 {
+  log = 0
+  try {
+    try { throw 1 } catch (e) { log = 10 }
+  } catch (e) {
+    log = 20
+  }
+  return log
+}

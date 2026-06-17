@@ -1,0 +1,28 @@
+import bench
+
+# Default: 80_000_000 terms, mod 1_000_000_007 (match BENCH_SUM_SQUARES_N)
+
+fun sum_squares() -> i64 {
+  n: i64 = 80000000
+  mod: i64 = 1000000007
+  s: i64 = 0
+  i: i64 = 1
+  while (i <= n) {
+    sq = i * i
+    s = (s + sq) % mod
+    if (s < 0) {
+      s = s + mod
+    }
+    i = i + 1
+  }
+  return s
+}
+
+fun main() -> i64 {
+  t0 = bench.start()
+  r = sum_squares()
+  ms = bench.elapsed_ms(t0)
+  print(ms)
+  print(r)
+  return 0
+}

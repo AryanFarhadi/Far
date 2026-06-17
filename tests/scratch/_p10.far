@@ -1,0 +1,6 @@
+fun main() -> i64 {
+  a = 1
+  b = 0
+  if (a == 1 && (1 / b) == 0) { return 1 }
+  return 2
+}

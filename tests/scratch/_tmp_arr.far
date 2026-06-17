@@ -1,0 +1,5 @@
+﻿fun main() {
+  data = [2, 4, 6, 8]
+  print(len(data))
+  return 0
+}

@@ -1,0 +1,1 @@
+fun main() { print(1 << 63); return 0 }

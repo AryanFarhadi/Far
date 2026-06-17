@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Generates examples/tests/suite_10000.far — 10,000 loop-based regression checks.
+// Generates tests/suite_10000.far — 10,000 loop-based regression checks.
 // Run: node tools/generate_suite_10000.mjs
 import fs from 'fs';
 import path from 'path';
@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
-const out = path.join(root, 'examples', 'tests', 'suite_10000.far');
+const out = path.join(root, 'tests', 'suite_10000.far');
 
 const BATCH = 500;
 const BATCHES = [

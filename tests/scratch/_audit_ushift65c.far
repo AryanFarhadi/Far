@@ -1,0 +1,1 @@
+fun main() { a:u64=1; b:u64=65; return a << b }

@@ -1,0 +1,13 @@
+fun main() {
+  ch = Channel<i64>(4)
+  ch.send(10)
+  ch.send(20)
+  a = ch.recv()
+  print(a)
+  b = ch.recv()
+  print(b)
+  if (a != 10) { print(99); return 1 }
+  if (b != 20) { print(98); return 2 }
+  print(0)
+  return 0
+}

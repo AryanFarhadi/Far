@@ -1,8 +1,0 @@
-﻿fun test_switch() -> i64 {
-  x = 1
-  switch x {
-    case 0: return 0
-    default: return undefined_switch
-  }
-}
-fun main() { print(test_switch()); return 0 }

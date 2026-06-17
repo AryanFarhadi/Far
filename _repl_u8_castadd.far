@@ -1,5 +1,0 @@
-﻿fun main() {
-  x: u8 = 255
-  print(u8(x + 1))
-  return 0
-}

@@ -1,0 +1,12 @@
+fun main() -> i64 {
+  i = 0
+  while (i < 3) {
+    switch i {
+      case 0: return 10
+      case 1: return 20
+      default: return 30
+    }
+    i = i + 1
+  }
+  return 99
+}

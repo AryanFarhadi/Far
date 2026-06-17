@@ -85,6 +85,29 @@ static bool checkedAddI64(int64_t a, int64_t b, int64_t& out) {
 #endif
 }
 
+static bool checkedAddU64(uint64_t a, uint64_t b, uint64_t& out) {
+  out = a + b;
+  return out >= a;
+}
+
+static bool checkedSubU64(uint64_t a, uint64_t b, uint64_t& out) {
+  if (b > a)
+    return false;
+  out = a - b;
+  return true;
+}
+
+static bool checkedMulU64(uint64_t a, uint64_t b, uint64_t& out) {
+#if defined(__GNUC__) || defined(__clang__)
+  return !__builtin_mul_overflow(a, b, &out);
+#else
+  if (a != 0 && b > UINT64_MAX / a)
+    return false;
+  out = a * b;
+  return true;
+#endif
+}
+
 static bool checkedSubI64(int64_t a, int64_t b, int64_t& out) {
 #if defined(__GNUC__) || defined(__clang__)
   return !__builtin_sub_overflow(a, b, &out);
@@ -153,7 +176,7 @@ static bool comptimeTruthy(const ComptimeValue& v) {
     case ComptimeValue::Kind::String:
       return !v.str.empty();
     case ComptimeValue::Kind::Float:
-      return v.f64 != 0.0;
+      return !std::isnan(v.f64) && v.f64 != 0.0;
     case ComptimeValue::Kind::Bool:
       return v.b;
     default:
@@ -183,6 +206,70 @@ static ComptimeValue makeStringVal(const std::string& s) {
   cv.kind = ComptimeValue::Kind::String;
   cv.str = s;
   return cv;
+}
+
+static ComptimeValue makeDictVal(std::vector<ComptimeValue> keys, std::vector<ComptimeValue> values) {
+  ComptimeValue cv;
+  cv.kind = ComptimeValue::Kind::Dict;
+  cv.dict_keys = std::move(keys);
+  cv.dict_values = std::move(values);
+  return cv;
+}
+
+static bool comptimeDictContainsKey(const ComptimeValue& dict, const ComptimeValue& key) {
+  if (dict.kind != ComptimeValue::Kind::Dict)
+    throw FarError("comptime 'in' requires dict container");
+  for (const auto& entry_key : dict.dict_keys) {
+    if (comptimeEq(key, entry_key))
+      return true;
+  }
+  return false;
+}
+
+static bool comptimeArrayContains(const ComptimeValue& arr, const ComptimeValue& key) {
+  if (arr.kind != ComptimeValue::Kind::Array)
+    throw FarError("comptime 'in' requires array container");
+  for (const auto& el : arr.array_elems) {
+    if (comptimeEq(key, el))
+      return true;
+  }
+  return false;
+}
+
+static ComptimeValue makeArrayVal(std::vector<ComptimeValue> elems) {
+  ComptimeValue cv;
+  cv.kind = ComptimeValue::Kind::Array;
+  cv.array_elems = std::move(elems);
+  return cv;
+}
+
+static std::optional<std::vector<ComptimeValue>> resolveComptimeArrayElems(ComptimeContext& ctx,
+                                                                           const Expr& iter) {
+  if (iter.kind == Expr::ArrayLitExpr) {
+    std::vector<ComptimeValue> elems;
+    elems.reserve(iter.array_lit.elements.size());
+    for (const auto& el : iter.array_lit.elements)
+      elems.push_back(evalExpr(ctx, *el));
+    return elems;
+  }
+  if (iter.kind == Expr::Variable) {
+    auto it = ctx.vars.find(iter.var.name);
+    if (it != ctx.vars.end() && it->second.kind == ComptimeValue::Kind::Array)
+      return it->second.array_elems;
+    if (ctx.program) {
+      for (const auto& stmt : ctx.program->comptime_stmts) {
+        if (stmt->kind != Stmt::LetStmt || !stmt->let.is_constexpr || stmt->let.name != iter.var.name ||
+            !stmt->let.value)
+          continue;
+        if (stmt->let.value->kind == Expr::ArrayLitExpr)
+          return resolveComptimeArrayElems(ctx, *stmt->let.value);
+      }
+    }
+  }
+  ComptimeValue cv;
+  if (tryEvalExpr(ctx, iter, cv) && cv.kind == ComptimeValue::Kind::Array)
+    return cv.array_elems;
+  return std::nullopt;
 }
 
 static ComptimeValue evalFunctionBody(ComptimeContext& ctx, const Function& fn,
@@ -250,6 +337,11 @@ static void evalComptimeAssign(ComptimeContext& ctx, const AssignExpr& assign) {
     ctx.vars[name] = evalExpr(ctx, *assign.value);
     return;
   }
+  if (assign.op == "??=") {
+    if (comptimeNullish(ctx.vars[name]))
+      ctx.vars[name] = evalExpr(ctx, *assign.value);
+    return;
+  }
   static const std::unordered_map<std::string, std::string> compound = {
       {"+=", "+"},  {"-=", "-"},  {"*=", "*"},    {"/=", "/"},     {"%=", "%"},
       {"**=", "**"}, {"//=", "//"}, {"&=", "&"}, {"|=", "|"},     {"^=", "^"},
@@ -263,6 +355,101 @@ static void evalComptimeAssign(ComptimeContext& ctx, const AssignExpr& assign) {
   auto bin = Expr::makeBinOp(mapped->second, std::move(lhs), cloneComptimeRhs(*assign.value));
   bin->type = assign.target->type;
   ctx.vars[name] = evalExpr(ctx, *bin);
+}
+
+static std::optional<ComptimeValue> evalComptimeStmt(ComptimeContext& ctx, const Stmt& stmt);
+
+static bool foreachConstEmpty(const Expr& iter, const Program* program = nullptr);
+
+static bool comptimeContainsThrowStmt(const Stmt& stmt) {
+  switch (stmt.kind) {
+    case Stmt::ThrowStmtK:
+      return true;
+    case Stmt::IfStmt:
+      for (const auto& c : stmt.if_stmt.clauses) {
+        for (const auto& s : c.body)
+          if (comptimeContainsThrowStmt(*s))
+            return true;
+      }
+      for (const auto& s : stmt.if_stmt.else_body)
+        if (comptimeContainsThrowStmt(*s))
+          return true;
+      return false;
+    case Stmt::WhileStmt:
+      for (const auto& s : stmt.while_stmt.body)
+        if (comptimeContainsThrowStmt(*s))
+          return true;
+      return false;
+    case Stmt::ForStmt:
+      for (const auto& s : stmt.for_stmt.body)
+        if (comptimeContainsThrowStmt(*s))
+          return true;
+      return false;
+    case Stmt::TryStmtK:
+      for (const auto& s : stmt.try_stmt.try_body)
+        if (comptimeContainsThrowStmt(*s))
+          return true;
+      for (const auto& s : stmt.try_stmt.catch_body)
+        if (comptimeContainsThrowStmt(*s))
+          return true;
+      for (const auto& s : stmt.try_stmt.finally_body)
+        if (comptimeContainsThrowStmt(*s))
+          return true;
+      return false;
+    case Stmt::MatchStmtK:
+      for (const auto& arm : stmt.match_stmt.arms)
+        for (const auto& s : arm.body)
+          if (comptimeContainsThrowStmt(*s))
+            return true;
+      return false;
+    case Stmt::UnsafeStmtK:
+      for (const auto& s : stmt.unsafe.body)
+        if (comptimeContainsThrowStmt(*s))
+          return true;
+      return false;
+    default:
+      return false;
+  }
+}
+
+static bool comptimeTryBodyMayThrow(const std::vector<std::unique_ptr<Stmt>>& try_body) {
+  for (const auto& s : try_body) {
+    if (comptimeContainsThrowStmt(*s))
+      return true;
+  }
+  return false;
+}
+
+static bool comptimePatternMatches(const Pattern& pat, const ComptimeValue& scrut) {
+  switch (pat.kind) {
+    case PatKind::Wildcard:
+    case PatKind::Bind:
+      return true;
+    case PatKind::Literal:
+      if (pat.literal_is_float) {
+        if (std::isnan(pat.float_literal))
+          return scrut.kind == ComptimeValue::Kind::Float && std::isnan(scrut.f64);
+        return scrut.kind == ComptimeValue::Kind::Float && scrut.f64 == pat.float_literal;
+      }
+      if (scrut.kind == ComptimeValue::Kind::Int)
+        return scrut.i64 == pat.literal;
+      if (scrut.kind == ComptimeValue::Kind::Float)
+        return static_cast<double>(pat.literal) == scrut.f64;
+      return false;
+    default:
+      return false;
+  }
+}
+
+static void evalComptimeForeachBody(ComptimeContext& ctx,
+                                    const std::vector<std::unique_ptr<Stmt>>& body,
+                                    std::optional<ComptimeValue>& early_out) {
+  for (const auto& s : body) {
+    if (auto result = evalComptimeStmt(ctx, *s)) {
+      early_out = result;
+      return;
+    }
+  }
 }
 
 static std::optional<ComptimeValue> evalComptimeStmt(ComptimeContext& ctx, const Stmt& stmt) {
@@ -279,25 +466,17 @@ static std::optional<ComptimeValue> evalComptimeStmt(ComptimeContext& ctx, const
       for (const auto& c : stmt.if_stmt.clauses) {
         ComptimeValue cond = evalExpr(ctx, *c.condition);
         if (comptimeTruthy(cond)) {
-          auto saved = ctx.vars;
           for (const auto& s : c.body) {
-            if (auto result = evalComptimeStmt(ctx, *s)) {
-              ctx.vars = saved;
+            if (auto result = evalComptimeStmt(ctx, *s))
               return result;
-            }
           }
-          ctx.vars = saved;
           return std::nullopt;
         }
       }
-      auto saved = ctx.vars;
       for (const auto& s : stmt.if_stmt.else_body) {
-        if (auto result = evalComptimeStmt(ctx, *s)) {
-          ctx.vars = saved;
+        if (auto result = evalComptimeStmt(ctx, *s))
           return result;
-        }
       }
-      ctx.vars = saved;
       return std::nullopt;
     }
     case Stmt::WhileStmt: {
@@ -305,26 +484,151 @@ static std::optional<ComptimeValue> evalComptimeStmt(ComptimeContext& ctx, const
         ComptimeValue cond = evalExpr(ctx, *stmt.while_stmt.condition);
         if (!comptimeTruthy(cond))
           break;
-        auto saved = ctx.vars;
         for (const auto& s : stmt.while_stmt.body) {
-          if (auto result = evalComptimeStmt(ctx, *s)) {
-            ctx.vars = saved;
+          if (auto result = evalComptimeStmt(ctx, *s))
             return result;
-          }
         }
-        ctx.vars = saved;
       }
       return std::nullopt;
     }
-    case Stmt::ExprStmtK:
-      if (stmt.expr_stmt.expr && stmt.expr_stmt.expr->kind == Expr::AssignExprK) {
-        evalComptimeAssign(ctx, stmt.expr_stmt.expr->assign);
+    case Stmt::ForStmt: {
+      if (stmt.for_stmt.is_parallel)
+        throw FarError("parallel for unsupported in comptime function");
+      if (stmt.for_stmt.is_range) {
+        ComptimeValue sv = evalExpr(ctx, *stmt.for_stmt.range_start);
+        ComptimeValue ev = evalExpr(ctx, *stmt.for_stmt.range_end);
+        requireComptimeInt(sv, "comptime range");
+        requireComptimeInt(ev, "comptime range");
+        bool exclusive = stmt.for_stmt.range_exclusive;
+        int64_t i = sv.i64;
+        for (;;) {
+          if (exclusive) {
+            if (i >= ev.i64)
+              break;
+          } else if (i > ev.i64) {
+            break;
+          }
+          ctx.vars[stmt.for_stmt.range_var] = makeIntVal(i);
+          for (const auto& s : stmt.for_stmt.body) {
+            if (auto result = evalComptimeStmt(ctx, *s))
+              return result;
+          }
+          if (i == INT64_MAX)
+            throw FarError("comptime range loop overflow");
+          ++i;
+        }
         return std::nullopt;
+      }
+      if (stmt.for_stmt.is_foreach) {
+        if (foreachConstEmpty(*stmt.for_stmt.foreach_iter, ctx.program))
+          return std::nullopt;
+        if (stmt.for_stmt.foreach_iter->kind == Expr::ArrayLitExpr) {
+          std::optional<ComptimeValue> early;
+          for (const auto& el : stmt.for_stmt.foreach_iter->array_lit.elements) {
+            ctx.vars[stmt.for_stmt.foreach_var] = evalExpr(ctx, *el);
+            evalComptimeForeachBody(ctx, stmt.for_stmt.body, early);
+            if (early)
+              return early;
+          }
+          return std::nullopt;
+        }
+        if (auto elems = resolveComptimeArrayElems(ctx, *stmt.for_stmt.foreach_iter)) {
+          std::optional<ComptimeValue> early;
+          for (const auto& el : *elems) {
+            ctx.vars[stmt.for_stmt.foreach_var] = el;
+            evalComptimeForeachBody(ctx, stmt.for_stmt.body, early);
+            if (early)
+              return early;
+          }
+          return std::nullopt;
+        }
+        ComptimeValue iter_v;
+        if (tryEvalExpr(ctx, *stmt.for_stmt.foreach_iter, iter_v) &&
+            iter_v.kind == ComptimeValue::Kind::Array) {
+          std::optional<ComptimeValue> early;
+          for (const auto& el : iter_v.array_elems) {
+            ctx.vars[stmt.for_stmt.foreach_var] = el;
+            evalComptimeForeachBody(ctx, stmt.for_stmt.body, early);
+            if (early)
+              return early;
+          }
+          return std::nullopt;
+        }
+        throw FarError("comptime for-in requires a constexpr array");
+      }
+      if (stmt.for_stmt.init)
+        if (auto result = evalComptimeStmt(ctx, *stmt.for_stmt.init))
+          return result;
+      while (true) {
+        if (!stmt.for_stmt.cond)
+          break;
+        ComptimeValue cond = evalExpr(ctx, *stmt.for_stmt.cond);
+        if (!comptimeTruthy(cond))
+          break;
+        for (const auto& s : stmt.for_stmt.body) {
+          if (auto result = evalComptimeStmt(ctx, *s))
+            return result;
+        }
+        if (stmt.for_stmt.step)
+          if (auto result = evalComptimeStmt(ctx, *stmt.for_stmt.step))
+            return result;
+      }
+      return std::nullopt;
+    }
+    case Stmt::MatchStmtK: {
+      ComptimeValue scrut = evalExpr(ctx, *stmt.match_stmt.scrutinee);
+      for (const auto& arm : stmt.match_stmt.arms) {
+        if (!arm.pat || !comptimePatternMatches(*arm.pat, scrut))
+          continue;
+        if (arm.pat->kind == PatKind::Bind)
+          ctx.vars[arm.pat->bind_name] = scrut;
+        for (const auto& s : arm.body) {
+          if (auto result = evalComptimeStmt(ctx, *s))
+            return result;
+        }
+        return std::nullopt;
+      }
+      throw FarError("non-exhaustive comptime match");
+    }
+    case Stmt::ExprStmtK:
+      if (stmt.expr_stmt.expr) {
+        if (stmt.expr_stmt.expr->kind == Expr::AssignExprK) {
+          evalComptimeAssign(ctx, stmt.expr_stmt.expr->assign);
+          return std::nullopt;
+        }
+        if (stmt.expr_stmt.expr->kind == Expr::PrefixExprK ||
+            stmt.expr_stmt.expr->kind == Expr::PostfixExprK) {
+          evalExpr(ctx, *stmt.expr_stmt.expr);
+          return std::nullopt;
+        }
       }
       throw FarError("unsupported statement in comptime function");
     default:
       throw FarError("unsupported statement in comptime function");
   }
+}
+
+static ComptimeValue evalComptimeBlockExpr(ComptimeContext& ctx,
+                                           const std::vector<std::unique_ptr<Stmt>>& block) {
+  if (block.empty())
+    throw FarError("empty comptime block");
+  ComptimeContext local = ctx;
+  for (size_t i = 0; i + 1 < block.size(); ++i) {
+    if (auto result = evalComptimeStmt(local, *block[i]))
+      return *result;
+  }
+  const Stmt& last = *block.back();
+  if (last.kind == Stmt::ReturnStmt) {
+    if (!last.ret.has_value)
+      throw FarError("comptime block must return a value");
+    return evalExpr(local, *last.ret.value);
+  }
+  if (last.kind == Stmt::ExprStmtK && last.expr_stmt.expr) {
+    if (last.expr_stmt.expr->kind == Expr::AssignExprK)
+      throw FarError("comptime block must end with a value expression, not assignment");
+    return evalExpr(local, *last.expr_stmt.expr);
+  }
+  throw FarError("comptime block must end with an expression or return");
 }
 
 bool tryEvalExpr(ComptimeContext& ctx, const Expr& expr, ComptimeValue& out) {
@@ -345,6 +649,63 @@ static bool comptimeUsesUnsigned(const Expr& left, const Expr& right) {
     return isPrimitiveDesc(td) && isIntegerType(td.primitive) && !typeInfo(td.primitive).is_signed;
   };
   return isUnsigned(left.type) || isUnsigned(right.type);
+}
+
+static bool comptimeIsUnsignedIntegerType(const TypeDesc& td) {
+  return isPrimitiveDesc(td) && isIntegerType(td.primitive) && !typeInfo(td.primitive).is_signed;
+}
+
+static bool comptimeIsSignedIntegerType(const TypeDesc& td) {
+  return isPrimitiveDesc(td) && isIntegerType(td.primitive) && typeInfo(td.primitive).is_signed;
+}
+
+static std::string comptimeFlipOrderedCmpOp(const std::string& op) {
+  if (op == "<")
+    return ">";
+  if (op == ">")
+    return "<";
+  if (op == "<=")
+    return ">=";
+  if (op == ">=")
+    return "<=";
+  return op;
+}
+
+static int64_t comptimeMixedSignCompareResult(const TypeDesc& left_ty, const TypeDesc& right_ty,
+                                              int64_t left_bits, int64_t right_bits,
+                                              const std::string& op) {
+  const bool left_u = comptimeIsUnsignedIntegerType(left_ty);
+  const bool right_u = comptimeIsUnsignedIntegerType(right_ty);
+  if (!((left_u && comptimeIsSignedIntegerType(right_ty)) ||
+        (comptimeIsSignedIntegerType(left_ty) && right_u)))
+    throw FarError("internal mixed-sign compare mismatch");
+  const uint64_t U = left_u ? static_cast<uint64_t>(left_bits) : static_cast<uint64_t>(right_bits);
+  const int64_t S = left_u ? right_bits : left_bits;
+  const std::string effective_op = left_u ? op : comptimeFlipOrderedCmpOp(op);
+  if (effective_op == "==")
+    return (S >= 0 && U == static_cast<uint64_t>(S)) ? 1 : 0;
+  if (effective_op == "!=")
+    return (S < 0 || U != static_cast<uint64_t>(S)) ? 1 : 0;
+  if (S < 0) {
+    if (effective_op == "<" || effective_op == "<=")
+      return 0;
+    if (effective_op == ">" || effective_op == ">=")
+      return 1;
+  }
+  if (effective_op == "<")
+    return U < static_cast<uint64_t>(S) ? 1 : 0;
+  if (effective_op == ">")
+    return U > static_cast<uint64_t>(S) ? 1 : 0;
+  if (effective_op == "<=")
+    return U <= static_cast<uint64_t>(S) ? 1 : 0;
+  if (effective_op == ">=")
+    return U >= static_cast<uint64_t>(S) ? 1 : 0;
+  throw FarError("unknown mixed-sign compare op");
+}
+
+static bool comptimeIsMixedSignIntegerCompare(const TypeDesc& left_ty, const TypeDesc& right_ty) {
+  return (comptimeIsUnsignedIntegerType(left_ty) && comptimeIsSignedIntegerType(right_ty)) ||
+         (comptimeIsSignedIntegerType(left_ty) && comptimeIsUnsignedIntegerType(right_ty));
 }
 
 static int64_t comptimeFloorDivI64(int64_t a, int64_t b) {
@@ -478,6 +839,11 @@ static ComptimeValue comptimeCastValue(const ComptimeValue& v, const TypeDesc& s
         else
           out = static_cast<int64_t>(static_cast<uint64_t>(v.f64));
       } else {
+        const FarTypeInfo& info = typeInfo(target_ty.primitive);
+        if (!std::isfinite(v.f64))
+          throw FarError("comptime float-to-integer cast requires finite value");
+        if (v.f64 < static_cast<double>(info.min_i) || v.f64 > static_cast<double>(info.max_i))
+          throw FarError("comptime float-to-integer cast out of range");
         out = static_cast<int64_t>(v.f64);
       }
     } else {
@@ -508,8 +874,24 @@ ComptimeValue evalExpr(ComptimeContext& ctx, const Expr& expr) {
       return makeIntVal(static_cast<int64_t>(expr.char_lit.value));
     case Expr::String:
       return makeStringVal(expr.string_lit.value);
-    case Expr::ArrayLitExpr:
-      throw FarError("array literal is not evaluable at compile time");
+    case Expr::DictLitExpr: {
+      std::vector<ComptimeValue> keys;
+      std::vector<ComptimeValue> values;
+      keys.reserve(expr.dict_lit.entries.size());
+      values.reserve(expr.dict_lit.entries.size());
+      for (const auto& entry : expr.dict_lit.entries) {
+        keys.push_back(evalExpr(ctx, *entry.key));
+        values.push_back(evalExpr(ctx, *entry.value));
+      }
+      return makeDictVal(std::move(keys), std::move(values));
+    }
+    case Expr::ArrayLitExpr: {
+      std::vector<ComptimeValue> elems;
+      elems.reserve(expr.array_lit.elements.size());
+      for (const auto& el : expr.array_lit.elements)
+        elems.push_back(evalExpr(ctx, *el));
+      return makeArrayVal(std::move(elems));
+    }
     case Expr::Variable: {
       auto it = ctx.vars.find(expr.var.name);
       if (it == ctx.vars.end())
@@ -551,8 +933,53 @@ ComptimeValue evalExpr(ComptimeContext& ctx, const Expr& expr) {
           return evalExpr(ctx, *expr.bin_op.right);
         return l;
       }
+      if (op == "in" || op == "not in") {
+        ComptimeValue l = evalExpr(ctx, *expr.bin_op.left);
+        if (expr.bin_op.right->kind == Expr::ArrayLitExpr) {
+          bool found = false;
+          for (const auto& el : expr.bin_op.right->array_lit.elements) {
+            if (comptimeEq(l, evalExpr(ctx, *el)))
+              found = true;
+          }
+          if (op == "not in")
+            found = !found;
+          return makeIntVal(found ? 1 : 0);
+        }
+        if (expr.bin_op.right->kind == Expr::DictLitExpr) {
+          bool found = false;
+          for (const auto& entry : expr.bin_op.right->dict_lit.entries) {
+            if (comptimeEq(l, evalExpr(ctx, *entry.key)))
+              found = true;
+          }
+          if (op == "not in")
+            found = !found;
+          return makeIntVal(found ? 1 : 0);
+        }
+        if (expr.bin_op.right->kind == Expr::Variable) {
+          ComptimeValue container = evalExpr(ctx, *expr.bin_op.right);
+          bool found = false;
+          if (container.kind == ComptimeValue::Kind::Dict)
+            found = comptimeDictContainsKey(container, l);
+          else if (container.kind == ComptimeValue::Kind::Array)
+            found = comptimeArrayContains(container, l);
+          else
+            throw FarError("comptime 'in' requires array or dict container");
+          if (op == "not in")
+            found = !found;
+          return makeIntVal(found ? 1 : 0);
+        }
+      }
       ComptimeValue l = evalExpr(ctx, *expr.bin_op.left);
       ComptimeValue r = evalExpr(ctx, *expr.bin_op.right);
+      const Expr& left_expr = *expr.bin_op.left;
+      const Expr& right_expr = *expr.bin_op.right;
+      if (comptimeIsMixedSignIntegerCompare(left_expr.type, right_expr.type) &&
+          (op == "==" || op == "!=" || op == "<" || op == ">" || op == "<=" || op == ">=")) {
+        requireComptimeInt(l, "comptime compare");
+        requireComptimeInt(r, "comptime compare");
+        return makeIntVal(
+            comptimeMixedSignCompareResult(left_expr.type, right_expr.type, l.i64, r.i64, op));
+      }
       if (op == "==")
         return makeIntVal(comptimeEq(l, r));
       if (op == "!=")
@@ -572,9 +999,18 @@ ComptimeValue evalExpr(ComptimeContext& ctx, const Expr& expr) {
         }
         requireComptimeInt(l, "comptime '+'");
         requireComptimeInt(r, "comptime '+'");
-        if (comptimeUsesUnsigned(*expr.bin_op.left, *expr.bin_op.right))
+        if (comptimeUsesUnsigned(*expr.bin_op.left, *expr.bin_op.right)) {
+          if (!comptimeShouldNarrowBinary(expr.bin_op.left->type, expr.bin_op.right->type,
+                                          *expr.bin_op.left, *expr.bin_op.right)) {
+            uint64_t out = 0;
+            if (!checkedAddU64(static_cast<uint64_t>(l.i64), static_cast<uint64_t>(r.i64), out))
+              throw FarError("comptime integer overflow");
+            return comptimeIntBinaryResult(static_cast<int64_t>(out), *expr.bin_op.left,
+                                           *expr.bin_op.right);
+          }
           return comptimeIntBinaryResult((int64_t)((uint64_t)l.i64 + (uint64_t)r.i64), *expr.bin_op.left,
                                          *expr.bin_op.right);
+        }
         if (comptimeShouldNarrowBinary(expr.bin_op.left->type, expr.bin_op.right->type, *expr.bin_op.left,
                                        *expr.bin_op.right))
           return comptimeIntBinaryResult((int64_t)((uint64_t)l.i64 + (uint64_t)r.i64), *expr.bin_op.left,
@@ -598,8 +1034,11 @@ ComptimeValue evalExpr(ComptimeContext& ctx, const Expr& expr) {
           return makeFloatVal(lf - rf);
         if (op == "*")
           return makeFloatVal(lf * rf);
-        if (op == "/")
+        if (op == "/") {
+          if (rf == 0.0)
+            throw FarError("comptime division by zero");
           return makeFloatVal(lf / rf);
+        }
         if (op == "??") {
           if (!comptimeNullish(l))
             return l;
@@ -610,8 +1049,6 @@ ComptimeValue evalExpr(ComptimeContext& ctx, const Expr& expr) {
       requireComptimeInt(l, "comptime arithmetic");
       requireComptimeInt(r, "comptime arithmetic");
       const bool unsigned_op = comptimeUsesUnsigned(*expr.bin_op.left, *expr.bin_op.right);
-      const Expr& left_expr = *expr.bin_op.left;
-      const Expr& right_expr = *expr.bin_op.right;
       if (op == "**")
         return comptimeIntBinaryResult(comptimeIpow(l.i64, r.i64), left_expr, right_expr);
       if (op == "//") {
@@ -620,8 +1057,15 @@ ComptimeValue evalExpr(ComptimeContext& ctx, const Expr& expr) {
         return comptimeIntBinaryResult(comptimeFloorDivI64(l.i64, r.i64), left_expr, right_expr);
       }
       if (op == "-") {
-        if (unsigned_op)
+        if (unsigned_op) {
+          if (!comptimeShouldNarrowBinary(left_expr.type, right_expr.type, left_expr, right_expr)) {
+            uint64_t out = 0;
+            if (!checkedSubU64(static_cast<uint64_t>(l.i64), static_cast<uint64_t>(r.i64), out))
+              throw FarError("comptime integer overflow");
+            return comptimeIntBinaryResult(static_cast<int64_t>(out), left_expr, right_expr);
+          }
           return comptimeIntBinaryResult((int64_t)((uint64_t)l.i64 - (uint64_t)r.i64), left_expr, right_expr);
+        }
         if (comptimeShouldNarrowBinary(left_expr.type, right_expr.type, left_expr, right_expr))
           return comptimeIntBinaryResult((int64_t)((uint64_t)l.i64 - (uint64_t)r.i64), left_expr, right_expr);
         int64_t out = 0;
@@ -630,8 +1074,15 @@ ComptimeValue evalExpr(ComptimeContext& ctx, const Expr& expr) {
         return comptimeIntBinaryResult(out, left_expr, right_expr);
       }
       if (op == "*") {
-        if (unsigned_op)
+        if (unsigned_op) {
+          if (!comptimeShouldNarrowBinary(left_expr.type, right_expr.type, left_expr, right_expr)) {
+            uint64_t out = 0;
+            if (!checkedMulU64(static_cast<uint64_t>(l.i64), static_cast<uint64_t>(r.i64), out))
+              throw FarError("comptime integer overflow");
+            return comptimeIntBinaryResult(static_cast<int64_t>(out), left_expr, right_expr);
+          }
           return comptimeIntBinaryResult((int64_t)((uint64_t)l.i64 * (uint64_t)r.i64), left_expr, right_expr);
+        }
         if (comptimeShouldNarrowBinary(left_expr.type, right_expr.type, left_expr, right_expr))
           return comptimeIntBinaryResult((int64_t)((uint64_t)l.i64 * (uint64_t)r.i64), left_expr, right_expr);
         int64_t out = 0;
@@ -692,7 +1143,8 @@ ComptimeValue evalExpr(ComptimeContext& ctx, const Expr& expr) {
           throw FarError("comptime integer overflow");
         int64_t out = (int64_t)(ul << ur);
         const bool unsigned_shift =
-            comptimeUsesUnsigned(*expr.bin_op.left, *expr.bin_op.right);
+            isPrimitiveDesc(expr.bin_op.left->type) && isIntegerType(expr.bin_op.left->type.primitive) &&
+            !typeInfo(expr.bin_op.left->type.primitive).is_signed;
         if (!unsigned_shift && l.i64 >= 0 && out < 0)
           throw FarError("comptime integer overflow");
         return comptimeIntBinaryResult(out, left_expr, right_expr);
@@ -703,8 +1155,7 @@ ComptimeValue evalExpr(ComptimeContext& ctx, const Expr& expr) {
         auto isUnsigned = [](const TypeDesc& td) {
           return isPrimitiveDesc(td) && isIntegerType(td.primitive) && !typeInfo(td.primitive).is_signed;
         };
-        const bool unsigned_shift =
-            isUnsigned(expr.bin_op.left->type) || isUnsigned(expr.bin_op.right->type);
+        const bool unsigned_shift = isUnsigned(expr.bin_op.left->type);
         if (unsigned_shift)
           return comptimeIntBinaryResult((int64_t)((uint64_t)l.i64 >> (uint64_t)r.i64), left_expr, right_expr);
         return comptimeIntBinaryResult(l.i64 >> r.i64, left_expr, right_expr);
@@ -755,6 +1206,24 @@ ComptimeValue evalExpr(ComptimeContext& ctx, const Expr& expr) {
       }
       throw FarError("unsupported comptime prefix op");
     }
+    case Expr::PostfixExprK: {
+      if (expr.postfix.op != "++" && expr.postfix.op != "--")
+        throw FarError("unsupported comptime postfix op");
+      if (expr.postfix.operand->kind != Expr::Variable)
+        throw FarError("comptime ++/-- requires a variable operand");
+      const std::string& name = expr.postfix.operand->var.name;
+      auto it = ctx.vars.find(name);
+      if (it == ctx.vars.end())
+        throw FarError("unknown comptime variable '" + name + "'");
+      requireComptimeInt(it->second, "comptime ++/--");
+      ComptimeValue old = it->second;
+      int64_t delta = expr.postfix.op == "++" ? 1 : -1;
+      int64_t out = 0;
+      if (!checkedAddI64(it->second.i64, delta, out))
+        throw FarError("comptime integer overflow");
+      it->second = comptimeIntBinaryResult(out, *expr.postfix.operand, *expr.postfix.operand);
+      return old;
+    }
     case Expr::TernaryExprK: {
       ComptimeValue cond = evalExpr(ctx, *expr.ternary.cond);
       if (comptimeTruthy(cond))
@@ -762,6 +1231,8 @@ ComptimeValue evalExpr(ComptimeContext& ctx, const Expr& expr) {
       return evalExpr(ctx, *expr.ternary.else_br);
     }
     case Expr::ComptimeExprK:
+      if (expr.comptime_expr.is_block)
+        return evalComptimeBlockExpr(ctx, expr.comptime_expr.block);
       return evalExpr(ctx, *expr.comptime_expr.value);
     case Expr::FnCall: {
       if (expr.call.name == "reflect_compile_value") {
@@ -916,40 +1387,100 @@ static void replaceWithInt(Expr& expr, int64_t v) {
   replaceWithComptimeValue(expr, makeIntVal(v));
 }
 
+static void foldStmtComptime(Stmt& stmt, ComptimeContext& ctx);
+
+static void mergeComptimeVarsExcept(std::unordered_map<std::string, ComptimeValue>& into,
+                                    const std::unordered_map<std::string, ComptimeValue>& from,
+                                    const std::string& skip) {
+  for (const auto& kv : from) {
+    if (kv.first != skip)
+      into[kv.first] = kv.second;
+  }
+}
+
+// Fold only constexpr/comptime statements without rewriting runtime control flow.
+static void foldConstexprOnlyStmts(const std::vector<std::unique_ptr<Stmt>>& stmts, ComptimeContext& ctx) {
+  for (const auto& stmt : stmts) {
+    if (!stmt)
+      continue;
+    switch (stmt->kind) {
+      case Stmt::LetStmt:
+        if (stmt->let.is_constexpr)
+          foldStmtComptime(*stmt, ctx);
+        break;
+      case Stmt::ComptimeBlockK:
+        foldStmtComptime(*stmt, ctx);
+        break;
+      case Stmt::IfStmt:
+        for (auto& c : stmt->if_stmt.clauses)
+          foldConstexprOnlyStmts(c.body, ctx);
+        foldConstexprOnlyStmts(stmt->if_stmt.else_body, ctx);
+        break;
+      case Stmt::TryStmtK:
+        foldConstexprOnlyStmts(stmt->try_stmt.try_body, ctx);
+        foldConstexprOnlyStmts(stmt->try_stmt.catch_body, ctx);
+        foldConstexprOnlyStmts(stmt->try_stmt.finally_body, ctx);
+        break;
+      case Stmt::WhileStmt:
+        foldConstexprOnlyStmts(stmt->while_stmt.body, ctx);
+        break;
+      case Stmt::ForStmt:
+        foldConstexprOnlyStmts(stmt->for_stmt.body, ctx);
+        break;
+      default:
+        break;
+    }
+  }
+}
+
+static std::optional<ComptimeValue> comptimeTryBodyThrowLiteral(ComptimeContext& ctx,
+                                                                const std::vector<std::unique_ptr<Stmt>>& try_body) {
+  for (const auto& s : try_body) {
+    if (s && s->kind == Stmt::ThrowStmtK && s->throw_stmt.value)
+      return evalExpr(ctx, *s->throw_stmt.value);
+  }
+  return std::nullopt;
+}
+
 static void foldExprComptime(Expr& expr, ComptimeContext& ctx) {
   if (expr.kind == Expr::ComptimeExprK) {
+    if (expr.comptime_expr.is_block) {
+      ComptimeValue v = evalComptimeBlockExpr(ctx, expr.comptime_expr.block);
+      replaceWithComptimeValue(expr, v);
+      return;
+    }
     ComptimeValue v = evalExpr(ctx, *expr.comptime_expr.value);
     replaceWithComptimeValue(expr, v);
     return;
   }
   if (expr.kind == Expr::Variable) {
-    ComptimeValue v;
-    if (tryEvalExpr(ctx, expr, v))
-      replaceWithComptimeValue(expr, v);
     return;
   }
   if (expr.kind == Expr::Binary) {
     const std::string& op = expr.bin_op.op;
     foldExprComptime(*expr.bin_op.left, ctx);
+    ComptimeValue lv;
+    const bool left_known = tryEvalExpr(ctx, *expr.bin_op.left, lv);
     if (op == "and" || op == "&&") {
-      ComptimeValue lv;
-      if (tryEvalExpr(ctx, *expr.bin_op.left, lv) && !comptimeTruthy(lv)) {
+      if (left_known && !comptimeTruthy(lv)) {
         ComptimeValue v;
         if (tryEvalExpr(ctx, expr, v))
           replaceWithComptimeValue(expr, v);
         return;
       }
+      if (!left_known)
+        return;
     } else if (op == "or" || op == "||") {
-      ComptimeValue lv;
-      if (tryEvalExpr(ctx, *expr.bin_op.left, lv) && comptimeTruthy(lv)) {
+      if (left_known && comptimeTruthy(lv)) {
         ComptimeValue v;
         if (tryEvalExpr(ctx, expr, v))
           replaceWithComptimeValue(expr, v);
         return;
       }
+      if (!left_known)
+        return;
     } else if (op == "??") {
-      ComptimeValue lv;
-      if (tryEvalExpr(ctx, *expr.bin_op.left, lv)) {
+      if (left_known) {
         if (!comptimeNullish(lv)) {
           ComptimeValue v;
           if (tryEvalExpr(ctx, expr, v))
@@ -962,6 +1493,7 @@ static void foldExprComptime(Expr& expr, ComptimeContext& ctx) {
           replaceWithComptimeValue(expr, v);
         return;
       }
+      return;
     }
     foldExprComptime(*expr.bin_op.right, ctx);
     ComptimeValue v;
@@ -970,9 +1502,23 @@ static void foldExprComptime(Expr& expr, ComptimeContext& ctx) {
     return;
   }
   if (expr.kind == Expr::PrefixExprK) {
-    if (expr.prefix.op == "++" || expr.prefix.op == "--")
-      return;
     foldExprComptime(*expr.prefix.operand, ctx);
+    ComptimeValue v;
+    if (tryEvalExpr(ctx, expr, v))
+      replaceWithComptimeValue(expr, v);
+    return;
+  }
+  if (expr.kind == Expr::PostfixExprK) {
+    foldExprComptime(*expr.postfix.operand, ctx);
+    ComptimeValue v;
+    if (tryEvalExpr(ctx, expr, v))
+      replaceWithComptimeValue(expr, v);
+    return;
+  }
+  if (expr.kind == Expr::AssignExprK) {
+    if (expr.assign.target)
+      foldExprComptime(*expr.assign.target, ctx);
+    foldExprComptime(*expr.assign.value, ctx);
     ComptimeValue v;
     if (tryEvalExpr(ctx, expr, v))
       replaceWithComptimeValue(expr, v);
@@ -997,16 +1543,8 @@ static void foldExprComptime(Expr& expr, ComptimeContext& ctx) {
         foldExprComptime(*expr.ternary.else_br, ctx);
       ctx.vars = saved;
     } else {
-      {
-        auto saved = ctx.vars;
-        foldExprComptime(*expr.ternary.then_br, ctx);
-        ctx.vars = saved;
-      }
-      {
-        auto saved = ctx.vars;
-        foldExprComptime(*expr.ternary.else_br, ctx);
-        ctx.vars = saved;
-      }
+      // Runtime condition: preserve short-circuit semantics; do not fold branches.
+      return;
     }
     ComptimeValue v;
     if (tryEvalExpr(ctx, expr, v))
@@ -1035,7 +1573,7 @@ static void storeConstexprBinding(ComptimeContext& ctx, const std::string& name,
   ctx.vars[name] = evalExpr(ctx, value);
 }
 
-static bool foreachConstEmpty(const Expr& iter, const Program* program = nullptr) {
+static bool foreachConstEmpty(const Expr& iter, const Program* program) {
   if (iter.kind == Expr::ArrayLitExpr)
     return iter.array_lit.elements.empty();
   if (iter.kind == Expr::String)
@@ -1074,28 +1612,25 @@ static void foldStmtComptime(Stmt& stmt, ComptimeContext& ctx) {
       return;
     case Stmt::IfStmt: {
       bool matched = false;
+      bool unknown = false;
       for (auto& c : stmt.if_stmt.clauses) {
-        ComptimeValue cv;
-        if (tryEvalExpr(ctx, *c.condition, cv)) {
-          if (comptimeTruthy(cv)) {
-            auto saved = ctx.vars;
-            for (auto& s : c.body)
-              foldStmtComptime(*s, ctx);
-            ctx.vars = saved;
-            matched = true;
-            break;
-          }
-          continue;
-        }
         foldExprComptime(*c.condition, ctx);
-        break;
+        ComptimeValue cv;
+        if (!tryEvalExpr(ctx, *c.condition, cv)) {
+          unknown = true;
+          break;
+        }
+        if (comptimeTruthy(cv)) {
+          for (auto& s : c.body)
+            foldStmtComptime(*s, ctx);
+          matched = true;
+          break;
+        }
       }
-      if (!matched) {
-        auto saved = ctx.vars;
-        for (auto& s : stmt.if_stmt.else_body)
-          foldStmtComptime(*s, ctx);
-        ctx.vars = saved;
-      }
+      if (matched || unknown)
+        return;
+      for (auto& s : stmt.if_stmt.else_body)
+        foldStmtComptime(*s, ctx);
       return;
     }
     case Stmt::WhileStmt: {
@@ -1103,23 +1638,45 @@ static void foldStmtComptime(Stmt& stmt, ComptimeContext& ctx) {
       if (tryEvalExpr(ctx, *stmt.while_stmt.condition, cv)) {
         if (!comptimeTruthy(cv))
           return;
-        auto saved = ctx.vars;
         for (auto& s : stmt.while_stmt.body)
           foldStmtComptime(*s, ctx);
-        ctx.vars = saved;
         return;
       }
       foldExprComptime(*stmt.while_stmt.condition, ctx);
       return;
     }
     case Stmt::ForStmt:
+      if (stmt.for_stmt.is_foreach) {
+        foldExprComptime(*stmt.for_stmt.foreach_iter, ctx);
+        if (stmt.for_stmt.foreach_iter->kind == Expr::ArrayLitExpr) {
+          if (stmt.for_stmt.foreach_iter->array_lit.elements.empty())
+            return;
+          ComptimeValue el =
+              evalExpr(ctx, *stmt.for_stmt.foreach_iter->array_lit.elements.front());
+          auto saved = ctx.vars;
+          ctx.vars[stmt.for_stmt.foreach_var] = el;
+          foldConstexprOnlyStmts(stmt.for_stmt.body, ctx);
+          mergeComptimeVarsExcept(saved, ctx.vars, stmt.for_stmt.foreach_var);
+          ctx.vars = std::move(saved);
+          return;
+        }
+        if (foreachConstEmpty(*stmt.for_stmt.foreach_iter, ctx.program))
+          return;
+        if (auto elems = resolveComptimeArrayElems(ctx, *stmt.for_stmt.foreach_iter)) {
+          if (elems->empty())
+            return;
+          for (auto& s : stmt.for_stmt.body)
+            foldStmtComptime(*s, ctx);
+          return;
+        }
+        return;
+      }
       if (stmt.for_stmt.is_parallel || stmt.for_stmt.is_range) {
         if (stmt.for_stmt.range_start)
           foldExprComptime(*stmt.for_stmt.range_start, ctx);
         if (stmt.for_stmt.range_end)
           foldExprComptime(*stmt.for_stmt.range_end, ctx);
-        if ((stmt.for_stmt.is_range || stmt.for_stmt.is_parallel) && stmt.for_stmt.range_start &&
-            stmt.for_stmt.range_end) {
+        if (stmt.for_stmt.is_range && stmt.for_stmt.range_start && stmt.for_stmt.range_end) {
           ComptimeValue sv;
           ComptimeValue ev;
           if (tryEvalExpr(ctx, *stmt.for_stmt.range_start, sv) &&
@@ -1128,20 +1685,31 @@ static void foldStmtComptime(Stmt& stmt, ComptimeContext& ctx) {
             bool exclusive = stmt.for_stmt.range_exclusive;
             if (sv.i64 <= ev.i64 ? (exclusive ? sv.i64 >= ev.i64 : sv.i64 > ev.i64) : false)
               return;
+            int64_t sample = sv.i64 <= ev.i64 ? (exclusive ? ev.i64 - 1 : ev.i64)
+                                              : (exclusive ? ev.i64 + 1 : ev.i64);
+            auto saved = ctx.vars;
+            ctx.vars[stmt.for_stmt.range_var] = makeIntVal(sample);
+            foldConstexprOnlyStmts(stmt.for_stmt.body, ctx);
+            mergeComptimeVarsExcept(saved, ctx.vars, stmt.for_stmt.range_var);
+            ctx.vars = std::move(saved);
+            return;
           }
         }
-      } else if (stmt.for_stmt.is_foreach) {
-        foldExprComptime(*stmt.for_stmt.foreach_iter, ctx);
-        if (foreachConstEmpty(*stmt.for_stmt.foreach_iter, ctx.program))
-          return;
       }
       if (stmt.for_stmt.init)
         foldStmtComptime(*stmt.for_stmt.init, ctx);
       if (stmt.for_stmt.cond) {
         foldExprComptime(*stmt.for_stmt.cond, ctx);
         ComptimeValue cv;
-        if (tryEvalExpr(ctx, *stmt.for_stmt.cond, cv) && !comptimeTruthy(cv))
+        if (tryEvalExpr(ctx, *stmt.for_stmt.cond, cv)) {
+          if (!comptimeTruthy(cv))
+            return;
+          for (auto& s : stmt.for_stmt.body)
+            foldStmtComptime(*s, ctx);
+          if (stmt.for_stmt.step)
+            foldStmtComptime(*stmt.for_stmt.step, ctx);
           return;
+        }
       }
       {
         auto saved = ctx.vars;
@@ -1154,9 +1722,37 @@ static void foldStmtComptime(Stmt& stmt, ComptimeContext& ctx) {
       return;
     case Stmt::TryStmtK: {
       auto saved = ctx.vars;
-      for (auto& s : stmt.try_stmt.try_body)
-        foldStmtComptime(*s, ctx);
-      ctx.vars = saved;
+      bool catch_path = comptimeTryBodyMayThrow(stmt.try_stmt.try_body);
+      if (!catch_path) {
+        for (auto& s : stmt.try_stmt.try_body)
+          foldStmtComptime(*s, ctx);
+        for (const auto& kv : ctx.vars)
+          saved[kv.first] = kv.second;
+      }
+      ctx.vars = std::move(saved);
+      if (stmt.try_stmt.has_catch) {
+        if (catch_path) {
+          auto catch_base = ctx.vars;
+          if (auto thrown = comptimeTryBodyThrowLiteral(ctx, stmt.try_stmt.try_body))
+            ctx.vars[stmt.try_stmt.catch_var] = *thrown;
+          foldConstexprOnlyStmts(stmt.try_stmt.catch_body, ctx);
+          mergeComptimeVarsExcept(catch_base, ctx.vars, stmt.try_stmt.catch_var);
+          ctx.vars = std::move(catch_base);
+        } else {
+          auto catch_saved = ctx.vars;
+          for (auto& s : stmt.try_stmt.catch_body)
+            foldStmtComptime(*s, ctx);
+          ctx.vars = std::move(catch_saved);
+        }
+      }
+      if (stmt.try_stmt.has_finally) {
+        auto fin_saved = ctx.vars;
+        for (auto& s : stmt.try_stmt.finally_body)
+          foldStmtComptime(*s, ctx);
+        for (const auto& kv : ctx.vars)
+          fin_saved[kv.first] = kv.second;
+        ctx.vars = std::move(fin_saved);
+      }
       return;
     }
     case Stmt::ThrowStmtK:
@@ -1174,11 +1770,36 @@ static void foldStmtComptime(Stmt& stmt, ComptimeContext& ctx) {
     }
     case Stmt::MatchStmtK:
       foldExprComptime(*stmt.match_stmt.scrutinee, ctx);
-      for (auto& arm : stmt.match_stmt.arms) {
-        auto saved = ctx.vars;
-        for (auto& s : arm.body)
-          foldStmtComptime(*s, ctx);
-        ctx.vars = saved;
+      {
+        ComptimeValue scrut;
+        if (tryEvalExpr(ctx, *stmt.match_stmt.scrutinee, scrut)) {
+          for (auto& arm : stmt.match_stmt.arms) {
+            if (!arm.pat || !comptimePatternMatches(*arm.pat, scrut))
+              continue;
+            auto saved = ctx.vars;
+            std::string bind;
+            if (arm.pat->kind == PatKind::Bind)
+              bind = arm.pat->bind_name;
+            if (!bind.empty())
+              ctx.vars[bind] = scrut;
+            for (auto& s : arm.body)
+              foldStmtComptime(*s, ctx);
+            for (const auto& kv : ctx.vars) {
+              if (kv.first == bind)
+                continue;
+              saved[kv.first] = kv.second;
+            }
+            ctx.vars = std::move(saved);
+            return;
+          }
+          return;
+        }
+        for (auto& arm : stmt.match_stmt.arms) {
+          auto saved = ctx.vars;
+          for (auto& s : arm.body)
+            foldStmtComptime(*s, ctx);
+          ctx.vars = saved;
+        }
       }
       return;
     default:
@@ -1196,6 +1817,8 @@ static void runComptimeStmts(const std::vector<std::unique_ptr<Stmt>>& stmts, Co
         storeConstexprBinding(ctx, stmt->let.name, *stmt->let.value);
       continue;
     }
+    if (evalComptimeStmt(ctx, *stmt))
+      continue;
     foldStmtComptime(*stmt, ctx);
   }
 }
@@ -1262,6 +1885,12 @@ void foldProgramExpressions(Program& program) {
   ctx.program = &program;
   ctx.obj_reg = &reg;
   seedComptimeGlobals(program, ctx);
+  for (auto& stmt : program.comptime_stmts) {
+    if (stmt->kind == Stmt::ComptimeBlockK)
+      runComptimeStmts(stmt->comptime_block, ctx);
+    else
+      foldStmtComptime(*stmt, ctx);
+  }
   for (auto& fn : program.functions) {
     auto saved_vars = ctx.vars;
     for (auto& stmt : fn.body)

@@ -1,0 +1,12 @@
+fun main() -> i64 {
+  s = 0
+  x = 0
+  while (x < 2) {
+    switch x {
+      case 0: s = s + 1
+      default: s = s + 10
+    }
+    x = 1
+  }
+  return s
+}

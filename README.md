@@ -94,7 +94,7 @@ vscode\install-extension.bat
 ```bash
 git clone https://github.com/far-lang/far.git
 cd far
-chmod +x build.sh run_tests.sh examples/benchmark/run_benchmark.sh
+chmod +x build.sh run_tests.sh benchmark/run_benchmark.sh
 ./build.sh
 ```
 
@@ -108,16 +108,16 @@ Optional: install the VS Code extension from `vscode/far-lang-*.vsix` with `code
 
 ```bat
 :: Windows — from repo root (runtime/ must be reachable)
-far run examples\tests\suite_builtins.far
+far run tests\suite_builtins.far
 
 :: Build a standalone executable
-far compile examples\tests\suite_builtins.far -o suite_builtins.exe
+far compile tests\suite_builtins.far -o suite_builtins.exe
 ```
 
 ```bash
 # Linux — from repo root
-./far run examples/tests/suite_builtins.far
-./far compile examples/tests/suite_builtins.far -o suite_builtins
+./far run tests/suite_builtins.far
+./far compile tests/suite_builtins.far -o suite_builtins
 ```
 
 Every runnable program needs a `main` entry point:
@@ -219,14 +219,14 @@ Compare **C**, **Far**, and **Python** on identical workloads:
 
 ```bat
 build.bat
-examples\benchmark\run_benchmark.bat
+benchmark\run_benchmark.bat
 ```
 
 **Linux:**
 
 ```bash
 ./build.sh
-examples/benchmark/run_benchmark.sh
+benchmark/run_benchmark.sh
 ```
 
 ### Example results (Windows x64, Clang -O2)
@@ -242,9 +242,9 @@ Typical wall-clock times on a modern desktop — **your numbers will vary**:
 
 All three native implementations print the same checksum (`result=...`), so the work is equivalent. Python is slower because it runs in the **CPython interpreter**.
 
-Scale C/Python via environment variables (`BENCH_FIB_N`, `BENCH_COLLATZ_LIMIT`, …). Far uses constants at the top of each `.far` file in `examples/benchmark/`.
+Scale C/Python via environment variables (`BENCH_FIB_N`, `BENCH_COLLATZ_LIMIT`, …). Far uses constants at the top of each `.far` file in `benchmark/`.
 
-More: [`examples/benchmark/README.md`](examples/benchmark/README.md)
+More: [`benchmark/README.md`](benchmark/README.md)
 
 ---
 
@@ -262,7 +262,7 @@ run_tests.bat              :: 58 feature + suite tests
 ./run_tests.sh
 ```
 
-Test layout: [`examples/tests/README.md`](examples/tests/README.md)
+Test layout: [`tests/README.md`](tests/README.md)
 
 ---
 
@@ -272,9 +272,13 @@ Test layout: [`examples/tests/README.md`](examples/tests/README.md)
 far/
 ├── src/              Far compiler (lexer, parser, typecheck, codegen)
 ├── runtime/          C runtime (far_rt.c, stdlib helpers)
+├── tests/            Language regression tests (.far)
+│   ├── comprehensive/
+│   ├── negative/
+│   └── scratch/      Ad-hoc probes (not in CI harness)
 ├── examples/
-│   ├── tests/        Language regression tests (.far)
-│   ├── benchmark/    C / Far / Python performance suite
+│   ├── program.far   Sample entry program
+├── benchmark/        C / Far / Python performance suite
 │   └── modules/      Sample packages
 ├── vscode/           VS Code extension + IntelliSense data
 ├── install/          Windows installer scripts
@@ -314,5 +318,5 @@ See [`vscode/LICENSE`](vscode/LICENSE) (MIT) for the VS Code extension. Check in
 |-----|--------|
 | [`install/README.md`](install/README.md) | Windows installer |
 | [`vscode/README.md`](vscode/README.md) | Editor extension |
-| [`examples/benchmark/README.md`](examples/benchmark/README.md) | Benchmarks |
-| [`examples/tests/README.md`](examples/tests/README.md) | Test harness |
+| [`benchmark/README.md`](benchmark/README.md) | Benchmarks |
+| [`tests/README.md`](tests/README.md) | Test harness |

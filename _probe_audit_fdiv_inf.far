@@ -1,5 +1,0 @@
-fun main() {
-  x: f64 = 1.0 / 0.0
-  print(x)
-  return 0
-}

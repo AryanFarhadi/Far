@@ -1,0 +1,7 @@
+fun main() {
+  b = Box<i64>(8)
+  bp = b.get()
+  unsafe { *bp = 77 }
+  print(*bp)
+  return 0
+}

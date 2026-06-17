@@ -1,0 +1,10 @@
+﻿fun main() -> i64 {
+  s = 0
+  try {
+    defer { s += 1 }
+    throw 1
+  } catch (e) {
+    s += 10
+  }
+  return s
+}

@@ -1,5 +1,0 @@
-﻿fun test_floordiv0() -> i64 {
-  x = 0
-  return 10 // x
-}
-fun main() { print(test_floordiv0()); return 0 }

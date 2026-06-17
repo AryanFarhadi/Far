@@ -18,7 +18,14 @@ runtime/far_rt.*.o
 tmp_*
 *_tmp.*
 test_*.exe
-examples/benchmark/bin/
+debug-*.log
+/*.exe
+/*.ll
+/*.bak*
+/*.c
+short_*.txt
+far_comprehensive_fs_tmp.txt
+benchmark/bin/
 tokdump.exe
 vec_min_test.exe
 domains.txt

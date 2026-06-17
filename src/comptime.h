@@ -7,15 +7,19 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace far {
 
 struct ComptimeValue {
-  enum class Kind { Int, Float, Bool, String } kind = Kind::Int;
+  enum class Kind { Int, Float, Bool, String, Dict, Array } kind = Kind::Int;
   int64_t i64 = 0;
   double f64 = 0.0;
   bool b = false;
   std::string str;
+  std::vector<ComptimeValue> dict_keys;
+  std::vector<ComptimeValue> dict_values;
+  std::vector<ComptimeValue> array_elems;
 };
 
 struct ComptimeContext {

@@ -7,6 +7,8 @@
 
 namespace far {
 
+static void expandStmtMacros(Stmt& stmt, const Program& program);
+
 static std::unique_ptr<Expr> cloneExpr(const Expr& src);
 
 static std::unique_ptr<Expr> substituteMacroExpr(const Expr& tmpl, const std::vector<std::string>& params,
@@ -57,6 +59,8 @@ static std::unique_ptr<Expr> substituteMacroExpr(const Expr& tmpl, const std::ve
       return e;
     }
     case Expr::ComptimeExprK: {
+      if (tmpl.comptime_expr.is_block)
+        throw FarError("comptime block expressions are not supported in macros");
       auto e = std::make_unique<Expr>();
       e->kind = Expr::ComptimeExprK;
       e->comptime_expr.value = substituteMacroExpr(*tmpl.comptime_expr.value, params, args);
@@ -119,6 +123,9 @@ static std::unique_ptr<Expr> cloneExpr(const Expr& src) {
     case Expr::ComptimeExprK: {
       auto e = std::make_unique<Expr>();
       e->kind = Expr::ComptimeExprK;
+      e->comptime_expr.is_block = src.comptime_expr.is_block;
+      if (src.comptime_expr.is_block)
+        throw FarError("comptime block clone not implemented");
       e->comptime_expr.value = cloneExpr(*src.comptime_expr.value);
       return e;
     }
@@ -154,7 +161,12 @@ static void expandExprMacros(Expr& expr, const Program& program) {
       expandExprMacros(*expr.prefix.operand, program);
       return;
     case Expr::ComptimeExprK:
-      expandExprMacros(*expr.comptime_expr.value, program);
+      if (expr.comptime_expr.is_block) {
+        for (auto& s : expr.comptime_expr.block)
+          expandStmtMacros(*s, program);
+      } else {
+        expandExprMacros(*expr.comptime_expr.value, program);
+      }
       return;
     case Expr::FnCall:
       for (auto& a : expr.call.args)

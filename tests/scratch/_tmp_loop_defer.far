@@ -1,0 +1,12 @@
+fun bump(acc: i64, n: i64) -> i64 { return acc * 10 + n }
+fun main() -> i64 {
+  log = 0
+  i = 0
+  while (i < 3) {
+    defer log = bump(log, i)
+    i = i + 1
+    if (i >= 2) { break }
+  }
+  print(log)
+  return log
+}

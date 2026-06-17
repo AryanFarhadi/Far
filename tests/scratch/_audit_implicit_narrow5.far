@@ -1,0 +1,6 @@
+fun main() {
+  x = 1
+  x = 5000000000
+  print(x)
+  return 0
+}

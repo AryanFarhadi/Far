@@ -1,0 +1,3 @@
+import vectors
+fun main() { a=[1,2,3]; print(len(a)); return eq(i64(len(a)),3) }
+fun eq(a:i64,b:i64)->i64 { if(a!=b){return 1} return 0 }

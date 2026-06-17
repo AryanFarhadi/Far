@@ -1,6 +1,0 @@
-﻿fun main() {
-  a: u32 = 4294967295
-  a += 1
-  print(a)
-  return 0
-}

@@ -1,2 +1,0 @@
-constexpr BAD = comptime (-9223372036854775808 / -1)
-fun main() { print(BAD); return 0 }

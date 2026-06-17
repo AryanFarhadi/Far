@@ -1,8 +1,0 @@
-fun test() -> i64 {
-  try {
-    try { return 1 } catch (e) { x = bad1 }
-    return 2
-  } catch (e) { x = bad2 }
-  return 0
-}
-fun main() { print(test()); return 0 }

@@ -1,0 +1,7 @@
+﻿fun test_vectors() -> i64 {
+  a = vec3(1.0, 2.0, 3.0)
+  b = vec3(4.0, 5.0, 6.0)
+  if (vectors.dot(a, b) != 32.0) { return 1 }
+  return 0
+}
+fun main() { print(test_vectors()); return 0 }

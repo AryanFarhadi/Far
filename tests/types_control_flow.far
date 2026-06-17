@@ -1,0 +1,183 @@
+# Control flow: if/else, while, for, break, continue, nested logic
+fun eq(a: i64, b: i64) -> i64 {
+  if (a != b) { return 1 }
+  return 0
+}
+fun run(n: i64, r: i64) -> i64 {
+  if (r != 0) { print(n); return n }
+  return 0
+}
+fun t01_if_else() -> i64 {
+  x = 0
+  if (true) { x = 1 } else { x = 2 }
+  if (false) { x = 3 }
+  return eq(x, 1)
+}
+fun t02_elif_chain() -> i64 {
+  v = 2
+  r = 0
+  if (v == 1) { r = 10 }
+  else if (v == 2) { r = 20 }
+  else { r = 30 }
+  return eq(r, 20)
+}
+fun t03_while_sum() -> i64 {
+  i = 0
+  s = 0
+  while (i < 5) {
+    s = s + i
+    i = i + 1
+  }
+  return eq(s, 10)
+}
+fun t04_for_range() -> i64 {
+  s = 0
+  for i in 0..<5 {
+    s = s + i
+  }
+  return eq(s, 10)
+}
+fun t05_break() -> i64 {
+  s = 0
+  for i in 0..<100 {
+    if (i == 7) { break }
+    s = s + 1
+  }
+  return eq(s, 7)
+}
+fun t06_continue() -> i64 {
+  s = 0
+  for i in 0..<10 {
+    if (i % 2 == 0) { continue }
+    s = s + i
+  }
+  return eq(s, 25)
+}
+fun t07_nested() -> i64 {
+  acc = 0
+  for i in 0..<3 {
+    j = 0
+    while (j < 2) {
+      acc = acc + 1
+      j = j + 1
+    }
+  }
+  return eq(acc, 6)
+}
+fun t08_short_circuit() -> i64 {
+  a = 0
+  if (false && (a = 1) == 1) { return 1 }
+  if (true || (a = 2) == 2) { }
+  return eq(a, 0)
+}
+
+fun side_for_ternary() -> i64 { return 1 }
+
+fun zero_i64() -> i64 { return 0 }
+
+fun trap_div() -> i64 { return 1 / zero_i64() }
+
+fun t09_if_runtime_shortcircuit() -> i64 {
+  x = 1
+  if (x != 0) {
+    return 5
+  } else {
+    return trap_div()
+  }
+}
+
+fun t10_ternary_runtime_shortcircuit() -> i64 {
+  cond = side_for_ternary()
+  return cond != 0 ? 5 : trap_div()
+}
+
+fun t11_ternary_const_false() -> i64 {
+  return 0 ? trap_div() : 7
+}
+
+fun runtime_false() -> i64 { return 0 }
+
+fun t12_and_runtime_shortcircuit() -> i64 {
+  if (runtime_false() && trap_div()) { return 1 }
+  return 0
+}
+
+fun runtime_true() -> i64 { return 1 }
+
+fun t13_or_runtime_shortcircuit() -> i64 {
+  if (runtime_true() || trap_div()) { }
+  return 0
+}
+
+fun runtime_one() -> i64 { return 1 }
+
+fun t14_nullcoalesce_runtime_shortcircuit() -> i64 {
+  return runtime_one() ?? trap_div()
+}
+
+fun t15_switch_break_in_loop() -> i64 {
+  s = 0
+  for i in 0..<3 {
+    switch i {
+      case 1: break
+      default: s = s + 1
+    }
+    s = s + 10
+  }
+  return eq(s, 32)
+}
+
+fun t16_switch_break_no_loop() -> i64 {
+  s = 0
+  switch 1 {
+    case 1: break
+    default: s = s + 1
+  }
+  s = s + 50
+  return eq(s, 50)
+}
+
+fun t17_return_in_const_switch() -> i64 {
+  switch 1 {
+    case 1: return 42
+    default: return 0
+  }
+}
+
+fun t18_while_switch_break() -> i64 {
+  s = 0
+  i = 0
+  while (i < 3) {
+    switch i {
+      case 1: break
+      default: s = s + 1
+    }
+    s = s + 10
+    i = i + 1
+  }
+  return eq(s, 32)
+}
+
+fun main() {
+  r = 0
+  r = run(1, t01_if_else()); if (r != 0) { return r }
+  r = run(2, t02_elif_chain()); if (r != 0) { return r }
+  r = run(3, t03_while_sum()); if (r != 0) { return r }
+  r = run(4, t04_for_range()); if (r != 0) { return r }
+  r = run(5, t05_break()); if (r != 0) { return r }
+  r = run(6, t06_continue()); if (r != 0) { return r }
+  r = run(7, t07_nested()); if (r != 0) { return r }
+  r = run(8, t08_short_circuit()); if (r != 0) { return r }
+  r = run(9, eq(t09_if_runtime_shortcircuit(), 5)); if (r != 0) { return r }
+  r = run(10, eq(t10_ternary_runtime_shortcircuit(), 5)); if (r != 0) { return r }
+  r = run(11, eq(t11_ternary_const_false(), 7)); if (r != 0) { return r }
+  r = run(12, eq(t12_and_runtime_shortcircuit(), 0)); if (r != 0) { return r }
+  r = run(13, eq(t13_or_runtime_shortcircuit(), 0)); if (r != 0) { return r }
+  r = run(14, eq(t14_nullcoalesce_runtime_shortcircuit(), 1)); if (r != 0) { return r }
+  r = run(15, t15_switch_break_in_loop()); if (r != 0) { return r }
+  r = run(16, t16_switch_break_no_loop()); if (r != 0) { return r }
+  r = run(17, eq(t17_return_in_const_switch(), 42)); if (r != 0) { return r }
+  r = run(18, t18_while_switch_break()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

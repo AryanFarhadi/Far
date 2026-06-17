@@ -1,0 +1,26 @@
+import bench
+
+# Default: 520^3 nest (match BENCH_NESTED_N)
+
+fun nested_loop() -> i64 {
+  n: i64 = 520
+  acc: i64 = 0
+  for i in 0..<n {
+    for j in 0..<n {
+      for k in 0..<n {
+        v = (i ^ j ^ k) & 255
+        acc = acc + v
+      }
+    }
+  }
+  return acc
+}
+
+fun main() -> i64 {
+  t0 = bench.start()
+  r = nested_loop()
+  ms = bench.elapsed_ms(t0)
+  print(ms)
+  print(r)
+  return 0
+}

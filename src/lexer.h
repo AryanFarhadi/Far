@@ -109,6 +109,8 @@ private:
 
   Token readInterpString(int line, int col);
 
+  void appendUtf8Char(std::string& value, int line, int col);
+
   static char decodeEscape(char esc, int line, int col);
 
 };

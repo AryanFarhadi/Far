@@ -80,9 +80,12 @@ TypeDesc errMethodRetType(ErrMethodId id, const TypeDesc& recv, const TypeDesc& 
 }
 
 void declareErrorRuntime(std::ostringstream& out) {
-  out << "declare i32 @far_try_enter()\n";
+  out << "declare void @far_try_push()\n";
   out << "declare void @far_try_success()\n";
   out << "declare void @far_throw(i64, i64)\n";
+  out << "declare i32 @far_pending_throw_active()\n";
+  out << "declare void @far_clear_pending_throw()\n";
+  out << "declare void @far_mark_pending_throw()\n";
   out << "declare void @far_store_caught(i64, i64)\n";
   out << "declare i64 @far_caught_tag()\n";
   out << "declare i64 @far_caught_value()\n";

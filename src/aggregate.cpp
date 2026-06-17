@@ -442,7 +442,7 @@ FarTypeId checkAggregateBinOp(const std::string& op, FarTypeId lt, FarTypeId rt)
   if (la && !ra) {
     FarTypeId sc = aggregateScalar(lt);
     if (isComponentWiseFamily(lt) && isScalarForAgg(rt, sc)) {
-      if (op == "*" || op == "/")
+      if (op == "+" || op == "-" || op == "*" || op == "/")
         return lt;
     }
     throw FarError("incompatible operands for '" + op + "'");
@@ -450,7 +450,8 @@ FarTypeId checkAggregateBinOp(const std::string& op, FarTypeId lt, FarTypeId rt)
 
   if (!la && ra) {
     FarTypeId sc = aggregateScalar(rt);
-    if (isComponentWiseFamily(rt) && isScalarForAgg(lt, sc) && (op == "*" || op == "+"))
+    if (isComponentWiseFamily(rt) && isScalarForAgg(lt, sc) &&
+        (op == "+" || op == "-" || op == "*" || op == "/"))
       return rt;
     throw FarError("incompatible operands for '" + op + "'");
   }

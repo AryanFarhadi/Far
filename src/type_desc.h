@@ -109,6 +109,7 @@ int elemSizeBytes(const TypeDesc& td);
 int elemAlignBytes(const TypeDesc& td);
 bool isHashableType(const TypeDesc& td);
 bool isCollectionHandle(const TypeDesc& td);
+bool isOwnedHeapCollectionDesc(const TypeDesc& td);
 bool isCollectionValue(const TypeDesc& td);
 bool isFunctionDesc(const TypeDesc& td);
 inline TypeDesc defaultIntType() { return TypeDesc::prim(FarTypeId::I32); }

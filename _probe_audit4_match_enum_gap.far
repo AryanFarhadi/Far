@@ -1,6 +1,0 @@
-enum Color { Red, Green, Blue }
-fun main() {
-  c = Color.Red
-  match c { Color.Red => print(1) }
-  return 0
-}

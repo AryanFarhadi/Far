@@ -127,13 +127,13 @@ function main() {
 
   const files = [
     path.join(root, 'program.far'),
-    ...walkTests(path.join(root, 'examples', 'tests')),
+    ...walkTests(path.join(root, 'tests')),
     ...walkTests(path.join(root, 'examples', 'benchmark')),
   ].filter((f, i, a) => a.indexOf(f) === i);
 
   const includeStress = process.env.FAR_STRESS === '1';
   if (includeStress) {
-    const stress = path.join(root, 'examples', 'tests', 'suite_10000.far');
+    const stress = path.join(root, 'tests', 'suite_10000.far');
     if (fs.existsSync(stress) && !files.includes(stress)) files.push(stress);
   }
 

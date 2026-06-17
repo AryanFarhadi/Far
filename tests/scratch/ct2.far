@@ -1,0 +1,2 @@
+fun get()->i64{return 1}
+fun main()->i64{if(get()||(1/0)){return 0}return 1}

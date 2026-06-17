@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
 #include "target.h"
 
@@ -98,6 +99,18 @@ static bool isUnsignedTypeDesc(const TypeDesc& td) {
   return isPrimitiveDesc(td) && isIntegerType(td.primitive) && !typeInfo(td.primitive).is_signed;
 }
 
+static bool isSignedIntegerTypeDesc(const TypeDesc& td) {
+  return isPrimitiveDesc(td) && isIntegerType(td.primitive) && typeInfo(td.primitive).is_signed;
+}
+
+static std::string intLitCodegenText(const Expr& expr) {
+  if (expr.kind != Expr::Int)
+    return "0";
+  if (expr.int_lit.unsigned_decimal)
+    return std::to_string(static_cast<uint64_t>(expr.int_lit.value));
+  return std::to_string(expr.int_lit.value);
+}
+
 static bool binOpUsesUnsigned(const TypeDesc& lt, const TypeDesc& rt) {
   return isUnsignedTypeDesc(lt) || isUnsignedTypeDesc(rt);
 }
@@ -105,6 +118,69 @@ static bool binOpUsesUnsigned(const TypeDesc& lt, const TypeDesc& rt) {
 static const std::unordered_map<std::string, std::string> cmpOps = {
 
     {"==", "eq"}, {"!=", "ne"}, {"<", "slt"}, {">", "sgt"}, {"<=", "sle"}, {">=", "sge"}};
+
+static std::string flipOrderedCmpOp(const std::string& op) {
+  if (op == "<")
+    return ">";
+  if (op == ">")
+    return "<";
+  if (op == "<=")
+    return ">=";
+  if (op == ">=")
+    return "<=";
+  return op;
+}
+
+static std::string emitMixedSignIntegerCompare(
+    std::ostringstream& out,
+    const std::function<std::string(const std::string&)>& fresh,
+    const std::string& cmp_op,
+    const std::string& unsigned_val,
+    const std::string& signed_val) {
+  std::string neg = fresh("mixsign");
+  out << "  %" << neg << " = icmp slt " << I64 << " " << signed_val << ", 0\n";
+  if (cmp_op == "==") {
+    std::string not_neg = fresh("mixnn");
+    out << "  %" << not_neg << " = xor i1 %" << neg << ", 1\n";
+    std::string eq_bits = fresh("mixeq");
+    out << "  %" << eq_bits << " = icmp eq " << I64 << " " << unsigned_val << ", " << signed_val << "\n";
+    std::string both = fresh("mixboth");
+    out << "  %" << both << " = and i1 %" << not_neg << ", %" << eq_bits << "\n";
+    std::string z = fresh("mixz");
+    out << "  %" << z << " = zext i1 %" << both << " to " << I64 << "\n";
+    return "%" + z;
+  }
+  if (cmp_op == "!=") {
+    std::string ne_bits = fresh("mixne");
+    out << "  %" << ne_bits << " = icmp ne " << I64 << " " << unsigned_val << ", " << signed_val << "\n";
+    std::string either = fresh("mixeither");
+    out << "  %" << either << " = or i1 %" << neg << ", %" << ne_bits << "\n";
+    std::string z = fresh("mixz");
+    out << "  %" << z << " = zext i1 %" << either << " to " << I64 << "\n";
+    return "%" + z;
+  }
+  std::string s_nonneg = fresh("mixsok");
+  out << "  %" << s_nonneg << " = xor i1 %" << neg << ", 1\n";
+  std::string bits = fresh("mixbits");
+  if (cmp_op == "<")
+    out << "  %" << bits << " = icmp ult " << I64 << " " << unsigned_val << ", " << signed_val << "\n";
+  else if (cmp_op == ">")
+    out << "  %" << bits << " = icmp ugt " << I64 << " " << unsigned_val << ", " << signed_val << "\n";
+  else if (cmp_op == "<=")
+    out << "  %" << bits << " = icmp ule " << I64 << " " << unsigned_val << ", " << signed_val << "\n";
+  else if (cmp_op == ">=")
+    out << "  %" << bits << " = icmp uge " << I64 << " " << unsigned_val << ", " << signed_val << "\n";
+  else
+    throw FarError("unknown mixed-sign compare op '" + cmp_op + "'");
+  std::string result = fresh("mixres");
+  if (cmp_op == "<" || cmp_op == "<=")
+    out << "  %" << result << " = and i1 %" << s_nonneg << ", %" << bits << "\n";
+  else
+    out << "  %" << result << " = or i1 %" << neg << ", %" << bits << "\n";
+  std::string z = fresh("mixz");
+  out << "  %" << z << " = zext i1 %" << result << " to " << I64 << "\n";
+  return "%" + z;
+}
 
 static bool isBoolProducingOp(const std::string& op) {
   return op == "==" || op == "!=" || op == "===" || op == "!==" || op == "<" || op == ">" ||
@@ -148,6 +224,7 @@ static const std::unordered_map<std::string, std::string> arithOps = {
 struct VarInfo {
   TypeDesc type = TypeDesc::prim(FarTypeId::I64);
   std::string slot;
+  bool is_param = false;
 };
 
 
@@ -157,6 +234,8 @@ struct LoopLabels {
   std::string break_label;
 
   std::string continue_label;
+
+  std::string exit_label;
 
 };
 
@@ -200,6 +279,8 @@ public:
     out_ << "declare i64 @far_str_len(i8*)\n";
     out_ << "declare i64 @far_str_equal(i8*, i8*)\n";
     out_ << "declare i8* @far_str_concat(i8*, i8*)\n";
+    out_ << "declare i64 @far_str_char_at(i8*, i64)\n";
+    out_ << "declare i8* @far_str_slice(i8*, i64, i64)\n";
 
     out_ << "declare i64 @far_array_new(i64)\n";
 
@@ -218,7 +299,10 @@ public:
     out_ << "declare i64 @far_parallel(i8*, i64)\n";
     out_ << "declare i64 @far_await(i64)\n";
     out_ << "declare i64 @far_gen_next(i64)\n";
-    out_ << "declare i64 @far_closure_new(i8*, i64, i64, i64, i64, i64)\n";
+    out_ << "declare i64 @far_closure_new(i8*, i64, i64, i64, i64, i64, i64, i64, i64, i64, i64)\n";
+    out_ << "declare void @far_closure_drop(i64)\n";
+    out_ << "declare i64 @far_owned_dup(i64, i64)\n";
+    out_ << "declare i8* @far_str_copy(i8*)\n";
     out_ << "declare i64 @far_closure_call(i64, i64)\n";
     out_ << "declare i64 @far_tarray_contains(i64, i64)\n";
 
@@ -313,6 +397,10 @@ private:
   bool pending_jump_init_ = false;
   std::string pending_break_label_;
   std::string pending_continue_label_;
+
+  std::string pending_yield_flag_;
+  std::string pending_yield_val_;
+  bool pending_yield_init_ = false;
 
   std::string pending_throw_flag_;
   std::string pending_throw_tag_;
@@ -645,7 +733,8 @@ private:
       out_ << "  %" << slot << " = alloca " << st << "\n";
       std::string internal = abiParamToInternalDesc(p.type, "%" + p.name);
       out_ << "  store " << st << " " << internal << ", " << st << "* %" << slot << "\n";
-      env[p.name] = {p.type, slot};
+      VarInfo vi{p.type, slot, true};
+      env[p.name] = vi;
     }
 
     std::ostringstream body;
@@ -689,6 +778,8 @@ private:
 
 
     bool terminated = false;
+    bool exits_loop_not_scope_ = false;
+    bool switch_break_arm_ = false;
 
     std::unordered_set<std::string> assigned_;
 
@@ -696,7 +787,7 @@ private:
 
     void emitStmt(const Stmt& stmt) {
 
-      if (terminated) return;
+      if (terminated && !exits_loop_not_scope_) return;
 
       if (++stmt_depth_ > 512)
         throw FarError("codegen statement depth exceeded");
@@ -770,13 +861,17 @@ private:
       c.defer_stack_ = defer_stack_;
       c.defer_scope_base_ = defer_stack_.size();
       c.loop_stack_ = loop_stack_;
+      c.switch_break_stack_ = switch_break_stack_;
       c.autodrop_frames_ = autodrop_frames_;
       c.autodrop_scope_base_ =
           c.autodrop_frames_.empty() ? 0 : c.autodrop_frames_.back().size();
       c.terminated = terminated;
+      c.exits_loop_not_scope_ = exits_loop_not_scope_;
+      c.switch_break_arm_ = switch_break_arm_;
       c.stmt_depth_ = stmt_depth_;
       c.emit_depth_ = emit_depth_;
       c.emitting_finally_for_ = emitting_finally_for_;
+      c.emitting_catch_for_ = emitting_catch_for_;
       c.const_int_locals_ = const_int_locals_;
       c.const_float_locals_ = const_float_locals_;
       c.constexpr_empty_locals_ = constexpr_empty_locals_;
@@ -784,8 +879,98 @@ private:
       return c;
     }
 
+    void injectConstexprGlobalsFromStmts(const std::vector<std::unique_ptr<Stmt>>& stmts) {
+      for (const auto& stmt : stmts) {
+        if (stmt->kind == Stmt::LetStmt && stmt->let.is_constexpr && stmt->let.value)
+          emitLet(stmt->let);
+        else if (stmt->kind == Stmt::ComptimeBlockK)
+          injectConstexprGlobalsFromStmts(stmt->comptime_block);
+      }
+    }
+
+    void registerOwnedAutoDrop(const std::string& name, const TypeDesc& ty) {
+      if (autodrop_frames_.empty())
+        return;
+      auto& frame = autodrop_frames_.back();
+      for (const auto& ad : frame) {
+        if (ad.name == name)
+          return;
+      }
+      if (isMemoryHandleDesc(ty) || isConcurrencyHandleDesc(ty))
+        frame.push_back({name, ty.form});
+      else if (isOwnedHeapCollectionDesc(ty))
+        frame.push_back({name, autodropFormFor(ty)});
+      else if (isFunctionDesc(ty))
+        frame.push_back({name, TypeForm::Function});
+      else if (isUserDesc(ty)) {
+        const UserTypeDef* ut = gen_->obj_reg_.lookup(ty.user_name);
+        if (ut && ut->kind == UserTypeKind::Actor)
+          frame.push_back({name, TypeForm::User, true});
+        else if (ut && ut->kind == UserTypeKind::Union)
+          frame.push_back({name, TypeForm::User, false, true});
+      }
+    }
+
+    struct ClosureCap {
+      int64_t form = -1;
+      std::string value = "0";
+    };
+
+    static constexpr int64_t kCapFormString = 1000;
+
+    ClosureCap prepareClosureCapture(const std::string& cap_name) {
+      ClosureCap cap;
+      const TypeDesc& ty = env_.at(cap_name).type;
+      std::string val = loadVar(cap_name);
+      if (isPrimTy(ty, FarTypeId::String) || isPrimTy(ty, FarTypeId::RawString)) {
+        cap.form = kCapFormString;
+        std::string ptr = gen_->fresh("csp");
+        gen_->out_ << "  %" << ptr << " = inttoptr i64 " << val << " to i8*\n";
+        std::string dup = gen_->fresh("csd");
+        gen_->out_ << "  %" << dup << " = call i8* @far_str_copy(i8* %" << ptr << ")\n";
+        std::string slot = gen_->fresh("csi");
+        gen_->out_ << "  %" << slot << " = ptrtoint i8* %" << dup << " to i64\n";
+        cap.value = "%" + slot;
+        return cap;
+      }
+      if (isOwnedHeapCollectionDesc(ty)) {
+        cap.form = static_cast<int64_t>(autodropFormFor(ty));
+        std::string dup = gen_->fresh("odup");
+        gen_->out_ << "  %" << dup << " = call i64 @far_owned_dup(i64 " << cap.form << ", i64 " << val
+                   << ")\n";
+        cap.value = "%" + dup;
+        return cap;
+      }
+      cap.form = -1;
+      cap.value = val;
+      return cap;
+    }
+
+    std::string emitClosureNew(const Function* lf, const std::vector<std::string>& captures) {
+      std::string ptr = fnPointerBitcastLlvm(lf->llvm_name, lf);
+      int64_t ncaps = static_cast<int64_t>(captures.size());
+      if (captures.size() > 4)
+        throw FarError("closure captures at most 4 variables");
+      ClosureCap caps[4];
+      for (size_t i = 0; i < captures.size(); ++i)
+        caps[i] = prepareClosureCapture(captures[i]);
+      std::string tmp = gen_->fresh("fnval");
+      gen_->out_ << "  %" << tmp << " = call " << I64 << " @far_closure_new(i8* " << ptr << ", " << I64
+                 << " " << ncaps;
+      for (int i = 0; i < 4; ++i)
+        gen_->out_ << ", " << I64 << " " << caps[i].form << ", " << I64 << " " << caps[i].value;
+      gen_->out_ << ")\n";
+      return "%" + tmp;
+    }
+
     void runBody(const std::vector<std::unique_ptr<Stmt>>& body) {
       pushScope();
+      for (const auto& kv : env_) {
+        if (kv.second.is_param)
+          continue;
+        registerOwnedAutoDrop(kv.first, kv.second.type);
+      }
+      injectConstexprGlobalsFromStmts(gen_->program_.comptime_stmts);
       for (const auto& stmt : body) {
         emitStmt(*stmt);
         if (terminated || stmtAbortsRestOfBlock(*stmt)) {
@@ -807,6 +992,9 @@ private:
       gen_->pending_jump_kind_.clear();
       gen_->pending_break_label_.clear();
       gen_->pending_continue_label_.clear();
+      gen_->pending_yield_init_ = false;
+      gen_->pending_yield_flag_.clear();
+      gen_->pending_yield_val_.clear();
       gen_->pending_throw_init_ = false;
       gen_->pending_throw_flag_.clear();
       gen_->pending_throw_tag_.clear();
@@ -826,6 +1014,7 @@ private:
     std::unordered_set<std::string> constexpr_empty_locals_;
 
     std::vector<LoopLabels> loop_stack_;
+    std::vector<std::string> switch_break_stack_;
 
     TypeDesc return_type_ = TypeDesc::prim(FarTypeId::I64);
 
@@ -847,6 +1036,7 @@ private:
       std::string finally_label;
       std::string after_label;
       std::string continue_label;
+      std::string unwind_slot;
       std::string catch_var;
       TypeDesc catch_type = TypeDesc::prim(FarTypeId::I64);
       int64_t catch_type_tag = 0;
@@ -855,9 +1045,12 @@ private:
       bool has_finally = false;
       size_t stack_index = 0;
       int contained_in_finally_of = -1;
+      bool break_finishes_try = false;
+      bool has_code_after_loop = false;
     };
     std::vector<TryLabels> try_stack_;
     int emitting_finally_for_ = -1;
+    int emitting_catch_for_ = -1;
 
     int emit_depth_ = 0;
     int stmt_depth_ = 0;
@@ -874,11 +1067,39 @@ private:
       gen_->pending_ret_init_ = true;
     }
 
+    static TypeForm autodropFormFor(const TypeDesc& ty) {
+      if (isPrimitiveDesc(ty) && ty.primitive == FarTypeId::Arr)
+        return TypeForm::Array;
+      return ty.form;
+    }
+
+    void emitOwnedCollectionDrop(TypeForm form, const std::string& val) {
+      AutoDrop ad;
+      ad.form = form;
+      emitAutoDrop(ad, val);
+    }
+
     void emitAutoDrop(const AutoDrop& ad, const std::string& val) {
       if (ad.actor) {
         gen_->out_ << "  call void @far_actor_stop(i64 " << val << ")\n";
       } else if (ad.union_handle) {
         gen_->out_ << "  call void @far_union_drop(i64 " << val << ")\n";
+      } else if (ad.form == TypeForm::Dict) {
+        gen_->out_ << "  call void @far_dict_drop(i64 " << val << ")\n";
+      } else if (ad.form == TypeForm::Set) {
+        gen_->out_ << "  call void @far_set_drop(i64 " << val << ")\n";
+      } else if (ad.form == TypeForm::LinkedList) {
+        gen_->out_ << "  call void @far_llist_drop(i64 " << val << ")\n";
+      } else if (ad.form == TypeForm::List || ad.form == TypeForm::Queue ||
+                 ad.form == TypeForm::Stack) {
+        gen_->out_ << "  call void @far_list_drop(i64 " << val << ")\n";
+      } else if (ad.form == TypeForm::Array || ad.form == TypeForm::Slice ||
+                 ad.form == TypeForm::Tuple) {
+        gen_->out_ << "  call void @far_tarray_drop(i64 " << val << ")\n";
+      } else if (ad.form == TypeForm::Range) {
+        gen_->out_ << "  call void @far_range_drop(i64 " << val << ")\n";
+      } else if (ad.form == TypeForm::Function) {
+        gen_->out_ << "  call void @far_closure_drop(i64 " << val << ")\n";
       } else {
         TypeDesc drop_ty;
         drop_ty.form = ad.form;
@@ -900,12 +1121,16 @@ private:
           continue;
         std::string val = child.loadVar(added[i].name);
         emitAutoDrop(added[i], val);
-        child.storeSlotValue(added[i].name, "0");
+        child.storeSlotValueNoDrop(added[i].name, "0");
       }
     }
 
+    void spliceChildDefers(Ctx& child) {
+      for (size_t i = child.defer_scope_base_; i < child.defer_stack_.size(); ++i)
+        defer_stack_.push_back(child.defer_stack_[i]);
+    }
+
     void mergeChild(Ctx& child, const std::unordered_map<std::string, VarInfo>* pre = nullptr) {
-      child.flushScopeDefers();
       if (pre)
         flushBranchAutoDrops(child, *pre);
       if (pre) {
@@ -924,7 +1149,7 @@ private:
         const_int_locals_.erase(name);
         const_float_locals_.erase(name);
       }
-      defer_stack_ = std::move(child.defer_stack_);
+      spliceChildDefers(child);
       if (!autodrop_frames_.empty() && !child.autodrop_frames_.empty()) {
         const auto& added = child.autodrop_frames_.back();
         for (size_t i = child.autodrop_scope_base_; i < added.size(); ++i) {
@@ -980,28 +1205,38 @@ private:
     void emitReturnFromPending() {
       ensurePendingReturn();
       const char* ret_ty = llvmAbiTypeDesc(return_type_);
+      flushDefers();
       if (gen_->pending_ret_deferred_) {
         const Return& ret = *gen_->pending_ret_deferred_;
+        gen_->pending_ret_deferred_ = nullptr;
         if (!ret.has_value) {
+          flushAllAutoDrops();
           std::string zero =
               (isPrimitiveDesc(return_type_) && isFloatType(return_type_.primitive)) ? "0.0" : "0";
-          gen_->out_ << "  store " << ret_ty << " " << zero << ", " << ret_ty << "* %"
-                     << gen_->pending_ret_val_ << "\n";
+          gen_->out_ << "  ret " << ret_ty << " " << zero << "\n";
         } else {
           std::string value = emitExpr(*ret.value);
           std::string abi = gen_->internalToAbiDesc(ret.value->type, return_type_, value);
-          gen_->out_ << "  store " << ret_ty << " " << abi << ", " << ret_ty << "* %"
-                     << gen_->pending_ret_val_ << "\n";
+          flushAllAutoDrops();
+          gen_->out_ << "  ret " << ret_ty << " " << abi << "\n";
         }
-        gen_->pending_ret_deferred_ = nullptr;
+        terminated = true;
+        return;
       }
-      flushDefers();
-      flushAllAutoDrops();
       std::string val = gen_->fresh("pretload");
       gen_->out_ << "  %" << val << " = load " << ret_ty << ", " << ret_ty << "* %"
                  << gen_->pending_ret_val_ << "\n";
+      flushAllAutoDrops();
       gen_->out_ << "  ret " << ret_ty << " %" << val << "\n";
       terminated = true;
+    }
+
+    int findTryForFinallyLabel(const std::string& finally) const {
+      for (int i = static_cast<int>(try_stack_.size()) - 1; i >= 0; --i) {
+        if (try_stack_[i].finally_label == finally)
+          return i;
+      }
+      return -1;
     }
 
     bool routePendingControlThroughOuterFinally(const TryLabels& labels) {
@@ -1042,41 +1277,16 @@ private:
         std::string nxt = gen_->fresh("pthnext");
         gen_->out_ << "  br i1 %" << flag << ", label %" << throw_path << ", label %" << nxt << "\n";
         gen_->out_ << throw_path << ":\n";
-        if (labels.has_catch)
+        if (labels.has_catch) {
           emitDispatchPendingThrowToCatch(labels);
-        else {
+        } else {
+          flushDefers();
+          flushAllAutoDrops();
           emitTrySuccess(errCtx());
-          bool routed = false;
-          if (labels.contained_in_finally_of >= 0 && !labels.continue_label.empty()) {
-            gen_->out_ << "  br label %" << labels.continue_label << "\n";
-            routed = true;
-          } else {
-            for (size_t i = labels.stack_index; i > 0;) {
-              --i;
-              if (!try_stack_[i].has_finally)
-                continue;
-              if (labels.contained_in_finally_of == static_cast<int>(i)) {
-                if (!labels.continue_label.empty()) {
-                  gen_->out_ << "  br label %" << labels.continue_label << "\n";
-                  routed = true;
-                  break;
-                }
-                continue;
-              }
-              gen_->out_ << "  br label %" << try_stack_[i].finally_label << "\n";
-              terminated = true;
-              routed = true;
-              break;
-            }
-          }
-          if (!routed) {
-            flushDefers();
-            flushAllAutoDrops();
-            emitThrowFromPending();
-          }
+          emitRoutePendingThrowOutward(true);
         }
         gen_->out_ << nxt << ":\n";
-        if (!gen_->pending_jump_init_ && !gen_->pending_ret_init_) {
+        if (!gen_->pending_jump_init_ && !gen_->pending_ret_init_ && !gen_->pending_yield_init_) {
           gen_->out_ << "  br label %" << labels.after_label << "\n";
           return;
         }
@@ -1093,11 +1303,14 @@ private:
           gen_->out_ << "  switch i8 %" << kind << ", label %" << nxt << " [ i8 2, label %" << brk
                      << " i8 3, label %" << cont << " ]\n";
           gen_->out_ << brk << ":\n";
-          if (!routePendingControlThroughOuterFinally(labels))
+          gen_->out_ << "  store i8 0, i8* %" << gen_->pending_jump_kind_ << "\n";
+          if (labels.break_finishes_try)
+            gen_->out_ << "  br label %" << labels.after_label << "\n";
+          else
             gen_->out_ << "  br label %" << gen_->pending_break_label_ << "\n";
           gen_->out_ << cont << ":\n";
-          if (!routePendingControlThroughOuterFinally(labels))
-            gen_->out_ << "  br label %" << gen_->pending_continue_label_ << "\n";
+          gen_->out_ << "  store i8 0, i8* %" << gen_->pending_jump_kind_ << "\n";
+          gen_->out_ << "  br label %" << gen_->pending_continue_label_ << "\n";
           gen_->out_ << nxt << ":\n";
         } else if (has_break) {
           std::string brk = gen_->fresh("pjbrk");
@@ -1105,7 +1318,10 @@ private:
           gen_->out_ << "  switch i8 %" << kind << ", label %" << nxt << " [ i8 2, label %" << brk
                      << " ]\n";
           gen_->out_ << brk << ":\n";
-          if (!routePendingControlThroughOuterFinally(labels))
+          gen_->out_ << "  store i8 0, i8* %" << gen_->pending_jump_kind_ << "\n";
+          if (labels.break_finishes_try)
+            gen_->out_ << "  br label %" << labels.after_label << "\n";
+          else
             gen_->out_ << "  br label %" << gen_->pending_break_label_ << "\n";
           gen_->out_ << nxt << ":\n";
         } else if (has_continue) {
@@ -1114,14 +1330,42 @@ private:
           gen_->out_ << "  switch i8 %" << kind << ", label %" << nxt << " [ i8 3, label %" << cont
                      << " ]\n";
           gen_->out_ << cont << ":\n";
-          if (!routePendingControlThroughOuterFinally(labels))
-            gen_->out_ << "  br label %" << gen_->pending_continue_label_ << "\n";
+          gen_->out_ << "  store i8 0, i8* %" << gen_->pending_jump_kind_ << "\n";
+          gen_->out_ << "  br label %" << gen_->pending_continue_label_ << "\n";
           gen_->out_ << nxt << ":\n";
         }
-        if (!gen_->pending_ret_init_) {
+        if (!gen_->pending_ret_init_ && !gen_->pending_yield_init_) {
           gen_->out_ << "  br label %" << labels.after_label << "\n";
           return;
         }
+      }
+      if (gen_->pending_yield_init_) {
+        std::string flag = gen_->fresh("pyf");
+        gen_->out_ << "  %" << flag << " = load i1, i1* %" << gen_->pending_yield_flag_ << "\n";
+        std::string yield_path = gen_->fresh("pyield");
+        std::string done = labels.after_label;
+        gen_->out_ << "  br i1 %" << flag << ", label %" << yield_path << ", label %" << done << "\n";
+        gen_->out_ << yield_path << ":\n";
+        if (labels.contained_in_finally_of >= 0 && !labels.continue_label.empty()) {
+          gen_->out_ << "  br label %" << labels.continue_label << "\n";
+          return;
+        }
+        for (size_t i = labels.stack_index; i > 0;) {
+          --i;
+          if (try_stack_[i].has_finally) {
+            if (labels.contained_in_finally_of == static_cast<int>(i)) {
+              if (!labels.continue_label.empty()) {
+                gen_->out_ << "  br label %" << labels.continue_label << "\n";
+                return;
+              }
+              continue;
+            }
+            gen_->out_ << "  br label %" << try_stack_[i].finally_label << "\n";
+            return;
+          }
+        }
+        emitYieldFromPending();
+        return;
       }
       if (!gen_->pending_ret_init_) {
         if (!terminated)
@@ -1158,8 +1402,16 @@ private:
     }
 
     void emitRethrowCaught() {
+      emitTrySuccess(errCtx());
       std::string tag = emitCaughtTagGlobal(errCtx());
       std::string val = emitCaughtValueGlobal(errCtx());
+      gen_->out_ << "  call void @far_store_caught(i64 " << tag << ", i64 " << val << ")\n";
+      setPendingThrowValues(tag, val);
+      gen_->out_ << "  call void @far_mark_pending_throw()\n";
+      if (!try_stack_.empty()) {
+        emitRoutePendingThrowOutward(true);
+        return;
+      }
       gen_->out_ << "  call void @far_throw(i64 " << tag << ", i64 " << val << ")\n";
       gen_->out_ << "  unreachable\n";
     }
@@ -1171,10 +1423,7 @@ private:
       emitThrowFromPending();
     }
 
-    void emitUncaughtRethrow() {
-      emitTrySuccess(errCtx());
-      emitRethrowCaught();
-    }
+    void emitUncaughtRethrow() { emitRethrowCaught(); }
 
     void pushScope() { autodrop_frames_.push_back({}); }
 
@@ -1184,7 +1433,7 @@ private:
       for (const auto& ad : autodrop_frames_.back()) {
         std::string val = loadVar(ad.name);
         emitAutoDrop(ad, val);
-        storeSlotValue(ad.name, "0");
+        storeSlotValueNoDrop(ad.name, "0");
       }
       autodrop_frames_.pop_back();
     }
@@ -1249,7 +1498,21 @@ private:
       return "%" + tmp;
     }
 
-    void storeSlotValue(const std::string& name, const std::string& value) {
+    void dropAutodropTargetIfAny(const std::string& name) {
+      if (env_.find(name) == env_.end())
+        return;
+      for (auto rit = autodrop_frames_.rbegin(); rit != autodrop_frames_.rend(); ++rit) {
+        for (const auto& ad : *rit) {
+          if (ad.name != name)
+            continue;
+          std::string old = loadVar(name);
+          emitAutoDrop(ad, old);
+          return;
+        }
+      }
+    }
+
+    void storeSlotValueNoDrop(const std::string& name, const std::string& value) {
       auto it = env_.find(name);
       if (it == env_.end())
         throw FarError("undefined variable '" + name + "'");
@@ -1257,11 +1520,18 @@ private:
       gen_->out_ << "  store " << st << " " << value << ", " << st << "* %" << it->second.slot << "\n";
     }
 
+    void storeSlotValue(const std::string& name, const std::string& value) {
+      dropAutodropTargetIfAny(name);
+      storeSlotValueNoDrop(name, value);
+    }
+
     void storeVar(const std::string& name, const std::string& value, const TypeDesc& type) {
       ensureSlot(name, type);
       env_[name].type = type;
       storeSlotValue(name, value);
       assigned_.insert(name);
+      if (env_[name].is_param)
+        registerOwnedAutoDrop(name, type);
     }
 
     std::string narrowIntToDesc(const TypeDesc& target_ty, const std::string& val) {
@@ -1289,7 +1559,7 @@ private:
       storeVar(let.name, value, ty);
       if (let.explicit_type)
         explicit_typed_.insert(let.name);
-      if (let.value)
+      if (let.is_constexpr && let.value)
         trackConstLocal(let.name, *let.value);
       if (let.is_constexpr && let.value && let.value->kind == Expr::String &&
           let.value->string_lit.value.empty())
@@ -1297,17 +1567,7 @@ private:
       else if (let.is_constexpr && let.value && let.value->kind == Expr::ArrayLitExpr &&
                let.value->array_lit.elements.empty())
         constexpr_empty_locals_.insert(let.name);
-      if (!autodrop_frames_.empty()) {
-        if (isMemoryHandleDesc(ty) || isConcurrencyHandleDesc(ty))
-          autodrop_frames_.back().push_back({let.name, ty.form});
-        else if (isUserDesc(ty)) {
-          const UserTypeDef* ut = gen_->obj_reg_.lookup(ty.user_name);
-          if (ut && ut->kind == UserTypeKind::Actor)
-            autodrop_frames_.back().push_back({let.name, TypeForm::User, true});
-          else if (ut && ut->kind == UserTypeKind::Union)
-            autodrop_frames_.back().push_back({let.name, TypeForm::User, false, true});
-        }
-      }
+      registerOwnedAutoDrop(let.name, ty);
 
     }
 
@@ -1335,6 +1595,33 @@ private:
       ensurePendingJump();
       gen_->pending_continue_label_ = label;
       gen_->out_ << "  store i8 3, i8* %" << gen_->pending_jump_kind_ << "\n";
+    }
+
+    void ensurePendingYield() {
+      if (gen_->pending_yield_init_)
+        return;
+      gen_->pending_yield_flag_ = gen_->fresh("pyflag");
+      gen_->pending_yield_val_ = gen_->fresh("pyval");
+      gen_->hoisted_allocas_ << "  %" << gen_->pending_yield_flag_ << " = alloca i1\n";
+      gen_->hoisted_allocas_ << "  %" << gen_->pending_yield_val_ << " = alloca " << I64 << "\n";
+      gen_->pending_yield_init_ = true;
+    }
+
+    void setPendingYield(const std::string& value) {
+      ensurePendingYield();
+      gen_->out_ << "  store i1 true, i1* %" << gen_->pending_yield_flag_ << "\n";
+      gen_->out_ << "  store " << I64 << " " << value << ", " << I64 << "* %" << gen_->pending_yield_val_
+                 << "\n";
+    }
+
+    void emitYieldFromPending() {
+      ensurePendingYield();
+      flushScopeDefers();
+      std::string val = gen_->fresh("pyload");
+      gen_->out_ << "  %" << val << " = load " << I64 << ", " << I64 << "* %" << gen_->pending_yield_val_
+                 << "\n";
+      gen_->out_ << "  ret " << I64 << " %" << val << "\n";
+      terminated = true;
     }
 
     void ensurePendingThrow() {
@@ -1375,9 +1662,97 @@ private:
                  << "\n";
       gen_->out_ << "  %" << val << " = load " << I64 << ", " << I64 << "* %" << gen_->pending_throw_val_
                  << "\n";
+      gen_->out_ << "  call void @far_store_caught(i64 %" << tag << ", i64 %" << val << ")\n";
+      gen_->out_ << "  call void @far_mark_pending_throw()\n";
+      emitRoutePendingThrowOutward(false);
+    }
+
+    void emitRoutePendingThrowOutward(bool popped_current) {
+      size_t start = try_stack_.size();
+      if (popped_current && start > 0)
+        --start;
+      for (size_t i = start; i > 0; --i) {
+        size_t idx = i - 1;
+        if (emitting_catch_for_ >= 0 && static_cast<size_t>(emitting_catch_for_) == idx)
+          continue;
+        const TryLabels& labels = try_stack_[idx];
+        if (labels.has_catch) {
+          if (!labels.unwind_slot.empty())
+            gen_->out_ << "  store i1 true, i1* %" << labels.unwind_slot << "\n";
+          std::string tag = gen_->fresh("pthtago");
+          std::string val = gen_->fresh("pthvalo");
+          gen_->out_ << "  %" << tag << " = load " << I64 << ", " << I64 << "* %"
+                     << gen_->pending_throw_tag_ << "\n";
+          gen_->out_ << "  %" << val << " = load " << I64 << ", " << I64 << "* %"
+                     << gen_->pending_throw_val_ << "\n";
+          gen_->out_ << "  call void @far_store_caught(i64 %" << tag << ", i64 %" << val << ")\n";
+          gen_->out_ << "  br label %" << labels.resume_label << "\n";
+          terminated = true;
+          return;
+        }
+        if (labels.has_finally) {
+          // A try nested inside this finally must resume at that inner try's continue
+          // label (finally epilogue), not re-enter the finally body.
+          size_t nested_resume = try_stack_.size();
+          for (size_t j = idx + 1; j < try_stack_.size(); ++j) {
+            if (try_stack_[j].contained_in_finally_of == static_cast<int>(idx))
+              nested_resume = j;
+          }
+          if (nested_resume < try_stack_.size() &&
+              !try_stack_[nested_resume].continue_label.empty()) {
+            gen_->out_ << "  br label %" << try_stack_[nested_resume].continue_label << "\n";
+            terminated = true;
+            return;
+          }
+          gen_->out_ << "  br label %" << labels.finally_label << "\n";
+          terminated = true;
+          return;
+        }
+      }
+      std::string tag = gen_->fresh("pthtagu");
+      std::string val = gen_->fresh("pthvalu");
+      gen_->out_ << "  %" << tag << " = load " << I64 << ", " << I64 << "* %" << gen_->pending_throw_tag_
+                 << "\n";
+      gen_->out_ << "  %" << val << " = load " << I64 << ", " << I64 << "* %" << gen_->pending_throw_val_
+                 << "\n";
       gen_->out_ << "  call void @far_throw(i64 %" << tag << ", i64 %" << val << ")\n";
       gen_->out_ << "  unreachable\n";
       terminated = true;
+    }
+
+    void emitReturnAfterPendingThrow() {
+      std::string pending = gen_->fresh("pthret");
+      gen_->out_ << "  %" << pending << " = call i32 @far_pending_throw_active()\n";
+      std::string cmp = gen_->fresh("pthretcmp");
+      std::string ret_path = gen_->fresh("pthretpath");
+      std::string cont = gen_->fresh("pthretcont");
+      gen_->out_ << "  %" << cmp << " = icmp ne i32 %" << pending << ", 0\n";
+      gen_->out_ << "  br i1 %" << cmp << ", label %" << ret_path << ", label %" << cont << "\n";
+      gen_->out_ << ret_path << ":\n";
+      const char* ret_ty = llvmAbiTypeDesc(return_type_);
+      std::string zero =
+          (isPrimitiveDesc(return_type_) && isFloatType(return_type_.primitive)) ? "0.0" : "0";
+      gen_->out_ << "  ret " << ret_ty << " " << zero << "\n";
+      gen_->out_ << cont << ":\n";
+    }
+
+    void emitPendingThrowResumeCheck() {
+      if (try_stack_.empty())
+        return;
+      const TryLabels& labels = try_stack_.back();
+      std::string pending = gen_->fresh("pthchk");
+      gen_->out_ << "  %" << pending << " = call i32 @far_pending_throw_active()\n";
+      std::string cmp = gen_->fresh("pthchkcmp");
+      std::string catch_path = gen_->fresh("pthcatch");
+      std::string cont = gen_->fresh("pthcont");
+      gen_->out_ << "  %" << cmp << " = icmp ne i32 %" << pending << ", 0\n";
+      gen_->out_ << "  br i1 %" << cmp << ", label %" << catch_path << ", label %" << cont << "\n";
+      gen_->out_ << catch_path << ":\n";
+      gen_->out_ << "  call void @far_clear_pending_throw()\n";
+      if (!labels.unwind_slot.empty())
+        gen_->out_ << "  store i1 true, i1* %" << labels.unwind_slot << "\n";
+      gen_->out_ << "  br label %" << labels.resume_label << "\n";
+      gen_->out_ << cont << ":\n";
     }
 
     void completeTryForReturnToFinally(const std::string& finally_label) {
@@ -1401,9 +1776,9 @@ private:
         std::string zero = (isPrimitiveDesc(return_type_) && isFloatType(return_type_.primitive)) ? "0.0" : "0";
         gen_->out_ << "  ret " << ret_ty << " " << zero << "\n";
       } else {
+        flushDefers();
         std::string value = emitExpr(*ret.value);
         std::string abi = gen_->internalToAbiDesc(ret.value->type, return_type_, value);
-        flushDefers();
         flushAllAutoDrops();
         gen_->out_ << "  ret " << ret_ty << " " << abi << "\n";
       }
@@ -1411,12 +1786,19 @@ private:
     }
 
     void emitYield(const YieldStmt& y) {
-      if (y.has_value) {
-        std::string value = emitExpr(*y.value);
-        gen_->out_ << "  ret " << I64 << " " << value << "\n";
-      } else {
-        gen_->out_ << "  ret " << I64 << " 0\n";
+      std::string finally = innermostFinallyLabel();
+      if (!finally.empty()) {
+        completeTryForControlToFinally(finally);
+        flushScopeDefers();
+        std::string value = y.has_value ? emitExpr(*y.value) : std::string("0");
+        setPendingYield(value);
+        gen_->out_ << "  br label %" << finally << "\n";
+        terminated = true;
+        return;
       }
+      flushScopeDefers();
+      std::string value = y.has_value ? emitExpr(*y.value) : std::string("0");
+      gen_->out_ << "  ret " << I64 << " " << value << "\n";
       terminated = true;
     }
 
@@ -1563,7 +1945,13 @@ private:
           gen_->out_ << "  %" << ext << " = fpext " << F32 << " " << val << " to " << F64 << "\n";
           cmp_val = "%" + ext;
         }
-        gen_->out_ << "  %" << cond << " = fcmp une " << F64 << " " << cmp_val << ", 0.0\n";
+        std::string is_nan = gen_->fresh();
+        gen_->out_ << "  %" << is_nan << " = fcmp uno " << F64 << " " << cmp_val << ", " << cmp_val << "\n";
+        std::string is_zero = gen_->fresh();
+        gen_->out_ << "  %" << is_zero << " = fcmp oeq " << F64 << " " << cmp_val << ", 0.0\n";
+        std::string nullish = gen_->fresh();
+        gen_->out_ << "  %" << nullish << " = or i1 %" << is_nan << ", %" << is_zero << "\n";
+        gen_->out_ << "  %" << cond << " = xor i1 %" << nullish << ", true\n";
       } else {
         gen_->out_ << "  %" << cond << " = icmp ne " << I64 << " " << val << ", 0\n";
       }
@@ -1701,7 +2089,7 @@ private:
         return e.int_lit.value != 0 ? ConstBool::True : ConstBool::False;
       if (e.kind == Expr::Float) {
         if (std::isnan(e.float_lit.value))
-          return ConstBool::True;
+          return ConstBool::False;
         return e.float_lit.value != 0.0 ? ConstBool::True : ConstBool::False;
       }
       if (e.kind == Expr::String)
@@ -1710,7 +2098,7 @@ private:
         auto fit = const_float_locals_.find(e.var.name);
         if (fit != const_float_locals_.end()) {
           if (std::isnan(fit->second))
-            return ConstBool::True;
+            return ConstBool::False;
           return fit->second != 0.0 ? ConstBool::True : ConstBool::False;
         }
         auto it = const_int_locals_.find(e.var.name);
@@ -1752,6 +2140,53 @@ private:
       return ConstBool::Unknown;
     }
 
+    std::optional<double> constFloatFromExpr(const Expr& e) const {
+      if (e.kind == Expr::Float)
+        return e.float_lit.value;
+      if (e.kind == Expr::Variable) {
+        auto it = const_float_locals_.find(e.var.name);
+        if (it != const_float_locals_.end())
+          return it->second;
+      }
+      return std::nullopt;
+    }
+
+    bool patternCertainlyFailsConstFloat(const Pattern& pat, double v) const {
+      if (pat.kind != PatKind::Literal)
+        return false;
+      if (pat.literal_is_float) {
+        if (std::isnan(v))
+          return !std::isnan(pat.float_literal);
+        if (std::isnan(pat.float_literal))
+          return true;
+        return pat.float_literal != v;
+      }
+      if (std::isnan(v) || std::isinf(v))
+        return true;
+      return static_cast<double>(pat.literal) != v;
+    }
+
+    bool patternMatchesConstFloatSpecific(const Pattern& pat, double v) const {
+      if (pat.kind != PatKind::Literal)
+        return false;
+      if (pat.literal_is_float) {
+        if (std::isnan(pat.float_literal))
+          return std::isnan(v);
+        return pat.float_literal == v;
+      }
+      if (std::isnan(v) || std::isinf(v))
+        return false;
+      return static_cast<double>(pat.literal) == v;
+    }
+
+    bool patternMatchesConstFloat(const Pattern& pat, double v) const {
+      if (patternMatchesConstFloatSpecific(pat, v))
+        return true;
+      if (isCatchAllPattern(pat))
+        return true;
+      return false;
+    }
+
     std::optional<int64_t> constIntFromExpr(const Expr& e) const {
       if (e.kind == Expr::Int)
         return e.int_lit.value;
@@ -1766,8 +2201,11 @@ private:
     }
 
     bool patternCertainlyFailsConstInt(const Pattern& pat, int64_t v) const {
-      if (pat.kind == PatKind::Literal)
+      if (pat.kind == PatKind::Literal) {
+        if (pat.literal_is_float)
+          return false;
         return pat.literal != v;
+      }
       if (pat.kind == PatKind::EnumVariant) {
         int64_t pv = pat.variant_value;
         if (pv < 0)
@@ -1783,9 +2221,16 @@ private:
       return pat.kind == PatKind::Wildcard || pat.kind == PatKind::Bind;
     }
 
+    static bool isMatchWildcardPattern(const Pattern& pat) {
+      return pat.kind == PatKind::Wildcard;
+    }
+
     bool patternMatchesConstIntSpecific(const Pattern& pat, int64_t v) const {
-      if (pat.kind == PatKind::Literal)
+      if (pat.kind == PatKind::Literal) {
+        if (pat.literal_is_float)
+          return false;
         return pat.literal == v;
+      }
       if (pat.kind == PatKind::EnumVariant) {
         int64_t pv = pat.variant_value;
         if (pv < 0)
@@ -1808,11 +2253,11 @@ private:
     static std::vector<size_t> matchArmOrder(const MatchStmt& m) {
       std::vector<size_t> order;
       for (size_t i = 0; i < m.arms.size(); ++i) {
-        if (m.arms[i].pat && !isCatchAllPattern(*m.arms[i].pat))
+        if (m.arms[i].pat && !isMatchWildcardPattern(*m.arms[i].pat))
           order.push_back(i);
       }
       for (size_t i = 0; i < m.arms.size(); ++i) {
-        if (m.arms[i].pat && isCatchAllPattern(*m.arms[i].pat))
+        if (m.arms[i].pat && isMatchWildcardPattern(*m.arms[i].pat))
           order.push_back(i);
       }
       return order;
@@ -1851,21 +2296,39 @@ private:
 
     void emitMatch(const MatchStmt& m) {
       std::optional<int64_t> const_scrut = constIntFromExpr(*m.scrutinee);
-      std::string scrut =
-          const_scrut ? std::to_string(*const_scrut) : emitExpr(*m.scrutinee);
+      std::optional<double> const_scrut_f = const_scrut ? std::nullopt : constFloatFromExpr(*m.scrutinee);
+      std::string scrut;
+      if (const_scrut)
+        scrut = std::to_string(*const_scrut);
+      else if (const_scrut_f)
+        scrut = gen_->formatDoubleLiteral(*const_scrut_f);
+      else
+        scrut = emitExpr(*m.scrutinee);
       TypeDesc sty = exprType(*m.scrutinee);
       std::string done_label = gen_->fresh("matchdone");
       std::string fail_label = gen_->fresh("matchfail");
+      struct SwitchBreakGuard {
+        Ctx* ctx;
+        bool active;
+        explicit SwitchBreakGuard(Ctx* c, bool on, const std::string& label) : ctx(c), active(on) {
+          if (active)
+            ctx->switch_break_stack_.push_back(label);
+        }
+        ~SwitchBreakGuard() {
+          if (active)
+            ctx->switch_break_stack_.pop_back();
+        }
+      } switch_guard(this, m.is_switch, done_label);
       auto pre = env_;
 
-      if (const_scrut) {
+      if (const_scrut_f) {
         for (size_t i = 0; i < m.arms.size(); ++i) {
           const auto& arm = m.arms[i];
-          if (arm.pat && isCatchAllPattern(*arm.pat))
+          if (arm.pat && isMatchWildcardPattern(*arm.pat))
             continue;
-          if (arm.pat && patternCertainlyFailsConstInt(*arm.pat, *const_scrut))
+          if (arm.pat && patternCertainlyFailsConstFloat(*arm.pat, *const_scrut_f))
             continue;
-          if (arm.pat && patternMatchesConstIntSpecific(*arm.pat, *const_scrut)) {
+          if (arm.pat && patternMatchesConstFloat(*arm.pat, *const_scrut_f)) {
             PatTestResult tr = emitPatternTest(patCtx(), *arm.pat, scrut, sty);
             Ctx body_ctx = fork();
             body_ctx.env_ = pre;
@@ -1874,10 +2337,12 @@ private:
             for (const auto& s : arm.body)
               body_ctx.emitStmt(*s);
             mergeChild(body_ctx, &pre);
-            if (body_ctx.terminated)
+            if (body_ctx.terminated && !body_ctx.switch_break_arm_)
               terminated = true;
             if (!body_ctx.terminated) {
               gen_->out_ << "  br label %" << done_label << "\n";
+              gen_->out_ << done_label << ":\n";
+            } else if (body_ctx.switch_break_arm_) {
               gen_->out_ << done_label << ":\n";
             }
             return;
@@ -1885,7 +2350,7 @@ private:
         }
         for (size_t i = 0; i < m.arms.size(); ++i) {
           const auto& arm = m.arms[i];
-          if (!arm.pat || !isCatchAllPattern(*arm.pat))
+          if (!arm.pat || !isMatchWildcardPattern(*arm.pat))
             continue;
           PatTestResult tr = emitPatternTest(patCtx(), *arm.pat, scrut, sty);
           Ctx body_ctx = fork();
@@ -1895,10 +2360,67 @@ private:
           for (const auto& s : arm.body)
             body_ctx.emitStmt(*s);
           mergeChild(body_ctx, &pre);
-          if (body_ctx.terminated)
+          if (body_ctx.terminated && !body_ctx.switch_break_arm_)
             terminated = true;
           if (!body_ctx.terminated) {
             gen_->out_ << "  br label %" << done_label << "\n";
+            gen_->out_ << done_label << ":\n";
+          } else if (body_ctx.switch_break_arm_) {
+            gen_->out_ << done_label << ":\n";
+          }
+          return;
+        }
+        gen_->out_ << "  call void @far_panic(i64 0)\n";
+        gen_->out_ << "  unreachable\n";
+        gen_->out_ << done_label << ":\n";
+        return;
+      }
+
+      if (const_scrut) {
+        for (size_t i = 0; i < m.arms.size(); ++i) {
+          const auto& arm = m.arms[i];
+          if (arm.pat && isMatchWildcardPattern(*arm.pat))
+            continue;
+          if (arm.pat && patternCertainlyFailsConstInt(*arm.pat, *const_scrut))
+            continue;
+          if (arm.pat && patternMatchesConstInt(*arm.pat, *const_scrut)) {
+            PatTestResult tr = emitPatternTest(patCtx(), *arm.pat, scrut, sty);
+            Ctx body_ctx = fork();
+            body_ctx.env_ = pre;
+            for (const auto& b : tr.binds)
+              body_ctx.storeVar(b.name, b.value, b.type);
+            for (const auto& s : arm.body)
+              body_ctx.emitStmt(*s);
+            mergeChild(body_ctx, &pre);
+            if (body_ctx.terminated && !body_ctx.switch_break_arm_)
+              terminated = true;
+            if (!body_ctx.terminated) {
+              gen_->out_ << "  br label %" << done_label << "\n";
+              gen_->out_ << done_label << ":\n";
+            } else if (body_ctx.switch_break_arm_) {
+              gen_->out_ << done_label << ":\n";
+            }
+            return;
+          }
+        }
+        for (size_t i = 0; i < m.arms.size(); ++i) {
+          const auto& arm = m.arms[i];
+          if (!arm.pat || !isMatchWildcardPattern(*arm.pat))
+            continue;
+          PatTestResult tr = emitPatternTest(patCtx(), *arm.pat, scrut, sty);
+          Ctx body_ctx = fork();
+          body_ctx.env_ = pre;
+          for (const auto& b : tr.binds)
+            body_ctx.storeVar(b.name, b.value, b.type);
+          for (const auto& s : arm.body)
+            body_ctx.emitStmt(*s);
+          mergeChild(body_ctx, &pre);
+          if (body_ctx.terminated && !body_ctx.switch_break_arm_)
+            terminated = true;
+          if (!body_ctx.terminated) {
+            gen_->out_ << "  br label %" << done_label << "\n";
+            gen_->out_ << done_label << ":\n";
+          } else if (body_ctx.switch_break_arm_) {
             gen_->out_ << done_label << ":\n";
           }
           return;
@@ -1956,8 +2478,10 @@ private:
       return false;
     }
 
-    void emitIfFromClause(size_t start, const If& ifs, const std::unordered_map<std::string, VarInfo>& pre,
+    bool emitIfFromClause(size_t start, const If& ifs, const std::unordered_map<std::string, VarInfo>& pre,
                           const std::string& end_label) {
+      // Without else, the false branch always joins at end_label.
+      bool needs_join = ifs.else_body.empty();
       std::string else_label = ifs.else_body.empty() ? "" : gen_->fresh("if.else");
       std::string next_label;
       for (size_t i = start; i < ifs.clauses.size(); ++i) {
@@ -1978,6 +2502,8 @@ private:
           body_ctx.emitStmt(*s);
         mergeChild(body_ctx, &pre);
         if (!body_ctx.terminated)
+          needs_join = true;
+        if (!body_ctx.terminated)
           gen_->out_ << "  br label %" << end_label << "\n";
         if (next_label != end_label && next_label != else_label)
           gen_->out_ << next_label << ":\n";
@@ -1990,8 +2516,11 @@ private:
           else_ctx.emitStmt(*s);
         mergeChild(else_ctx, &pre);
         if (!else_ctx.terminated)
+          needs_join = true;
+        if (!else_ctx.terminated)
           gen_->out_ << "  br label %" << end_label << "\n";
       }
+      return needs_join;
     }
 
     void emitIf(const If& ifs) {
@@ -2020,8 +2549,9 @@ private:
           }
           return;
         }
-        emitIfFromClause(i, ifs, pre, end_label);
-        gen_->out_ << end_label << ":\n";
+        bool needs_join = emitIfFromClause(i, ifs, pre, end_label);
+        if (needs_join)
+          gen_->out_ << end_label << ":\n";
         return;
       }
 
@@ -2042,6 +2572,13 @@ private:
 
 
 
+    std::string emitLoopExitTrampoline(const std::string& end_label, const std::string& exit_label) {
+      gen_->out_ << end_label << ":\n";
+      gen_->out_ << "  br label %" << exit_label << "\n";
+      gen_->out_ << exit_label << ":\n";
+      return exit_label;
+    }
+
     void emitWhile(const While& wh) {
 
       if (constBoolFromExpr(*wh.condition) == ConstBool::False)
@@ -2052,8 +2589,9 @@ private:
       std::string body_label = gen_->fresh("while.body");
 
       std::string end_label = gen_->fresh("while.end");
+      std::string exit_label = gen_->fresh("loop.out");
 
-      loop_stack_.push_back({end_label, cond_label});
+      loop_stack_.push_back({end_label, cond_label, exit_label});
 
 
 
@@ -2069,6 +2607,7 @@ private:
 
       gen_->out_ << body_label << ":\n";
 
+      size_t iter_defers = defer_stack_.size();
       Ctx body_ctx = fork();
 
       for (const auto& s : wh.body)
@@ -2077,14 +2616,15 @@ private:
 
       mergeChild(body_ctx);
 
-      if (!body_ctx.terminated)
-
+      if (!body_ctx.terminated) {
+        flushDefersFrom(iter_defers);
         gen_->out_ << "  br label %" << cond_label << "\n";
+      }
 
 
 
-      gen_->out_ << end_label << ":\n";
-
+      std::string exit = emitLoopExitTrampoline(end_label, loop_stack_.back().exit_label);
+      (void)exit;
       loop_stack_.pop_back();
 
     }
@@ -2166,6 +2706,24 @@ private:
             return false;
           return stmtBlockAlwaysReturns(stmt.if_stmt.else_body);
         }
+        case Stmt::MatchStmtK: {
+          std::optional<int64_t> const_scrut = constIntFromExpr(*stmt.match_stmt.scrutinee);
+          if (!const_scrut)
+            return false;
+          for (const auto& arm : stmt.match_stmt.arms) {
+            if (arm.pat && isMatchWildcardPattern(*arm.pat))
+              continue;
+            if (arm.pat && patternCertainlyFailsConstInt(*arm.pat, *const_scrut))
+              continue;
+            if (arm.pat && patternMatchesConstInt(*arm.pat, *const_scrut))
+              return stmtBlockAlwaysReturns(arm.body);
+          }
+          for (const auto& arm : stmt.match_stmt.arms) {
+            if (arm.pat && isMatchWildcardPattern(*arm.pat))
+              return stmtBlockAlwaysReturns(arm.body);
+          }
+          return false;
+        }
         default:
           return false;
       }
@@ -2183,31 +2741,56 @@ private:
       if (stmt.kind == Stmt::ReturnStmt || stmt.kind == Stmt::ThrowStmtK)
         return true;
       if (stmt.kind == Stmt::IfStmt) {
+        bool chain_matched = false;
         for (const auto& c : stmt.if_stmt.clauses) {
+          if (chain_matched)
+            break;
           ConstBool cb = constBoolFromExpr(*c.condition);
           if (cb == ConstBool::False)
             continue;
-          if (cb == ConstBool::True)
+          if (cb == ConstBool::True) {
+            chain_matched = true;
             return stmtBlockAlwaysReturns(c.body);
+          }
         }
-        return false;
+        if (chain_matched)
+          return true;
+        if (stmt.if_stmt.else_body.empty())
+          return false;
+        return stmtBlockAlwaysReturns(stmt.if_stmt.else_body);
       }
       if (stmt.kind == Stmt::TryStmtK)
         return tryCatchUnreachable(stmt.try_stmt.try_body);
       if (stmt.kind == Stmt::MatchStmtK) {
+        std::optional<double> const_scrut_f = constFloatFromExpr(*stmt.match_stmt.scrutinee);
+        if (const_scrut_f) {
+          for (const auto& arm : stmt.match_stmt.arms) {
+            if (arm.pat && isMatchWildcardPattern(*arm.pat))
+              continue;
+            if (arm.pat && patternCertainlyFailsConstFloat(*arm.pat, *const_scrut_f))
+              continue;
+            if (arm.pat && patternMatchesConstFloat(*arm.pat, *const_scrut_f))
+              return stmtBlockAlwaysReturns(arm.body);
+          }
+          for (const auto& arm : stmt.match_stmt.arms) {
+            if (arm.pat && isMatchWildcardPattern(*arm.pat))
+              return stmtBlockAlwaysReturns(arm.body);
+          }
+          return false;
+        }
         std::optional<int64_t> const_scrut = constIntFromExpr(*stmt.match_stmt.scrutinee);
         if (!const_scrut)
           return false;
         for (const auto& arm : stmt.match_stmt.arms) {
-          if (arm.pat && isCatchAllPattern(*arm.pat))
+          if (arm.pat && isMatchWildcardPattern(*arm.pat))
             continue;
           if (arm.pat && patternCertainlyFailsConstInt(*arm.pat, *const_scrut))
             continue;
-          if (arm.pat && patternMatchesConstIntSpecific(*arm.pat, *const_scrut))
+          if (arm.pat && patternMatchesConstInt(*arm.pat, *const_scrut))
             return stmtBlockAlwaysReturns(arm.body);
         }
         for (const auto& arm : stmt.match_stmt.arms) {
-          if (arm.pat && isCatchAllPattern(*arm.pat))
+          if (arm.pat && isMatchWildcardPattern(*arm.pat))
             return stmtBlockAlwaysReturns(arm.body);
         }
       }
@@ -2242,20 +2825,26 @@ private:
         labels.contained_in_finally_of = emitting_finally_for_;
       if (emitting_finally_for_ >= 0)
         labels.continue_label = gen_->fresh("try.cont");
+      if (!tr.try_body.empty()) {
+        Stmt::Kind last = tr.try_body.back()->kind;
+        labels.break_finishes_try = last == Stmt::ForStmt || last == Stmt::WhileStmt;
+        for (size_t i = 0; i + 1 < tr.try_body.size(); ++i) {
+          Stmt::Kind k = tr.try_body[i]->kind;
+          if (k == Stmt::ForStmt || k == Stmt::WhileStmt)
+            labels.has_code_after_loop = true;
+        }
+      }
       if (emit_catch)
         ensureSlot(tr.catch_var, tr.catch_type);
 
       std::string unwind_slot = gen_->fresh("tryunw");
+      labels.unwind_slot = unwind_slot;
       gen_->hoistedAllocaRaw(unwind_slot, "i1");
       gen_->out_ << "  store i1 false, i1* %" << unwind_slot << "\n";
 
       try_stack_.push_back(labels);
 
-      std::string enter_label = gen_->fresh("try.enter");
-      std::string resume_var = gen_->fresh("tryres");
-      gen_->out_ << "  br label %" << enter_label << "\n";
-      gen_->out_ << enter_label << ":\n";
-      emitTryEnter(errCtx(), resume_var, labels.resume_label, labels.body_label);
+      emitTryEnter(errCtx(), labels.body_label);
 
       gen_->out_ << labels.body_label << ":\n";
       if (gen_->pending_ret_init_)
@@ -2264,22 +2853,35 @@ private:
         gen_->out_ << "  store i1 false, i1* %" << gen_->pending_throw_flag_ << "\n";
       if (gen_->pending_jump_init_)
         gen_->out_ << "  store i8 0, i8* %" << gen_->pending_jump_kind_ << "\n";
+      if (gen_->pending_yield_init_)
+        gen_->out_ << "  store i1 false, i1* %" << gen_->pending_yield_flag_ << "\n";
       bool try_body_terminated = false;
+      size_t try_defer_base = defer_stack_.size();
       {
         Ctx body_ctx = fork();
-        for (const auto& s : tr.try_body)
+        // Nested try inside catch/finally must not inherit outer catch/finally throw routing.
+        body_ctx.emitting_catch_for_ = -1;
+        body_ctx.emitting_finally_for_ = -1;
+        for (const auto& s : tr.try_body) {
           body_ctx.emitStmt(*s);
+          if (body_ctx.exits_loop_not_scope_) {
+            body_ctx.exits_loop_not_scope_ = false;
+            body_ctx.terminated = false;
+          }
+        }
         try_body_terminated = body_ctx.terminated;
         mergeChild(body_ctx);
         if (try_body_terminated && !emit_catch && !tr.has_finally)
           terminated = true;
         if (!body_ctx.terminated) {
+          flushDefersFrom(try_defer_base);
           gen_->out_ << "  br label %"
                      << (tr.has_finally ? labels.finally_label : labels.after_label) << "\n";
         }
       }
 
       gen_->out_ << labels.resume_label << ":\n";
+      gen_->out_ << "  call void @far_clear_pending_throw()\n";
       gen_->out_ << "  store i1 true, i1* %" << unwind_slot << "\n";
       if (gen_->pending_throw_init_)
         gen_->out_ << "  store i1 false, i1* %" << gen_->pending_throw_flag_ << "\n";
@@ -2303,6 +2905,8 @@ private:
         }
         storeVar(tr.catch_var, caught, tr.catch_type);
         Ctx catch_ctx = fork();
+        catch_ctx.terminated = false;
+        catch_ctx.emitting_catch_for_ = static_cast<int>(labels.stack_index);
         for (const auto& s : tr.catch_body)
           catch_ctx.emitStmt(*s);
         mergeChild(catch_ctx);
@@ -2310,21 +2914,21 @@ private:
           gen_->out_ << "  br label %"
                      << (tr.has_finally ? labels.finally_label : labels.after_label) << "\n";
         }
+      } else if (tr.has_finally) {
+        gen_->out_ << "  br label %" << labels.finally_label << "\n";
       } else {
         emitUncaughtRethrow();
       }
 
       if (tr.has_finally) {
         gen_->out_ << labels.finally_label << ":\n";
-        int prev_finally = emitting_finally_for_;
-        emitting_finally_for_ = static_cast<int>(labels.stack_index);
         Ctx fin_ctx = fork();
+        fin_ctx.emitting_finally_for_ = static_cast<int>(labels.stack_index);
         for (const auto& s : tr.finally_body)
           fin_ctx.emitStmt(*s);
         mergeChild(fin_ctx);
-        emitting_finally_for_ = prev_finally;
         bool pending_ctrl = gen_->pending_ret_init_ || gen_->pending_throw_init_ ||
-                            gen_->pending_jump_init_;
+                            gen_->pending_jump_init_ || gen_->pending_yield_init_;
         if (emit_catch) {
           if (!fin_ctx.terminated || pending_ctrl)
             emitFinallyEpilogue(labels);
@@ -2346,7 +2950,7 @@ private:
       emitTrySuccess(errCtx());
       if (try_body_terminated && !emit_catch && !tr.has_finally) {
         gen_->out_ << "  unreachable\n";
-      } else if (terminated && !tr.has_finally) {
+      } else if (terminated && !tr.has_finally && !emit_catch) {
         gen_->out_ << "  unreachable\n";
       } else if (labels.contained_in_finally_of >= 0) {
         gen_->out_ << "  br label %" << labels.continue_label << "\n";
@@ -2355,10 +2959,10 @@ private:
         std::string next = outer.has_finally ? outer.finally_label : outer.after_label;
         gen_->out_ << "  br label %" << next << "\n";
       } else if (tr.has_finally && !emit_catch && labels.contained_in_finally_of < 0 &&
-                 try_stack_.size() <= 1) {
+                 try_stack_.size() <= 1 && try_body_terminated) {
         gen_->out_ << "  unreachable\n";
       }
-      if (tr.has_finally)
+      if (tr.has_finally || emit_catch)
         terminated = false;
       if (labels.contained_in_finally_of >= 0)
         gen_->out_ << labels.continue_label << ":\n";
@@ -2372,7 +2976,6 @@ private:
     }
 
     void emitThrowStmt(const ThrowStmt& th) {
-      std::string val = emitExpr(*th.value);
       int64_t tag = 0;
       TypeDesc val_ty = th.value->type;
       if (isUserDesc(val_ty)) {
@@ -2382,21 +2985,36 @@ private:
       }
       if (emitting_finally_for_ >= 0) {
         flushScopeDefers();
+        std::string val = emitExpr(*th.value);
         setPendingThrow(tag, val);
         terminated = true;
         return;
       }
-      std::string finally = innermostFinallyLabel();
-      if (!finally.empty()) {
-        completeTryForControlToFinally(finally);
-        setPendingThrow(tag, val);
+      if (!try_stack_.empty()) {
         flushScopeDefers();
-        gen_->out_ << "  br label %" << finally << "\n";
+        std::string val = emitExpr(*th.value);
+        setPendingThrow(tag, val);
+        if (emitting_catch_for_ >= 0) {
+          emitTrySuccess(errCtx());
+          emitRoutePendingThrowOutward(true);
+        } else if (try_stack_.back().has_catch) {
+          emitDispatchPendingThrowToCatch(try_stack_.back());
+        } else {
+          std::string finally = innermostFinallyLabel();
+          if (!finally.empty()) {
+            completeTryForControlToFinally(finally);
+            gen_->out_ << "  br label %" << finally << "\n";
+          } else {
+            emitRoutePendingThrowOutward(false);
+          }
+        }
         terminated = true;
         return;
       }
-      flushDefers();
+      flushScopeDefers();
+      std::string val = emitExpr(*th.value);
       emitThrow(errCtx(), tag, val);
+      emitReturnAfterPendingThrow();
       gen_->out_ << "  unreachable\n";
       terminated = true;
     }
@@ -2418,8 +3036,9 @@ private:
       std::string body_label = gen_->fresh("for.body");
       std::string step_label = gen_->fresh("for.step");
       std::string end_label = gen_->fresh("for.end");
+      std::string exit_label = gen_->fresh("loop.out");
 
-      loop_stack_.push_back({end_label, step_label});
+      loop_stack_.push_back({end_label, step_label, exit_label});
 
       gen_->out_ << "  br label %" << cond_label << "\n";
 
@@ -2436,12 +3055,15 @@ private:
       std::string elem = emitCollectionIndex(collCtx(), coll_ty, coll, "%" + idx_body);
       storeVar(fo.foreach_var, elem, elem_ty);
 
+      size_t iter_defers = defer_stack_.size();
       Ctx body_ctx = fork();
       for (const auto& s : fo.body)
         body_ctx.emitStmt(*s);
       mergeChild(body_ctx);
-      if (!body_ctx.terminated)
+      if (!body_ctx.terminated) {
+        flushDefersFrom(iter_defers);
         gen_->out_ << "  br label %" << step_label << "\n";
+      }
 
       gen_->out_ << step_label << ":\n";
       std::string idx_step = gen_->fresh("fi");
@@ -2452,7 +3074,8 @@ private:
       if (!terminated)
         gen_->out_ << "  br label %" << cond_label << "\n";
 
-      gen_->out_ << end_label << ":\n";
+      std::string exit = emitLoopExitTrampoline(end_label, loop_stack_.back().exit_label);
+      (void)exit;
       loop_stack_.pop_back();
     }
 
@@ -2475,13 +3098,18 @@ private:
       std::string desc_body = gen_->fresh("rng.dbody");
       std::string desc_step = gen_->fresh("rng.dstep");
       std::string end_label = gen_->fresh("rng.end");
+      std::string exit_label = gen_->fresh("loop.out");
+      std::string asc_flag = gen_->fresh("rng.ascf");
+      std::string cont_dispatch = gen_->fresh("rng.ccont");
+      gen_->hoisted_allocas_ << "  %" << asc_flag << " = alloca i1\n";
 
       std::string cmp = gen_->fresh("rngcmp");
       gen_->out_ << "  %" << cmp << " = icmp sle " << I64 << " " << start << ", " << end << "\n";
       gen_->out_ << "  br i1 %" << cmp << ", label %" << asc_label << ", label %" << desc_label << "\n";
 
-      loop_stack_.push_back({end_label, asc_step});
+      loop_stack_.push_back({end_label, cont_dispatch, exit_label});
       gen_->out_ << asc_label << ":\n";
+      gen_->out_ << "  store i1 true, i1* %" << asc_flag << "\n";
       gen_->out_ << "  br label %" << asc_cond << "\n";
       gen_->out_ << asc_cond << ":\n";
       std::string iv = loadVar(fo.range_var);
@@ -2493,12 +3121,15 @@ private:
       gen_->out_ << "  br i1 %" << acmp << ", label %" << asc_body << ", label %" << end_label << "\n";
       gen_->out_ << asc_body << ":\n";
       {
+        size_t iter_defers = defer_stack_.size();
         Ctx body_ctx = fork();
         for (const auto& s : fo.body)
           body_ctx.emitStmt(*s);
         mergeChild(body_ctx);
-        if (!body_ctx.terminated)
+        if (!body_ctx.terminated) {
+          flushDefersFrom(iter_defers);
           gen_->out_ << "  br label %" << asc_step << "\n";
+        }
       }
       gen_->out_ << asc_step << ":\n";
       std::string cur = loadVar(fo.range_var);
@@ -2508,9 +3139,8 @@ private:
       if (!terminated)
         gen_->out_ << "  br label %" << asc_cond << "\n";
 
-      loop_stack_.pop_back();
-      loop_stack_.push_back({end_label, desc_step});
       gen_->out_ << desc_label << ":\n";
+      gen_->out_ << "  store i1 false, i1* %" << asc_flag << "\n";
       gen_->out_ << "  br label %" << desc_cond << "\n";
       gen_->out_ << desc_cond << ":\n";
       std::string dv = loadVar(fo.range_var);
@@ -2522,12 +3152,15 @@ private:
       gen_->out_ << "  br i1 %" << dcmp << ", label %" << desc_body << ", label %" << end_label << "\n";
       gen_->out_ << desc_body << ":\n";
       {
+        size_t iter_defers = defer_stack_.size();
         Ctx body_ctx = fork();
         for (const auto& s : fo.body)
           body_ctx.emitStmt(*s);
         mergeChild(body_ctx);
-        if (!body_ctx.terminated)
+        if (!body_ctx.terminated) {
+          flushDefersFrom(iter_defers);
           gen_->out_ << "  br label %" << desc_step << "\n";
+        }
       }
       gen_->out_ << desc_step << ":\n";
       std::string dcur = loadVar(fo.range_var);
@@ -2536,9 +3169,15 @@ private:
       storeVar(fo.range_var, "%" + dnxt, defaultIntType());
       if (!terminated)
         gen_->out_ << "  br label %" << desc_cond << "\n";
-      loop_stack_.pop_back();
 
-      gen_->out_ << end_label << ":\n";
+      gen_->out_ << cont_dispatch << ":\n";
+      std::string asc_fl = gen_->fresh("rngcfl");
+      gen_->out_ << "  %" << asc_fl << " = load i1, i1* %" << asc_flag << "\n";
+      gen_->out_ << "  br i1 %" << asc_fl << ", label %" << asc_step << ", label %" << desc_step << "\n";
+
+      std::string exit = emitLoopExitTrampoline(end_label, loop_stack_.back().exit_label);
+      (void)exit;
+      loop_stack_.pop_back();
     }
 
     void emitFor(const For& fo) {
@@ -2561,23 +3200,7 @@ private:
           auto it = gen_->fn_by_llvm_.find(fo.parallel_fn);
           if (it == gen_->fn_by_llvm_.end() || !it->second)
             throw FarError("internal: missing parallel-for worker");
-          const Function* pfor = it->second;
-          std::string ptr = fnPointerBitcastLlvm(pfor->llvm_name, pfor);
-          int64_t ncaps = static_cast<int64_t>(fo.parallel_captures.size());
-          std::string c0 = "0", c1 = "0", c2 = "0", c3 = "0";
-          if (ncaps > 0)
-            c0 = loadVar(fo.parallel_captures[0]);
-          if (ncaps > 1)
-            c1 = loadVar(fo.parallel_captures[1]);
-          if (ncaps > 2)
-            c2 = loadVar(fo.parallel_captures[2]);
-          if (ncaps > 3)
-            c3 = loadVar(fo.parallel_captures[3]);
-          std::string cl = gen_->fresh("pforcl");
-          gen_->out_ << "  %" << cl << " = call " << I64 << " @far_closure_new(i8* " << ptr << ", " << I64
-                     << " " << ncaps << ", " << I64 << " " << c0 << ", " << I64 << " " << c1 << ", " << I64
-                     << " " << c2 << ", " << I64 << " " << c3 << ")\n";
-          closure = "%" + cl;
+          closure = emitClosureNew(it->second, fo.parallel_captures);
         }
         emitParallelFor(concCtx(), fo.parallel_fn, start, end, closure);
         return;
@@ -2602,6 +3225,7 @@ private:
       std::string step_label = gen_->fresh("for.step");
 
       std::string end_label = gen_->fresh("for.end");
+      std::string exit_label = gen_->fresh("loop.out");
 
       if (fo.cond && constBoolFromExpr(*fo.cond) == ConstBool::False) {
         gen_->out_ << "  br label %" << end_label << "\n";
@@ -2609,7 +3233,7 @@ private:
         return;
       }
 
-      loop_stack_.push_back({end_label, step_label});
+      loop_stack_.push_back({end_label, step_label, exit_label});
 
 
 
@@ -2633,6 +3257,7 @@ private:
 
       gen_->out_ << body_label << ":\n";
 
+      size_t iter_defers = defer_stack_.size();
       Ctx body_ctx = fork();
 
       for (const auto& s : fo.body)
@@ -2641,9 +3266,10 @@ private:
 
       mergeChild(body_ctx);
 
-      if (!body_ctx.terminated)
-
+      if (!body_ctx.terminated) {
+        flushDefersFrom(iter_defers);
         gen_->out_ << "  br label %" << step_label << "\n";
+      }
 
       gen_->out_ << step_label << ":\n";
 
@@ -2665,8 +3291,8 @@ private:
 
 
 
-      gen_->out_ << end_label << ":\n";
-
+      std::string exit = emitLoopExitTrampoline(end_label, loop_stack_.back().exit_label);
+      (void)exit;
       loop_stack_.pop_back();
 
     }
@@ -2674,6 +3300,14 @@ private:
 
 
     void emitBreak() {
+
+      if (!switch_break_stack_.empty()) {
+        flushScopeDefers();
+        gen_->out_ << "  br label %" << switch_break_stack_.back() << "\n";
+        terminated = true;
+        switch_break_arm_ = true;
+        return;
+      }
 
       if (loop_stack_.empty())
 
@@ -2683,16 +3317,21 @@ private:
 
       std::string finally = innermostFinallyLabel();
       if (!finally.empty()) {
-        completeTryForControlToFinally(finally);
-        setPendingBreak(loop_stack_.back().break_label);
-        gen_->out_ << "  br label %" << finally << "\n";
-        terminated = true;
-        return;
+        int ti = findTryForFinallyLabel(finally);
+        if (ti >= 0 && !try_stack_[static_cast<size_t>(ti)].has_code_after_loop) {
+          completeTryForControlToFinally(finally);
+          setPendingBreak(loop_stack_.back().exit_label);
+          gen_->out_ << "  br label %" << finally << "\n";
+          terminated = true;
+          exits_loop_not_scope_ = true;
+          return;
+        }
       }
 
-      gen_->out_ << "  br label %" << loop_stack_.back().break_label << "\n";
+      gen_->out_ << "  br label %" << loop_stack_.back().exit_label << "\n";
 
       terminated = true;
+      exits_loop_not_scope_ = true;
 
     }
 
@@ -2708,11 +3347,15 @@ private:
 
       std::string finally = innermostFinallyLabel();
       if (!finally.empty()) {
-        completeTryForControlToFinally(finally);
-        setPendingContinue(loop_stack_.back().continue_label);
-        gen_->out_ << "  br label %" << finally << "\n";
-        terminated = true;
-        return;
+        int ti = findTryForFinallyLabel(finally);
+        if (ti >= 0 && !try_stack_[static_cast<size_t>(ti)].has_code_after_loop) {
+          completeTryForControlToFinally(finally);
+          setPendingContinue(loop_stack_.back().continue_label);
+          gen_->out_ << "  br label %" << finally << "\n";
+          terminated = true;
+          exits_loop_not_scope_ = true;
+          return;
+        }
       }
 
       gen_->out_ << "  br label %" << loop_stack_.back().continue_label << "\n";
@@ -2763,7 +3406,138 @@ private:
 
     }
 
+    struct AssignTargetLoc {
+      enum class Kind { Variable, Index, Member, Deref } kind;
+      TypeDesc ty;
+      std::string var_name;
+      TypeDesc arr_ty;
+      std::string arr;
+      std::string idx;
+      TypeDesc obj_ty;
+      std::string obj;
+      Expr* target_expr = nullptr;
+      TypeDesc ptr_ty;
+      std::string ptr;
+    };
 
+    AssignTargetLoc resolveAssignTarget(Expr& target) {
+      AssignTargetLoc loc;
+      loc.ty = exprType(target);
+      if (target.kind == Expr::Variable) {
+        loc.kind = AssignTargetLoc::Kind::Variable;
+        loc.var_name = target.var.name;
+        return loc;
+      }
+      if (target.kind == Expr::IndexExpr) {
+        loc.kind = AssignTargetLoc::Kind::Index;
+        loc.arr_ty = exprType(*target.index.array);
+        loc.arr = emitExpr(*target.index.array);
+        loc.idx = emitExpr(*target.index.index);
+        return loc;
+      }
+      if (target.kind == Expr::MemberExpr) {
+        loc.kind = AssignTargetLoc::Kind::Member;
+        loc.obj_ty = exprType(*target.member.object);
+        loc.obj = emitExpr(*target.member.object);
+        loc.target_expr = &target;
+        return loc;
+      }
+      if (target.kind == Expr::PrefixExprK && target.prefix.op == "*") {
+        loc.kind = AssignTargetLoc::Kind::Deref;
+        loc.ptr_ty = exprType(*target.prefix.operand);
+        loc.ptr = emitExpr(*target.prefix.operand);
+        return loc;
+      }
+      throw FarError("invalid assignment target");
+    }
+
+    std::string loadAssignTarget(const AssignTargetLoc& loc) {
+      switch (loc.kind) {
+        case AssignTargetLoc::Kind::Variable:
+          return loadVar(loc.var_name);
+        case AssignTargetLoc::Kind::Index: {
+          if (isUserDesc(loc.arr_ty)) {
+            std::string sym = userMangleMethod(userTypeKey(loc.arr_ty), "__index_get");
+            std::string tmp = gen_->fresh("idx");
+            gen_->out_ << "  %" << tmp << " = call i64 @" << sym << "(i64 " << loc.arr << ", i64 "
+                       << loc.idx << ")\n";
+            return "%" + tmp;
+          }
+          if (loc.arr_ty.form == TypeForm::Array || loc.arr_ty.form == TypeForm::List ||
+              loc.arr_ty.form == TypeForm::Dict || loc.arr_ty.form == TypeForm::Slice ||
+              isPrimTy(loc.arr_ty, FarTypeId::Arr))
+            return emitCollectionIndex(collCtx(), loc.arr_ty, loc.arr, loc.idx);
+          std::string tmp = gen_->fresh();
+          gen_->out_ << "  %" << tmp << " = call " << I64 << " @far_array_get(" << I64 << " " << loc.arr
+                     << ", " << I64 << " " << loc.idx << ")\n";
+          return "%" + tmp;
+        }
+        case AssignTargetLoc::Kind::Member: {
+          if (isUserDesc(loc.obj_ty)) {
+            std::string getter = "__prop_get_" + loc.target_expr->member.member;
+            if (gen_->obj_reg_.lookupMethod(loc.obj_ty, getter)) {
+              std::string sym = userMangleMethod(userTypeKey(loc.obj_ty), getter);
+              std::string tmp = gen_->fresh("pget");
+              gen_->out_ << "  %" << tmp << " = call i64 @" << sym << "(i64 " << loc.obj << ")\n";
+              return "%" + tmp;
+            }
+            return emitUserMember(userCtx(), gen_->obj_reg_, loc.target_expr->member, loc.obj_ty, loc.obj);
+          }
+          return emitAggregateMember(aggCtx(), loc.target_expr->member, aggregateDescId(loc.obj_ty));
+        }
+        case AssignTargetLoc::Kind::Deref:
+          return emitPtrDeref(memCtx(), loc.ptr_ty, loc.ptr);
+      }
+      throw FarError("invalid assignment target");
+    }
+
+    void storeAssignTarget(const AssignTargetLoc& loc, const std::string& value) {
+      switch (loc.kind) {
+        case AssignTargetLoc::Kind::Variable:
+          storeVar(loc.var_name, value, loc.ty);
+          return;
+        case AssignTargetLoc::Kind::Index: {
+          if (isPrimTy(loc.arr_ty, FarTypeId::String) || isPrimTy(loc.arr_ty, FarTypeId::RawString))
+            throw FarError("cannot assign to string index: strings are immutable");
+          if (isCollectionDesc(loc.arr_ty) || isPrimTy(loc.arr_ty, FarTypeId::Arr)) {
+            emitCollectionStore(collCtx(), loc.arr_ty, loc.arr, loc.idx, value);
+            return;
+          }
+          if (isUserDesc(loc.arr_ty) && gen_->obj_reg_.lookupMethod(loc.arr_ty, "__index_set")) {
+            std::string sym = userMangleMethod(userTypeKey(loc.arr_ty), "__index_set");
+            gen_->out_ << "  call i64 @" << sym << "(i64 " << loc.arr << ", i64 " << loc.idx << ", i64 "
+                       << value << ")\n";
+            return;
+          }
+          gen_->out_ << "  call void @far_array_set(i64 " << loc.arr << ", i64 " << loc.idx << ", i64 "
+                     << value << ")\n";
+          return;
+        }
+        case AssignTargetLoc::Kind::Member: {
+          if (isUserDesc(loc.obj_ty)) {
+            std::string setter = "__prop_set_" + loc.target_expr->member.member;
+            if (gen_->obj_reg_.lookupMethod(loc.obj_ty, setter)) {
+              std::string sym = userMangleMethod(userTypeKey(loc.obj_ty), setter);
+              gen_->out_ << "  call i64 @" << sym << "(i64 " << loc.obj << ", i64 " << value << ")\n";
+              return;
+            }
+            emitUserMemberStore(userCtx(), gen_->obj_reg_, loc.target_expr->member, loc.obj_ty, loc.obj,
+                                value);
+            return;
+          }
+          throw FarError("invalid assignment target");
+        }
+        case AssignTargetLoc::Kind::Deref:
+          emitPtrStore(memCtx(), loc.ptr_ty, loc.ptr, value);
+          return;
+      }
+      throw FarError("invalid assignment target");
+    }
+
+    bool isComplexAssignTarget(const Expr& target) const {
+      return target.kind == Expr::IndexExpr || target.kind == Expr::MemberExpr ||
+             (target.kind == Expr::PrefixExprK && target.prefix.op == "*");
+    }
 
     std::string emitStoreTarget(Expr& target, const std::string& value, const TypeDesc& ty) {
       if (target.kind == Expr::Variable) {
@@ -2774,6 +3548,8 @@ private:
         std::string arr = emitExpr(*target.index.array);
         std::string idx = emitExpr(*target.index.index);
         TypeDesc arr_ty = exprType(*target.index.array);
+        if (isPrimTy(arr_ty, FarTypeId::String) || isPrimTy(arr_ty, FarTypeId::RawString))
+          throw FarError("cannot assign to string index: strings are immutable");
         if (isCollectionDesc(arr_ty) || isPrimTy(arr_ty, FarTypeId::Arr)) {
           emitCollectionStore(collCtx(), arr_ty, arr, idx, value);
           return value;
@@ -2817,9 +3593,24 @@ private:
           {"+=", "+"}, {"-=", "-"},  {"*=", "*"},    {"/=", "/"},     {"%=", "%"},
           {"**=", "**"}, {"//=", "//"}, {"&=", "&"}, {"|=", "|"},   {"^=", "^"},
           {"<<=", "<<"}, {">>=", ">>"}};
+      TypeDesc target_ty = exprType(*a.target);
+      const bool complex = isComplexAssignTarget(*a.target);
+      std::optional<AssignTargetLoc> loc;
+      if (complex)
+        loc = resolveAssignTarget(*a.target);
+      auto loadTarget = [&]() -> std::string {
+        if (complex)
+          return loadAssignTarget(*loc);
+        return emitExpr(*a.target);
+      };
+      auto storeTarget = [&](const std::string& val) {
+        if (complex)
+          storeAssignTarget(*loc, val);
+        else
+          emitStoreTarget(*a.target, val, target_ty);
+      };
       if (a.op == "\?\?=") {
-        TypeDesc target_ty = exprType(*a.target);
-        std::string cur = emitExpr(*a.target);
+        std::string cur = loadTarget();
         std::string is_n = emitIsNullish(*a.target, cur);
         std::string rhs_label = gen_->fresh("nass");
         std::string end_label = gen_->fresh("naend");
@@ -2827,22 +3618,21 @@ private:
         gen_->out_ << "  br i1 " << is_n << ", label %" << rhs_label << ", label %" << skip_label << "\n";
         gen_->out_ << rhs_label << ":\n";
         std::string val = coerceToType(*a.value, target_ty, emitExpr(*a.value));
-        emitStoreTarget(*a.target, val, target_ty);
+        storeTarget(val);
         gen_->out_ << "  br label %" << end_label << "\n";
         gen_->out_ << skip_label << ":\n";
         gen_->out_ << "  br label %" << end_label << "\n";
         gen_->out_ << end_label << ":\n";
-        return emitExpr(*a.target);
+        return loadTarget();
       }
       std::string rhs;
-      TypeDesc target_ty = exprType(*a.target);
       if (a.op == "=") {
         rhs = emitExpr(*a.value);
       } else {
         auto it = compound.find(a.op);
         if (it == compound.end())
           throw FarError("unknown assignment operator '" + a.op + "'");
-        std::string cur = emitExpr(*a.target);
+        std::string cur = loadTarget();
         std::string right = emitExpr(*a.value);
         std::string tmp = gen_->fresh();
         const std::string& cop = it->second;
@@ -2877,7 +3667,7 @@ private:
         } else if (cop == "+") {
           if (isPrimTy(target_ty, FarTypeId::String) || isPrimTy(value_ty, FarTypeId::String) ||
               isPrimTy(target_ty, FarTypeId::Char) || isPrimTy(value_ty, FarTypeId::Char)) {
-            std::string l = emitExprAsString(*a.target);
+            std::string l = (complex && isPrimTy(target_ty, FarTypeId::String)) ? cur : emitExprAsString(*a.target);
             std::string r = emitExprAsString(*a.value);
             std::string lp = gen_->fresh("sp");
             std::string rp = gen_->fresh("sp");
@@ -2977,7 +3767,7 @@ private:
       if (a.op == "=")
         rhs = coerceToType(*a.value, target_ty, rhs);
       rhs = narrowIntToDesc(target_ty, rhs);
-      emitStoreTarget(*a.target, rhs, target_ty);
+      storeTarget(rhs);
       if (a.target->kind == Expr::Variable) {
         if (a.op == "=")
           trackConstLocal(a.target->var.name, *a.value);
@@ -3005,6 +3795,9 @@ private:
           else
             gen_->out_ << "  %" << tmp << " = fsub " << F64 << " " << cur << ", 1.0\n";
           result = "%" + tmp;
+          if (isPrimitiveDesc(op_ty) &&
+              (op_ty.primitive == FarTypeId::F32 || op_ty.primitive == FarTypeId::F16))
+            result = gen_->emitCastValueDesc(TypeDesc::prim(FarTypeId::F64), op_ty, result);
         } else if (isUnsignedTypeDesc(op_ty)) {
           std::string tmp = gen_->fresh();
           if (p.op == "++")
@@ -3059,6 +3852,9 @@ private:
           else
             gen_->out_ << "  %" << tmp << " = fsub " << F64 << " " << cur << ", 1.0\n";
           result = "%" + tmp;
+          if (isPrimitiveDesc(op_ty) &&
+              (op_ty.primitive == FarTypeId::F32 || op_ty.primitive == FarTypeId::F16))
+            result = gen_->emitCastValueDesc(TypeDesc::prim(FarTypeId::F64), op_ty, result);
         } else if (isUnsignedTypeDesc(op_ty)) {
           std::string tmp = gen_->fresh();
           if (p.op == "++")
@@ -3081,6 +3877,7 @@ private:
         if (isOptionDesc(ty)) {
           std::string tmp = gen_->fresh("unwrap");
           gen_->out_ << "  %" << tmp << " = call i64 @far_option_unwrap(i64 " << val << ")\n";
+          emitPendingThrowResumeCheck();
           return "%" + tmp;
         }
         std::string is_n = gen_->fresh("nulchk");
@@ -3223,7 +4020,7 @@ private:
       } depth_guard(this);
       switch (expr.kind) {
         case Expr::Int:
-          return std::to_string(expr.int_lit.value);
+          return intLitCodegenText(expr);
         case Expr::Float: {
           std::string dlit = gen_->formatDoubleLiteral(expr.float_lit.value);
           if (isPrimTy(expr.type, FarTypeId::F32))
@@ -3241,8 +4038,11 @@ private:
           return loadVar(expr.var.name);
         case Expr::Binary:
           return emitBinOp(expr.bin_op, expr.type);
-        case Expr::FnCall:
-          return emitCall(expr.call, expr.type);
+        case Expr::FnCall: {
+          std::string result = emitCall(expr.call, expr.type);
+          emitPendingThrowResumeCheck();
+          return result;
+        }
         case Expr::CastExpr: {
           std::string val = emitExpr(*expr.cast.value);
           return gen_->emitCastValueDesc(expr.cast.value->type, expr.cast.target, val);
@@ -3316,24 +4116,7 @@ private:
           if (it == gen_->fn_by_name_.end() || it->second.empty())
             throw FarError("internal: missing lambda " + sym);
           const Function* lf = it->second.back();
-          std::string ptr = fnPointerBitcastLlvm(lf->llvm_name, lf);
-          int64_t ncaps = static_cast<int64_t>(expr.fn_lit.captures.size());
-          if (expr.fn_lit.captures.size() > 4)
-            throw FarError("closure captures at most 4 variables");
-          std::string c0 = "0", c1 = "0", c2 = "0", c3 = "0";
-          if (ncaps > 0)
-            c0 = loadVar(expr.fn_lit.captures[0]);
-          if (ncaps > 1)
-            c1 = loadVar(expr.fn_lit.captures[1]);
-          if (ncaps > 2)
-            c2 = loadVar(expr.fn_lit.captures[2]);
-          if (ncaps > 3)
-            c3 = loadVar(expr.fn_lit.captures[3]);
-          std::string tmp = gen_->fresh("fnval");
-          gen_->out_ << "  %" << tmp << " = call " << I64 << " @far_closure_new(i8* " << ptr << ", " << I64
-                     << " " << ncaps << ", " << I64 << " " << c0 << ", " << I64 << " " << c1 << ", " << I64 << " "
-                     << c2 << ", " << I64 << " " << c3 << ")\n";
-          return "%" + tmp;
+          return emitClosureNew(lf, expr.fn_lit.captures);
         }
         case Expr::AwaitExprK: {
           std::string handle = emitExpr(*expr.await.value);
@@ -3377,7 +4160,9 @@ private:
             call.resolved_llvm_name = expr.method_call.resolved_llvm_name;
             for (const auto& a : expr.method_call.args)
               call.bound_exprs.push_back(a.get());
-            return emitCall(call, expr.type);
+            std::string result = emitCall(call, expr.type);
+            emitPendingThrowResumeCheck();
+            return result;
           }
           if (expr.method_call.is_geom_call)
             return emitAggregateStaticCall(aggCtx(), expr.method_call, expr.method_call.geom_agg_type,
@@ -3385,7 +4170,10 @@ private:
           TypeDesc obj_ty = exprType(*expr.method_call.object);
           if (isOptionDesc(obj_ty) || isResultDesc(obj_ty)) {
             std::string obj_val = emitExpr(*expr.method_call.object);
-            return emitErrMethod(errCtx(), expr.method_call, obj_ty, obj_val);
+            std::string result = emitErrMethod(errCtx(), expr.method_call, obj_ty, obj_val);
+            if (expr.method_call.method == "unwrap")
+              emitPendingThrowResumeCheck();
+            return result;
           }
           if (isConcurrencyHandleDesc(obj_ty)) {
             std::string obj_val = emitExpr(*expr.method_call.object);
@@ -3442,6 +4230,14 @@ private:
       if (arr_ty.form == TypeForm::Array || arr_ty.form == TypeForm::List || arr_ty.form == TypeForm::Dict ||
           arr_ty.form == TypeForm::Slice || isPrimTy(arr_ty, FarTypeId::Arr))
         return emitCollectionIndex(collCtx(), arr_ty, arr, index);
+      if (isPrimTy(arr_ty, FarTypeId::String) || isPrimTy(arr_ty, FarTypeId::RawString)) {
+        std::string ptr = gen_->fresh("sptr");
+        gen_->out_ << "  %" << ptr << " = inttoptr " << I64 << " " << arr << " to i8*\n";
+        std::string tmp = gen_->fresh();
+        gen_->out_ << "  %" << tmp << " = call " << I64 << " @far_str_char_at(i8* %" << ptr << ", " << I64
+                   << " " << index << ")\n";
+        return "%" + tmp;
+      }
       std::string tmp = gen_->fresh();
       gen_->out_ << "  %" << tmp << " = call " << I64 << " @far_array_get(" << I64 << " " << arr << ", " << I64
                  << " " << index << ")\n";
@@ -3456,6 +4252,16 @@ private:
       if (arr_ty.form == TypeForm::Array || arr_ty.form == TypeForm::List || arr_ty.form == TypeForm::Slice ||
           isPrimTy(arr_ty, FarTypeId::Arr))
         return emitCollectionSlice(collCtx(), arr_ty, arr, start, end);
+      if (isPrimTy(arr_ty, FarTypeId::String) || isPrimTy(arr_ty, FarTypeId::RawString)) {
+        std::string ptr = gen_->fresh("sptr");
+        gen_->out_ << "  %" << ptr << " = inttoptr " << I64 << " " << arr << " to i8*\n";
+        std::string slice_ptr = gen_->fresh("sslice");
+        gen_->out_ << "  %" << slice_ptr << " = call i8* @far_str_slice(i8* %" << ptr << ", " << I64
+                   << " " << start << ", " << I64 << " " << end << ")\n";
+        std::string as_i64 = gen_->fresh();
+        gen_->out_ << "  %" << as_i64 << " = ptrtoint i8* %" << slice_ptr << " to " << I64 << "\n";
+        return "%" + as_i64;
+      }
       throw FarError("cannot slice type in codegen");
     }
 
@@ -3624,8 +4430,8 @@ private:
 
       if (op.op == "in" || op.op == "not in") {
         TypeDesc rt = exprType(*op.right);
-        std::string hay = emitExpr(*op.right);
         std::string needle = emitExpr(*op.left);
+        std::string hay = emitExpr(*op.right);
         std::string tmp = gen_->fresh();
         if (isPrimTy(rt, FarTypeId::String)) {
           std::string hay_ptr = gen_->fresh("sp");
@@ -3730,6 +4536,7 @@ private:
         if (isOptionDesc(obj_ty)) {
           std::string unwrapped = gen_->fresh("optu");
           gen_->out_ << "  %" << unwrapped << " = call i64 @far_option_unwrap(i64 " << obj << ")\n";
+          emitPendingThrowResumeCheck();
           inner_val = "%" + unwrapped;
         }
         std::string val = "0";
@@ -3890,6 +4697,15 @@ private:
         std::string left = emitExpr(*op.left);
         std::string right = emitExpr(*op.right);
         std::string tmp = gen_->fresh();
+        if (((isUnsignedTypeDesc(lt) && isSignedIntegerTypeDesc(rt)) ||
+             (isSignedIntegerTypeDesc(lt) && isUnsignedTypeDesc(rt)))) {
+          const bool unsigned_is_left = isUnsignedTypeDesc(lt);
+          std::string unsigned_val = unsigned_is_left ? left : right;
+          std::string signed_val = unsigned_is_left ? right : left;
+          std::string mixed_op = unsigned_is_left ? cmp_op : flipOrderedCmpOp(cmp_op);
+          return emitMixedSignIntegerCompare(gen_->out_, [&](const std::string& hint) { return gen_->fresh(hint); },
+                                             mixed_op, unsigned_val, signed_val);
+        }
         if ((isPrimTy(lt, FarTypeId::String) || isPrimTy(lt, FarTypeId::RawString)) &&
             (isPrimTy(rt, FarTypeId::String) || isPrimTy(rt, FarTypeId::RawString)) &&
             (cmp_op == "==" || cmp_op == "!=")) {
@@ -4314,14 +5130,29 @@ private:
         if (isMemoryHandleDesc(arg_ty)) {
           emitMemDrop(memCtx(), arg_ty.form, val);
           if (call.args[0].value->kind == Expr::Variable) {
-            storeSlotValue(call.args[0].value->var.name, "0");
+            storeSlotValueNoDrop(call.args[0].value->var.name, "0");
             removeAutoDrop(call.args[0].value->var.name);
           }
         } else if (isConcurrencyHandleDesc(arg_ty)) {
           emitConcDrop(concCtx(), arg_ty.form, val);
           if (call.args[0].value->kind == Expr::Variable) {
-            storeSlotValue(call.args[0].value->var.name, "0");
+            storeSlotValueNoDrop(call.args[0].value->var.name, "0");
             removeAutoDrop(call.args[0].value->var.name);
+          }
+        } else if (isOwnedHeapCollectionDesc(arg_ty)) {
+          emitOwnedCollectionDrop(autodropFormFor(arg_ty), val);
+          if (call.args[0].value->kind == Expr::Variable) {
+            storeSlotValueNoDrop(call.args[0].value->var.name, "0");
+            removeAutoDrop(call.args[0].value->var.name);
+          }
+        } else if (isUserDesc(arg_ty)) {
+          const UserTypeDef* ut = gen_->obj_reg_.lookup(userTypeKey(arg_ty));
+          if (ut && ut->kind == UserTypeKind::Union) {
+            gen_->out_ << "  call void @far_union_drop(i64 " << val << ")\n";
+            if (call.args[0].value->kind == Expr::Variable) {
+              storeSlotValueNoDrop(call.args[0].value->var.name, "0");
+              removeAutoDrop(call.args[0].value->var.name);
+            }
           }
         }
         return "0";
@@ -4357,9 +5188,15 @@ private:
         return "0";
       }
       if (call.name == "assert") {
-        std::string cond = emitExpr(*call.args[0].value);
+        std::string cond = emitBranchCond(*call.args[0].value);
+        std::string ok = gen_->fresh("assert.ok");
+        std::string fail = gen_->fresh("assert.fail");
+        gen_->out_ << "  br i1 " << cond << ", label %" << ok << ", label %" << fail << "\n";
+        gen_->out_ << fail << ":\n";
         std::string msg = call.args.size() > 1 ? emitExpr(*call.args[1].value) : "0";
-        gen_->out_ << "  call void @far_assert(i64 " << cond << ", i64 " << msg << ")\n";
+        gen_->out_ << "  call void @far_assert(i64 0, i64 " << msg << ")\n";
+        gen_->out_ << "  unreachable\n";
+        gen_->out_ << ok << ":\n";
         return "0";
       }
       if (call.name == "stack_trace") {

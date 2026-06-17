@@ -1,0 +1,8 @@
+﻿fun main() {
+  try {
+    try { return 1 } finally { throw 9 }
+  } catch (e) {
+    print(e)
+  }
+  return 0
+}

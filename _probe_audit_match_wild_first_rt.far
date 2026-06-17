@@ -1,7 +1,0 @@
-fun pick(v: i64) -> i64 {
-  match v {
-    _ => return 0
-    2 => return 2
-  }
-}
-fun main() { print(pick(2)); return 0 }

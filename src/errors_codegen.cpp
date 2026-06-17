@@ -84,12 +84,9 @@ void emitThrow(ErrCodegenCtx ctx, int64_t type_tag, const std::string& value) {
   ctx.out << "  call void @far_throw(i64 " << type_tag << ", i64 " << value << ")\n";
 }
 
-void emitTryEnter(ErrCodegenCtx ctx, const std::string& resume_var, const std::string& resume_label,
-                  const std::string& body_label) {
-  ctx.out << "  %" << resume_var << " = call i32 @far_try_enter()\n";
-  std::string cmp = ctx.fresh("trycmp");
-  ctx.out << "  %" << cmp << " = icmp ne i32 %" << resume_var << ", 0\n";
-  ctx.out << "  br i1 %" << cmp << ", label %" << resume_label << ", label %" << body_label << "\n";
+void emitTryEnter(ErrCodegenCtx ctx, const std::string& body_label) {
+  ctx.out << "  call void @far_try_push()\n";
+  ctx.out << "  br label %" << body_label << "\n";
 }
 
 void emitTrySuccess(ErrCodegenCtx ctx) { ctx.out << "  call void @far_try_success()\n"; }

@@ -1,0 +1,26 @@
+import bench
+
+# Default workload: 30_000_000 (match BENCH_FIB_N for C/Python)
+
+fun fib_iter() -> u64 {
+  a = u64(0)
+  b = u64(1)
+  i: i64 = 0
+  steps: i64 = 30000000
+  while (i < steps) {
+    t = a + b
+    a = b
+    b = t
+    i = i + 1
+  }
+  return b
+}
+
+fun main() -> i64 {
+  t0 = bench.start()
+  r = fib_iter()
+  ms = bench.elapsed_ms(t0)
+  print(ms)
+  print(i64(r))
+  return 0
+}

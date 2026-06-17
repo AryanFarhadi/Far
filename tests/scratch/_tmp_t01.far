@@ -1,0 +1,6 @@
+fun t01() -> i64 {
+  x = 9223372036854775808
+  if (x == -9223372036854775808) { return 1 }
+  return 0
+}
+fun main() { print(t01()); return 0 }

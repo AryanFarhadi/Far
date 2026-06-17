@@ -175,13 +175,17 @@ static std::string componentWiseBinOp(AggCodegenCtx ctx, FarTypeId type, const s
   for (int i = 0; i < m->nfields; ++i) {
     std::string tmp = ctx.fresh("t");
     if (as_int) {
-      const char* sop = op == "+"   ? "add"
-                        : op == "-" ? "sub"
-                        : op == "*" ? "mul"
-                        : op == "/" ? "sdiv"
-                                    : "add";
-      ctx.out << "  %" << tmp << " = " << sop << " i64 " << lcomps[static_cast<size_t>(i)] << ", "
-              << rcomps[static_cast<size_t>(i)] << "\n";
+      if (op == "/") {
+        ctx.out << "  %" << tmp << " = call i64 @far_i64_div_checked(i64 "
+                << lcomps[static_cast<size_t>(i)] << ", i64 " << rcomps[static_cast<size_t>(i)] << ")\n";
+      } else {
+        const char* sop = op == "+"   ? "add"
+                          : op == "-" ? "sub"
+                          : op == "*" ? "mul"
+                                      : "add";
+        ctx.out << "  %" << tmp << " = " << sop << " i64 " << lcomps[static_cast<size_t>(i)] << ", "
+                << rcomps[static_cast<size_t>(i)] << "\n";
+      }
     } else if (op == "**") {
       ctx.out << "  %" << tmp << " = call double @far_pow(double " << lcomps[static_cast<size_t>(i)]
               << ", double " << rcomps[static_cast<size_t>(i)] << ")\n";
@@ -205,18 +209,36 @@ static std::string componentWiseBinOp(AggCodegenCtx ctx, FarTypeId type, const s
 }
 
 static std::string scaleAggregate(AggCodegenCtx ctx, FarTypeId type, const std::string& agg,
-                                  const std::string& scalar, const std::string& op) {
+                                  const std::string& scalar, const std::string& op,
+                                  bool scalar_on_left = false) {
   const AggregateMeta* m = aggregateMeta(type);
   std::vector<std::string> out;
   for (int i = 0; i < m->nfields; ++i) {
     std::string c = loadField(ctx, agg, type, i);
     std::string tmp = ctx.fresh("t");
+    const std::string& lhs = scalar_on_left ? scalar : c;
+    const std::string& rhs = scalar_on_left ? c : scalar;
     if (isIntegerAggScalar(m->scalar)) {
-      const char* sop = op == "*" ? "mul" : "sdiv";
-      ctx.out << "  %" << tmp << " = " << sop << " i64 " << c << ", " << scalar << "\n";
+      if (op == "/") {
+        std::string tmp = ctx.fresh("t");
+        ctx.out << "  %" << tmp << " = call i64 @far_i64_div_checked(i64 " << lhs << ", i64 " << rhs
+                << ")\n";
+        out.push_back("%" + tmp);
+        continue;
+      }
+      const char* sop = op == "+"   ? "add"
+                        : op == "-" ? "sub"
+                        : op == "*" ? "mul"
+                        : op == "/" ? "sdiv"
+                                    : "add";
+      ctx.out << "  %" << tmp << " = " << sop << " i64 " << lhs << ", " << rhs << "\n";
     } else {
-      const char* sop = op == "*" ? "fmul" : "fdiv";
-      ctx.out << "  %" << tmp << " = " << sop << " double " << c << ", " << scalar << "\n";
+      const char* sop = op == "+"   ? "fadd"
+                        : op == "-" ? "fsub"
+                        : op == "*" ? "fmul"
+                        : op == "/" ? "fdiv"
+                                    : "fadd";
+      ctx.out << "  %" << tmp << " = " << sop << " double " << lhs << ", " << rhs << "\n";
     }
     out.push_back("%" + tmp);
   }
@@ -251,7 +273,7 @@ std::string emitAggregateBinOp(AggCodegenCtx ctx, const std::string& op, FarType
   if (!isAggregateType(lt) && isAggregateType(rt)) {
     FarTypeId sc = aggregateScalar(rt);
     std::string s = isIntegerAggScalar(sc) ? left : emitToDouble(ctx, lt, left);
-    return scaleAggregate(ctx, rt, right, s, "*");
+    return scaleAggregate(ctx, rt, right, s, op, true);
   }
   throw FarError("invalid aggregate binop");
 }

@@ -1,0 +1,10 @@
+fun main() -> i64 {
+  s = 0
+  loop {
+    s = s + 1
+    if (s >= 2) { break }
+    continue
+    s = s + 100
+  }
+  return s
+}

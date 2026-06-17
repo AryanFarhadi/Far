@@ -1,0 +1,5 @@
+fun main() -> i64 {
+  try { try { throw 1 } finally { try { throw 0 } finally { throw 3 } } }
+  catch (e) { return e }
+  return 99
+}

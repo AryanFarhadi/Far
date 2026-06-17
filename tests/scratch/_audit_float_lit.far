@@ -1,0 +1,1 @@
+fun main() { x=1e309; return 0 }

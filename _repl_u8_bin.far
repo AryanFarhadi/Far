@@ -1,6 +1,0 @@
-﻿fun main() {
-  x: u8 = 200
-  y: u8 = 100
-  print(x + y)
-  return 0
-}

@@ -1,0 +1,12 @@
+fun main() -> i64 {
+  s = 0
+  try {
+    switch 1 {
+      case 1: throw 1
+      default: s = 1
+    }
+  } catch {
+    s = 2
+  }
+  return s
+}

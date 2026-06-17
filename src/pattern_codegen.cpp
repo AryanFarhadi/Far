@@ -4,6 +4,11 @@
 #include "generics.h"
 #include "object_codegen.h"
 #include "pattern.h"
+#include "type_desc.h"
+#include "types.h"
+
+#include <cmath>
+#include <sstream>
 
 namespace far {
 
@@ -11,6 +16,17 @@ static std::string emitIcmpEq(PatCodegenCtx ctx, const std::string& a, const std
   std::string tmp = ctx.fresh("pcmp");
   ctx.out << "  %" << tmp << " = icmp eq i64 " << a << ", " << b << "\n";
   return "%" + tmp;
+}
+
+static std::string patFormatDouble(double v) {
+  std::ostringstream os;
+  os.precision(17);
+  os << v;
+  std::string s = os.str();
+  if (s.find('.') == std::string::npos && s.find('e') == std::string::npos &&
+      s.find('E') == std::string::npos)
+    s += ".0";
+  return s;
 }
 
 PatTestResult emitPatternTest(PatCodegenCtx ctx, const Pattern& pat, const std::string& scrut_val,
@@ -27,7 +43,29 @@ PatTestResult emitPatternTest(PatCodegenCtx ctx, const Pattern& pat, const std::
       r.binds.push_back({pat.bind_name, scrut_val, scrut_ty});
       return r;
     case PatKind::Literal:
-      r.cond = emitIcmpEq(ctx, scrut_val, std::to_string(pat.literal));
+      if (pat.literal_is_float ||
+          (isPrimitiveDesc(scrut_ty) &&
+           (scrut_ty.primitive == FarTypeId::F32 || scrut_ty.primitive == FarTypeId::F64))) {
+        std::string cmp_val = scrut_val;
+        if (isPrimitiveDesc(scrut_ty) && scrut_ty.primitive == FarTypeId::F32) {
+          std::string ext = ctx.fresh("f32pe");
+          ctx.out << "  %" << ext << " = fpext float " << scrut_val << " to double\n";
+          cmp_val = "%" + ext;
+        }
+        std::string tmp = ctx.fresh("pcmp");
+        double lit =
+            pat.literal_is_float ? pat.float_literal : static_cast<double>(pat.literal);
+        if (std::isnan(lit)) {
+          ctx.out << "  %" << tmp << " = fcmp uno double " << cmp_val << ", "
+                  << patFormatDouble(lit) << "\n";
+        } else {
+          ctx.out << "  %" << tmp << " = fcmp oeq double " << cmp_val << ", "
+                  << patFormatDouble(lit) << "\n";
+        }
+        r.cond = "%" + tmp;
+      } else {
+        r.cond = emitIcmpEq(ctx, scrut_val, std::to_string(pat.literal));
+      }
       return r;
     case PatKind::EnumVariant:
       r.cond = emitIcmpEq(ctx, scrut_val, std::to_string(pat.variant_value));

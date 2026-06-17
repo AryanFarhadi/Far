@@ -1,4 +1,0 @@
-﻿fun main() {
-  print(0 && undefined_expr_rhs)
-  return 0
-}

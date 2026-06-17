@@ -1,0 +1,12 @@
+fun main() -> i64 {
+  s = 0
+  i = 1
+  loop {
+    switch i {
+      case 1: break
+      default: s += 1
+    }
+    break
+  }
+  return s
+}

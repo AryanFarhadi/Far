@@ -1,0 +1,4 @@
+comptime {
+  constexpr X = comptime (u64(18446744073709551615u64) + u64(1u64))
+}
+fun main() { return 0 }

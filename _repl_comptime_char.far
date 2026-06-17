@@ -1,5 +1,0 @@
-﻿fun main() {
-  print(comptime (char(255) as u8))
-  print(comptime (char(300) as u8))
-  return 0
-}

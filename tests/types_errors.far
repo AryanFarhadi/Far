@@ -1,0 +1,79 @@
+# Error handling: try/catch/finally, Result<T,E>, Option, panic, assert, stack traces, custom exceptions
+exception AppError {
+  code: i64
+}
+fun may_fail(fail: i64) -> i64 {
+  if (fail) {
+    return -1
+  }
+  return 42
+}
+fun divide(a: i64, b: i64) -> Result<i64, i64> {
+  if (b == 0) {
+    return Err(i64(1))
+  }
+  return Ok(a / b)
+}
+fun throws_one() {
+  throw 1
+}
+fun main() {
+  # Option<T>
+  s = Some(7)
+  print(s.unwrap())
+  print(s.is_some())
+  n = None()
+  print(n.is_none())
+  print(n.unwrap_or(99))
+  # Result<T, E>
+  r = Ok(10)
+  print(r.is_ok())
+  print(r.unwrap())
+  e = Err(3)
+  print(e.is_err())
+  print(divide(20, 4).unwrap())
+  print(divide(20, 0).unwrap_or(-1))
+  # try / catch / finally with custom exception
+  caught = 0
+  fin = 0
+  fail = 1
+  try {
+    if (fail) {
+      throw AppError(fail)
+    }
+  } catch (ex: AppError) {
+    caught = 1
+  } finally {
+    fin = 1
+  }
+  print(caught)
+  print(fin)
+  # try success path
+  ok = 0
+  try {
+    ok = may_fail(0)
+  } catch (ex) {
+    ok = -1
+  }
+  print(ok)
+  # cross-function throw propagation
+  callee_caught = 0
+  try {
+    throws_one()
+  } catch (ex) {
+    callee_caught = 1
+  }
+  print(callee_caught)
+  # catchable Option unwrap failure
+  unwrap_caught = 0
+  try {
+    None().unwrap()
+  } catch (ex) {
+    unwrap_caught = 1
+  }
+  print(unwrap_caught)
+  # assert + stack trace (non-fatal paths)
+  assert(1 == 1)
+  stack_trace()
+  return 0
+}

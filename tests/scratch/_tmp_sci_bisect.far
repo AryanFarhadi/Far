@@ -1,0 +1,7 @@
+import science
+fun main() {
+  data = [2, 4, 6, 8]
+  m = statistics.mean(data)
+  print(m)
+  return 0
+}

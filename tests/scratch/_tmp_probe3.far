@@ -1,0 +1,8 @@
+fun main() {
+    try {
+        throw 0
+    } catch (e) {
+        constexpr B = e + 1
+    }
+    return comptime (B)
+}

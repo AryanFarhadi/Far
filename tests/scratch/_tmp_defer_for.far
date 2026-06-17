@@ -1,0 +1,7 @@
+fun main() {
+  s = 0
+  for i in 0..<5 {
+    defer { s = s + 1 }
+  }
+  return s
+}

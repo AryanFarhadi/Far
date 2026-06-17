@@ -1,0 +1,4 @@
+fun main() -> i64 {
+  constexpr A = comptime (1 + 2 * 3)
+  return A
+}

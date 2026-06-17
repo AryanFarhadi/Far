@@ -1,0 +1,6 @@
+fun main() {
+    for i in 0..1 {
+        constexpr B = i + 1
+    }
+    return comptime (B)
+}

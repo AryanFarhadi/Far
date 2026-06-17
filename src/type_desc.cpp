@@ -724,6 +724,26 @@ bool isCollectionHandle(const TypeDesc& td) {
   }
 }
 
+bool isOwnedHeapCollectionDesc(const TypeDesc& td) {
+  switch (td.form) {
+    case TypeForm::Array:
+    case TypeForm::Slice:
+    case TypeForm::Tuple:
+    case TypeForm::List:
+    case TypeForm::Dict:
+    case TypeForm::Set:
+    case TypeForm::Queue:
+    case TypeForm::Stack:
+    case TypeForm::LinkedList:
+    case TypeForm::Range:
+      return true;
+    default:
+      if (isPrimitiveDesc(td) && td.primitive == FarTypeId::Arr)
+        return true;
+      return false;
+  }
+}
+
 bool isCollectionValue(const TypeDesc& td) {
   return td.form == TypeForm::FixedArray || td.form == TypeForm::Span || td.form == TypeForm::Tuple ||
          td.form == TypeForm::Range;

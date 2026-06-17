@@ -1,0 +1,7 @@
+fun main() {
+  i = 0
+  while (i < 2) {
+    try { i = i + 1 } catch (e) { } finally { print(i) }
+  }
+  return 0
+}

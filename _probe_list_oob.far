@@ -1,7 +1,0 @@
-fun main() {
-  a: List<i64> = List<i64>()
-  a.push(0)
-  print(a.get(0))
-  print(a.get(1))
-  return 0
-}

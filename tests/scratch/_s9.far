@@ -1,0 +1,16 @@
+fun main() -> i64 {
+  s = 0
+  try {
+    for i in 0..<5 {
+      try {
+        if (i == 2) { break }
+      } finally {
+        s = s + 1
+      }
+    }
+    s = s + 50
+  } finally {
+    s = s + 100
+  }
+  return s
+}

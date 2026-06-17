@@ -1,0 +1,1 @@
+fun get()->i64{return 0} fun main()->i64{return get()??(1/0)}

@@ -1,5 +1,0 @@
-﻿fun main() {
-  x: f64 = 0.0
-  print(x ?? undefined_nc_runtime)
-  return 0
-}

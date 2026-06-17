@@ -1,7 +1,0 @@
-fun main() {
-  d: Dict<i64,i64> = Dict<i64,i64>()
-  d.set(0, 99)
-  print(d.get(0))
-  print(d.contains_key(0))
-  return 0
-}

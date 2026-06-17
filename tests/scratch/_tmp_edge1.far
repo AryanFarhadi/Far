@@ -1,0 +1,12 @@
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(n: i64, r: i64) -> i64 { if (r != 0) { print(n); return n } return 0 }
+fun t01_u64_literal_ne_signed() -> i64 {
+  x = 9223372036854775808
+  if (x == -9223372036854775808) { return 1 }
+  return 0
+}
+fun main() {
+  r = run(1, t01_u64_literal_ne_signed())
+  print(r)
+  return 0
+}

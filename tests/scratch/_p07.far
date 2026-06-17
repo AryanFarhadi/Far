@@ -1,0 +1,10 @@
+fun main() -> i64 {
+  s = 0
+  defer s = s + 100
+  switch 1 {
+    case 1: break
+    default: s = s + 1
+  }
+  s = s + 1
+  return s
+}

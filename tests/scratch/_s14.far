@@ -1,0 +1,11 @@
+fun main() -> i64 {
+  s = 0
+  for i in 0..<3 {
+    defer s = s + 1
+    switch i {
+      case 1: break
+      default: s = s + 10
+    }
+  }
+  return s
+}

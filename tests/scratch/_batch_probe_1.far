@@ -1,0 +1,8 @@
+﻿fun main() -> i64 {
+  s = 0
+  for (i in 0..5) {
+  defer { s += 1 }
+    if (i == 2) { break }
+  }
+  return s
+}

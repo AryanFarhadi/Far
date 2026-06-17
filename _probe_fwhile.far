@@ -1,8 +1,0 @@
-﻿fun test_fwhile() -> i64 {
-  flag: f64 = 0.0
-  while (flag) {
-    x = undefined_fwhile
-  }
-  return 0
-}
-fun main() { print(test_fwhile()); return 0 }

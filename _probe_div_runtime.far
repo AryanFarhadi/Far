@@ -1,6 +1,0 @@
-﻿fun test_div_runtime() -> i64 {
-  x = 0
-  y = 10
-  return y / x
-}
-fun main() { print(test_div_runtime()); return 0 }

@@ -34,6 +34,18 @@ static const char* ptrElemLlvmTypeFor(const TypeDesc& elem) {
   }
 }
 
+static void emitMemHandleOrPanic(MemCodegenCtx& ctx, const std::string& handle) {
+  std::string ok = ctx.fresh("memok");
+  std::string cont = ctx.fresh("memcont");
+  std::string fail = ctx.fresh("memfail");
+  ctx.out << "  %" << ok << " = icmp ne i64 " << handle << ", 0\n";
+  ctx.out << "  br i1 %" << ok << ", label %" << cont << ", label %" << fail << "\n";
+  ctx.out << fail << ":\n";
+  ctx.out << "  call void @far_panic(i64 0)\n";
+  ctx.out << "  unreachable\n";
+  ctx.out << cont << ":\n";
+}
+
 std::string emitMemConstruct(MemCodegenCtx ctx, TypeForm form, const TypeDesc& elem_ty,
                              const std::vector<std::string>& arg_vals) {
   std::string tmp = ctx.fresh("mem");
@@ -41,6 +53,7 @@ std::string emitMemConstruct(MemCodegenCtx ctx, TypeForm form, const TypeDesc& e
   switch (form) {
     case TypeForm::Box: {
       ctx.out << "  %" << tmp << " = call i64 @far_box_new(i64 " << esz << ")\n";
+      emitMemHandleOrPanic(ctx, "%" + tmp);
       if (!arg_vals.empty()) {
         std::string hp = ctx.fresh("binit");
         ctx.out << "  %" << hp << " = call i64 @far_box_get(i64 %" << tmp << ")\n";
@@ -50,6 +63,7 @@ std::string emitMemConstruct(MemCodegenCtx ctx, TypeForm form, const TypeDesc& e
     }
     case TypeForm::Rc: {
       ctx.out << "  %" << tmp << " = call i64 @far_rc_new(i64 " << esz << ")\n";
+      emitMemHandleOrPanic(ctx, "%" + tmp);
       if (!arg_vals.empty()) {
         std::string hp = ctx.fresh("rinit");
         ctx.out << "  %" << hp << " = call i64 @far_rc_get(i64 %" << tmp << ")\n";
@@ -143,7 +157,8 @@ std::string emitStackAlloc(MemCodegenCtx ctx, const TypeDesc& elem_ty, const std
   }
   std::string bytes = ctx.fresh("stkb");
   std::string cnt = ctx.fresh("stkn");
-  ctx.out << "  %" << cnt << " = mul i64 " << count_val << ", " << esz << "\n";
+  ctx.out << "  %" << cnt << " = call i64 @far_i64_mul_checked(i64 " << count_val << ", i64 " << esz
+            << ")\n";
   ctx.out << "  %" << bytes << " = alloca i8, i64 %" << cnt << "\n";
   std::string ptr = ctx.fresh("stkp");
   ctx.out << "  %" << ptr << " = ptrtoint i8* %" << bytes << " to i64\n";
@@ -173,7 +188,10 @@ std::string emitPtrDeref(MemCodegenCtx ctx, const TypeDesc& ptr_ty, const std::s
   if (esz == 8)
     return "%" + tmp;
   std::string wide = ctx.fresh("dw");
-  ctx.out << "  %" << wide << " = zext " << lt << " %" << tmp << " to " << kI64 << "\n";
+  if (isPrimitiveDesc(elem) && isIntegerType(elem.primitive) && typeInfo(elem.primitive).is_signed)
+    ctx.out << "  %" << wide << " = sext " << lt << " %" << tmp << " to " << kI64 << "\n";
+  else
+    ctx.out << "  %" << wide << " = zext " << lt << " %" << tmp << " to " << kI64 << "\n";
   return "%" + wide;
 }
 

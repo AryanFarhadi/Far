@@ -1,0 +1,9 @@
+fun t02() -> i64 {
+  ch = Channel<i64>(4)
+  ch.send(10)
+  ch.send(20)
+  if (ch.recv() != 10) { return 1 }
+  if (ch.recv() != 20) { return 2 }
+  return 0
+}
+fun main() { print(t02()); return 0 }

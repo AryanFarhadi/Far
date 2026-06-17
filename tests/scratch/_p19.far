@@ -1,0 +1,10 @@
+fun main() -> i64 {
+  flag = 1
+  flag = 1
+  c = 0
+  while (flag) {
+    c = c + 1
+    flag = 0
+  }
+  return c
+}

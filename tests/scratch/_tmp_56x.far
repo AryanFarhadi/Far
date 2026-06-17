@@ -1,0 +1,13 @@
+import json
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun t055() -> i64 { return eq(i64(len(json.stringify_i64(42))), 2) }
+fun t056a() -> i64 { a = [1,2,3]; return len(a) }
+fun t056b() -> i64 { a = [1,2,3]; return eq(len(a), 3) }
+fun t056c() -> i64 { a = [1,2,3]; return eq(i64(len(a)), 3) }
+fun main() {
+  t055()
+  print(t056a())
+  print(t056b())
+  print(t056c())
+  return 0
+}

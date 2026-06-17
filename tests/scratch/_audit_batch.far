@@ -1,0 +1,17 @@
+# batch probe - run individual tests via main selector
+fun prec_and_or() -> i64 { print(0 && 1 | 2); print(1 | 2 && 0); return 0 }
+fun prec_shift_add() -> i64 { return 1 + 2 << 1 }
+fun prec_pow() -> i64 { return 2 ** 3 ** 2 }
+fun slice_oob() -> i64 { a=[1,2,3]; return a[0..10][0] }
+fun div_i64min() -> i64 { return (-9223372036854775808) / -1 }
+fun defer_break() -> i64 { n=0; for i in 0..<3 { defer n=n+1; if (i==1){ break } }; return n }
+fun try_rethrow() -> i64 { try { throw 1 } catch(e){ throw 2 }; return 0 }
+fun match_nan() -> i64 { x=0.0/0.0; match x { _ => return 0 } }
+fun u64_le_neg() -> i64 { x:u64=5; if (x <= -1) { return 1 }; return 0 }
+fun u64_ge_neg() -> i64 { x:u64=5; if (x >= -1) { return 0 }; return 2 }
+fun signed_gt_u64_max() -> i64 { x:u64=9223372036854775808; if (-1 > x) { return 1 }; return 0 }
+
+fun main() -> i64 {
+  # change which test runs
+  return defer_break()
+}

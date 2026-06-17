@@ -1,0 +1,7 @@
+fun main() -> i64 {
+  match 1 {
+    x => { constexpr B = x + 1 }
+    _ => { constexpr B = 9 }
+  }
+  return comptime (B)
+}

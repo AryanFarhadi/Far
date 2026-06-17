@@ -1,0 +1,1 @@
+fun main()->i64{ch=Channel<i64>(1);ch.send(1);return ch.recv()}

@@ -1,0 +1,12 @@
+fun main() -> i64 {
+  s = 0
+  try {
+    defer s = s + 1
+    switch 1 {
+      case 1: return s
+      default: return 99
+    }
+  } finally {
+    s = s + 100
+  }
+}

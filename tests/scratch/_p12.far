@@ -1,0 +1,9 @@
+fun main() -> i64 {
+  s = 0
+  switch 2 {
+    case 1: s = 1
+    case 2: s = 2
+    default: s = 3
+  }
+  return s
+}

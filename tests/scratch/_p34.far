@@ -1,0 +1,11 @@
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun main() -> i64 {
+  n = 0
+  for i in 0..<5 {
+    try {
+      if (i == 2) { break }
+      n = n + 1
+    } catch (e) { n = 99 }
+  }
+  return eq(n, 2)
+}

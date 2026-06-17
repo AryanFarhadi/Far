@@ -1,0 +1,1 @@
+fun main() { x=9223372036854775808; if (x < 0) { return 1 }; return 0 }

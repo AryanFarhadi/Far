@@ -1,0 +1,13 @@
+fun main() -> i64 {
+  s = 0
+  i = 0
+  while (i < 3) {
+    switch i {
+      case 1: break
+      default: s += 1
+    }
+  i = i + 1
+  }
+  s += 50
+  return s
+}

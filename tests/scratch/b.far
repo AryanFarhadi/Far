@@ -1,0 +1,1 @@
+fun main()->i64{try{for i in 0..<3{for j in 0..<3{if(j==1){break}};x=1}finally{y=2}return 0}

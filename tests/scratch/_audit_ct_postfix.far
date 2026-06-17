@@ -1,0 +1,2 @@
+constexpr fun ct() -> i64 { x = 0; x++; return x }
+fun main() { print(ct()); return 0 }

@@ -189,6 +189,8 @@ struct MacroInvokeExpr {
 
 struct ComptimeExpr {
   std::unique_ptr<Expr> value;
+  std::vector<std::unique_ptr<Stmt>> block;
+  bool is_block = false;
 };
 
 struct Expr {
@@ -635,6 +637,8 @@ struct Pattern {
   PatKind kind = PatKind::Wildcard;
   std::string bind_name;
   int64_t literal = 0;
+  bool literal_is_float = false;
+  double float_literal = 0.0;
   std::string type_name;
   std::string variant;
   int64_t variant_value = -1;

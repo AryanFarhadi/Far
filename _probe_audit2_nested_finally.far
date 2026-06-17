@@ -1,7 +1,0 @@
-fun test() -> i64 {
-  try {
-    try { return 1 } finally { print(9) }
-  } finally { print(8) }
-  return 0
-}
-fun main() { test(); return 0 }

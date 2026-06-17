@@ -1,0 +1,22 @@
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(id: i64, r: i64) -> i64 { if (r != 0) { print(id); return id } return 0 }
+fun t01_u64_literal_ne_signed() -> i64 {
+  x = 9223372036854775808
+  if (x == -9223372036854775808) { return 1 }
+  return 0
+}
+fun t02_u64_literal_value() -> i64 {
+  x: u64 = 9223372036854775808
+  return eq(i64(x), -9223372036854775808)
+}
+fun t03_shift_62_ok() -> i64 {
+  return eq(1 << 62, 4611686018427387904)
+}
+fun main() -> i64 {
+  r = 0
+  r = run(1, t01_u64_literal_ne_signed()); if (r != 0) { return r }
+  r = run(2, t02_u64_literal_value()); if (r != 0) { return r }
+  r = run(3, t03_shift_62_ok()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

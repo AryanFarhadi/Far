@@ -1,0 +1,8 @@
+fun main() -> i64 {
+  s = 0
+  try {
+    for i in 0..<3 { if (i == 1) { break } }
+    s = 50
+  } finally { s = s + 10 }
+  return s
+}

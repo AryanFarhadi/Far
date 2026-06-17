@@ -38,6 +38,7 @@ private:
   std::unordered_set<std::string> macro_names_;
   int parse_depth_ = 0;
   bool pending_type_closing_gt_ = false;
+  bool saw_main_ = false;
 
   void pushParseDepth(int line, int col);
   bool matchTypeClosingGt();
@@ -70,6 +71,9 @@ private:
   const Token& expect(TokenKind k);
 
   void consumeOptionalSemi();
+
+  bool isConstexprLetStart() const;
+  std::unique_ptr<Stmt> parseConstexprLet();
 
 
 
@@ -105,8 +109,8 @@ private:
 
   std::unique_ptr<Stmt> parseTryStmt();
 
-  std::unique_ptr<Expr> parseExpr();
-  std::unique_ptr<Expr> parseAssign();
+  std::unique_ptr<Expr> parseExpr(bool allow_range_continuation = false);
+  std::unique_ptr<Expr> parseAssign(bool allow_range_continuation = false);
   std::unique_ptr<Expr> parsePipeline();
   std::unique_ptr<Expr> parseNullCoalesce();
   std::unique_ptr<Expr> parseTernary();

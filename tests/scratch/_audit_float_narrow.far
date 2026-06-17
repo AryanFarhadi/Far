@@ -1,0 +1,7 @@
+fun main() {
+  x = 1.0
+  y: f64 = 1.5
+  x = y
+  print(x)
+  return 0
+}

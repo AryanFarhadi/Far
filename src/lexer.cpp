@@ -10,6 +10,31 @@
 
 namespace far {
 
+namespace {
+
+void validateUtf8Sequence(unsigned char lead, const unsigned char* cont, size_t cont_len, int line,
+                          int col, const char* where) {
+  uint32_t cp = 0;
+  if (cont_len == 1) {
+    cp = ((lead & 0x1F) << 6) | (cont[0] & 0x3F);
+    if (cp < 0x80)
+      throw FarError(std::string("overlong UTF-8 in ") + where, line, col);
+  } else if (cont_len == 2) {
+    cp = ((lead & 0x0F) << 12) | ((cont[0] & 0x3F) << 6) | (cont[1] & 0x3F);
+    if (cp < 0x800)
+      throw FarError(std::string("overlong UTF-8 in ") + where, line, col);
+  } else if (cont_len == 3) {
+    cp = ((lead & 0x07) << 18) | ((cont[0] & 0x3F) << 12) | ((cont[1] & 0x3F) << 6) |
+         (cont[2] & 0x3F);
+    if (cp < 0x10000 || cp > 0x10FFFF)
+      throw FarError(std::string("invalid UTF-8 codepoint in ") + where, line, col);
+  }
+  if (cp >= 0xD800 && cp <= 0xDFFF)
+    throw FarError(std::string("UTF-8 surrogate not allowed in ") + where, line, col);
+}
+
+}  // namespace
+
 
 
 Lexer::Lexer(std::string source) : source_(std::move(source)) {
@@ -120,6 +145,11 @@ Token Lexer::readIdent(int line, int col) {
 
       if (!ok)
         throw FarError("invalid UTF-8 in identifier", line, col);
+
+      unsigned char cont[3] = {0, 0, 0};
+      for (size_t i = 1; i < len; ++i)
+        cont[i - 1] = static_cast<unsigned char>(source_[pos_ + i]);
+      validateUtf8Sequence(ch, cont, len - 1, line, col, "identifier");
 
       for (size_t i = 0; i < len; ++i)
         advance();
@@ -268,15 +298,14 @@ Token Lexer::readInt(int line, int col) {
 
     if (std::isdigit(static_cast<unsigned char>(peek()))) {
 
-      bool seen_dot = false;
+      bool seen_dot = true;
 
       while (pos_ < source_.size()) {
 
         if (source_[pos_] == '.') {
 
           if (seen_dot)
-
-            break;
+            throw FarError("invalid float literal", line, col);
 
           seen_dot = true;
 
@@ -327,8 +356,7 @@ Token Lexer::readFloat(int line, int col) {
     if (source_[pos_] == '.') {
 
       if (seen_dot)
-
-        break;
+        throw FarError("invalid float literal", line, col);
 
       seen_dot = true;
 
@@ -370,6 +398,40 @@ char Lexer::decodeEscape(char esc, int line, int col) {
   }
 }
 
+void Lexer::appendUtf8Char(std::string& value, int line, int col) {
+  if (pos_ >= source_.size())
+    throw FarError("unexpected end of input", line, col);
+  unsigned char uch = static_cast<unsigned char>(source_[pos_]);
+  if (uch >= 0x80) {
+    if ((uch & 0xC0) == 0x80)
+      throw FarError("invalid UTF-8 in string", line, col);
+    size_t len = 1;
+    if ((uch & 0xE0) == 0xC0)
+      len = 2;
+    else if ((uch & 0xF0) == 0xE0)
+      len = 3;
+    else if ((uch & 0xF8) == 0xF0)
+      len = 4;
+    else
+      throw FarError("invalid UTF-8 in string", line, col);
+    if (pos_ + len > source_.size())
+      throw FarError("unterminated string", line, col);
+    for (size_t i = 1; i < len; ++i) {
+      unsigned char next = static_cast<unsigned char>(source_[pos_ + i]);
+      if ((next & 0xC0) != 0x80)
+        throw FarError("invalid UTF-8 in string", line, col);
+    }
+    unsigned char cont[3] = {0, 0, 0};
+    for (size_t i = 1; i < len; ++i)
+      cont[i - 1] = static_cast<unsigned char>(source_[pos_ + i]);
+    validateUtf8Sequence(uch, cont, len - 1, line, col, "string");
+    for (size_t i = 0; i < len; ++i)
+      value += advance();
+    return;
+  }
+  value += advance();
+}
+
 Token Lexer::readString(int line, int col) {
   advance(); // opening "
   std::string value;
@@ -386,7 +448,7 @@ Token Lexer::readString(int line, int col) {
       value += decodeEscape(advance(), line, col);
       continue;
     }
-    value += advance();
+    appendUtf8Char(value, line, col);
   }
   throw FarError("unterminated string", line, col);
 }
@@ -441,6 +503,8 @@ Token Lexer::readChar(int line, int col) {
     }
     if (value > 0xFFFF)
       throw FarError("character literal codepoint out of range", line, col);
+    if (value >= 0xD800 && value <= 0xDFFF)
+      throw FarError("character literal cannot be a UTF-16 surrogate", line, col);
     if (peek() != '\'')
       throw FarError("character literal must contain exactly one character", line, col);
   }
@@ -503,7 +567,7 @@ Token Lexer::readInterpString(int line, int col) {
       current += decodeEscape(advance(), line, col);
       continue;
     }
-    current += advance();
+    appendUtf8Char(current, line, col);
   }
   throw FarError("unterminated interpolated string", line, col);
 }

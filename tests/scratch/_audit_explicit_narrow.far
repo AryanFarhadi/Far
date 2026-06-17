@@ -1,0 +1,7 @@
+fun main() {
+  x: i32 = 1
+  y: i64 = 5000000000
+  x = y
+  print(x)
+  return 0
+}

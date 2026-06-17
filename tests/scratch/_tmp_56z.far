@@ -1,0 +1,2 @@
+fun t056a() -> i64 { a = [1,2,3]; return len(a) }
+fun main() { print(t056a()); return 0 }

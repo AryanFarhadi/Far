@@ -1,5 +1,0 @@
-﻿fun test_mod_runtime() -> i64 {
-  x = 0
-  return 10 % x
-}
-fun main() { print(test_mod_runtime()); return 0 }

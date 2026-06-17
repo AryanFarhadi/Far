@@ -1,0 +1,10 @@
+fun main() -> i64 {
+  s = 0
+  for i in 0..<3 {
+    match i {
+      case 1: break
+      default: s = s + 1
+    }
+  }
+  return s
+}

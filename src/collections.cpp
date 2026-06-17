@@ -180,6 +180,7 @@ void declareCollectionRuntime(std::ostringstream& out) {
   out << "declare i64 @far_tarray_len(i64)\n";
   out << "declare i64 @far_tarray_get(i64, i64)\n";
   out << "declare void @far_tarray_set(i64, i64, i64)\n";
+  out << "declare void @far_tarray_drop(i64)\n";
   out << "declare void @far_print_tarray(i64)\n";
 
   out << "declare i64 @far_list_new(i16, i64)\n";
@@ -192,6 +193,7 @@ void declareCollectionRuntime(std::ostringstream& out) {
   out << "declare i64 @far_list_slice(i64, i64, i64)\n";
   out << "declare void @far_list_insert(i64, i64, i64)\n";
   out << "declare void @far_list_remove_at(i64, i64)\n";
+  out << "declare void @far_list_drop(i64)\n";
   out << "declare void @far_print_list(i64)\n";
 
   out << "declare i64 @far_dict_new(i16, i16)\n";
@@ -202,12 +204,14 @@ void declareCollectionRuntime(std::ostringstream& out) {
   out << "declare void @far_dict_remove(i64, i64)\n";
   out << "declare i64 @far_dict_keys(i64)\n";
   out << "declare i64 @far_dict_values(i64)\n";
+  out << "declare void @far_dict_drop(i64)\n";
 
   out << "declare i64 @far_set_new(i16)\n";
   out << "declare i64 @far_set_len(i64)\n";
   out << "declare void @far_set_add(i64, i64)\n";
   out << "declare i64 @far_set_contains(i64, i64)\n";
   out << "declare void @far_set_remove(i64, i64)\n";
+  out << "declare void @far_set_drop(i64)\n";
 
   out << "declare i64 @far_queue_new(i16)\n";
   out << "declare i64 @far_queue_len(i64)\n";
@@ -227,11 +231,13 @@ void declareCollectionRuntime(std::ostringstream& out) {
   out << "declare void @far_llist_push_back(i64, i64)\n";
   out << "declare i64 @far_llist_pop_front(i64)\n";
   out << "declare i64 @far_llist_pop_back(i64)\n";
+  out << "declare void @far_llist_drop(i64)\n";
 
   out << "declare i64 @far_slice_new(i64, i64, i64, i64)\n";
   out << "declare i64 @far_range_new(i64, i64, i64)\n";
   out << "declare i64 @far_range_len(i64)\n";
   out << "declare i64 @far_range_contains(i64, i64)\n";
+  out << "declare void @far_range_drop(i64)\n";
 }
 
 }  // namespace far

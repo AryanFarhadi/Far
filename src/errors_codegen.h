@@ -20,8 +20,7 @@ std::string emitErrConstruct(ErrCodegenCtx ctx, const ErrConstructorInfo& ctor,
 std::string emitErrMethod(ErrCodegenCtx ctx, const MethodCall& call, const TypeDesc& recv_ty,
                           const std::string& recv_val);
 void emitThrow(ErrCodegenCtx ctx, int64_t type_tag, const std::string& value);
-void emitTryEnter(ErrCodegenCtx ctx, const std::string& resume_var, const std::string& resume_label,
-                  const std::string& body_label);
+void emitTryEnter(ErrCodegenCtx ctx, const std::string& body_label);
 void emitTrySuccess(ErrCodegenCtx ctx);
 std::string emitCaughtValue(ErrCodegenCtx ctx);
 std::string emitCaughtTag(ErrCodegenCtx ctx);

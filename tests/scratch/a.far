@@ -1,0 +1,1 @@
+fun main()->i64{try{for i in 10..0{if(i==5){break};s=s+1}finally{s=s+100}return s}

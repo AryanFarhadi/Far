@@ -1,0 +1,22 @@
+import compress
+import csv
+import hash
+import json
+import math
+import matrices
+import perf
+import points
+import quaternions
+import rects
+import regex
+import vectors
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(n: i64, r: i64) -> i64 { if (r != 0) { print(n); return n } return 0 }
+fun t055() -> i64 { return eq(i64(len(json.stringify_i64(42))), 2) }
+fun t056() -> i64 { a = [1,2,3]; return eq(i64(len(a)), 3) }
+fun main() {
+  r = run(55, t055()); if (r != 0) { return r }
+  r = run(56, t056()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

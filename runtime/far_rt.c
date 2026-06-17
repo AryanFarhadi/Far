@@ -168,6 +168,81 @@ int64_t far_str_equal(const char* a, const char* b) {
   return (strcmp(a, b) == 0) ? 1 : 0;
 }
 
+int64_t far_str_char_at(const char* s, int64_t index) {
+  if (!s) {
+    far_panic(0);
+    return 0;
+  }
+  int64_t len = (int64_t)strlen(s);
+  if (index < 0 || index >= len) {
+    far_panic(0);
+    return 0;
+  }
+  return (unsigned char)s[index];
+}
+
+#define FAR_TAG_STRING 16
+#define FAR_EX_TAG_UNWRAP_NONE ((int64_t)0x7FFFFFF0)
+#define FAR_EX_TAG_UNWRAP_ERR ((int64_t)0x7FFFFFF1)
+
+static int is_string_tag(uint16_t tag) { return tag == FAR_TAG_STRING; }
+
+static char* str_dup_n(const char* s, size_t n) {
+  char* out = (char*)malloc(n + 1);
+  if (!out)
+    return NULL;
+  memcpy(out, s, n);
+  out[n] = '\0';
+  return out;
+}
+
+static char* str_dup(const char* s) {
+  if (!s)
+    s = "";
+  return str_dup_n(s, strlen(s));
+}
+
+static int64_t coll_store_owned(uint16_t tag, int64_t value) {
+  if (!is_string_tag(tag))
+    return value;
+  const char* s = (const char*)(intptr_t)value;
+  char* dup = str_dup(s ? s : "");
+  if (!dup) {
+    far_panic(0);
+    return 0;
+  }
+  return (int64_t)(intptr_t)dup;
+}
+
+static void coll_release_owned(uint16_t tag, int64_t value) {
+  if (is_string_tag(tag) && value)
+    free((void*)(intptr_t)value);
+}
+
+char* far_str_slice(const char* s, int64_t start, int64_t end) {
+  if (!s) {
+    far_panic(0);
+    return NULL;
+  }
+  int64_t len = (int64_t)strlen(s);
+  if (start < 0)
+    start = 0;
+  if (end > len)
+    end = len;
+  if (start > end)
+    start = end;
+  int64_t n = end - start;
+  char* out = (char*)malloc((size_t)n + 1);
+  if (!out) {
+    far_panic(0);
+    return NULL;
+  }
+  if (n > 0)
+    memcpy(out, s + (size_t)start, (size_t)n);
+  out[n] = '\0';
+  return out;
+}
+
 
 
 char* far_i64_to_str(int64_t value) {
@@ -404,7 +479,17 @@ void far_tarray_set(int64_t handle, int64_t index, int64_t value) {
     far_panic(0);
     return;
   }
-  arr->data[index] = value;
+  coll_release_owned(arr->type_tag, arr->data[index]);
+  arr->data[index] = coll_store_owned(arr->type_tag, value);
+}
+
+void far_tarray_drop(int64_t handle) {
+  FarTypedArray* arr = tarray_from_handle(handle);
+  if (!arr) return;
+  for (int64_t i = 0; i < arr->len; ++i)
+    coll_release_owned(arr->type_tag, arr->data[i]);
+  free(arr->data);
+  free(arr);
 }
 
 int64_t far_tarray_contains(int64_t handle, int64_t value) {
@@ -472,13 +557,15 @@ void far_list_push(int64_t handle, int64_t value) {
     far_panic(0);
     return;
   }
-  list->data[list->len++] = value;
+  list->data[list->len++] = coll_store_owned(list->type_tag, value);
 }
 
 int64_t far_list_pop(int64_t handle) {
   FarList* list = list_from_handle(handle);
   if (!list || list->len <= 0) return 0;
-  return list->data[--list->len];
+  int64_t v = list->data[--list->len];
+  list->data[list->len] = 0;
+  return v;
 }
 
 int64_t far_list_get(int64_t handle, int64_t index) {
@@ -496,12 +583,15 @@ void far_list_set(int64_t handle, int64_t index, int64_t value) {
     far_panic(0);
     return;
   }
-  list->data[index] = value;
+  coll_release_owned(list->type_tag, list->data[index]);
+  list->data[index] = coll_store_owned(list->type_tag, value);
 }
 
 void far_list_clear(int64_t handle) {
   FarList* list = list_from_handle(handle);
   if (!list) return;
+  for (int64_t i = 0; i < list->len; ++i)
+    coll_release_owned(list->type_tag, list->data[i]);
   list->len = 0;
 }
 
@@ -514,7 +604,7 @@ int64_t far_list_slice(int64_t handle, int64_t start, int64_t end) {
   int64_t nlen = end - start;
   int64_t nh = far_tarray_new(nlen, (int16_t)list->type_tag, 8);
   for (int64_t i = 0; i < nlen; ++i)
-    far_tarray_set(nh, i, list->data[start + i]);
+    far_tarray_set(nh, i, coll_store_owned(list->type_tag, list->data[start + i]));
   return nh;
 }
 
@@ -528,15 +618,26 @@ void far_list_insert(int64_t handle, int64_t index, int64_t value) {
     return;
   }
   memmove(list->data + index + 1, list->data + index, (size_t)(list->len - index) * sizeof(int64_t));
-  list->data[index] = value;
+  list->data[index] = coll_store_owned(list->type_tag, value);
   list->len++;
 }
 
 void far_list_remove_at(int64_t handle, int64_t index) {
   FarList* list = list_from_handle(handle);
   if (!list || index < 0 || index >= list->len) return;
-  memmove(list->data + index, list->data + index + 1, (size_t)(list->len - index - 1) * sizeof(int64_t));
+  coll_release_owned(list->type_tag, list->data[index]);
+  if (index + 1 < list->len)
+    memmove(list->data + index, list->data + index + 1, (size_t)(list->len - index - 1) * sizeof(int64_t));
   list->len--;
+  list->data[list->len] = 0;
+}
+
+void far_list_drop(int64_t handle) {
+  FarList* list = list_from_handle(handle);
+  if (!list) return;
+  far_list_clear(handle);
+  free(list->data);
+  free(list);
 }
 
 static int64_t hash_key(int64_t k) {
@@ -547,30 +648,11 @@ static int64_t hash_key(int64_t k) {
   return (int64_t)x;
 }
 
-#define FAR_TAG_STRING 16
-
-static int is_string_tag(uint16_t tag) { return tag == FAR_TAG_STRING; }
-
 static int coll_keys_equal(uint16_t tag, int64_t a, int64_t b) {
   if (a == b) return 1;
   if (is_string_tag(tag))
     return (int)far_str_equal((const char*)(intptr_t)a, (const char*)(intptr_t)b);
   return 0;
-}
-
-static char* str_dup_n(const char* s, size_t n) {
-  char* out = (char*)malloc(n + 1);
-  if (!out)
-    return NULL;
-  memcpy(out, s, n);
-  out[n] = '\0';
-  return out;
-}
-
-static char* str_dup(const char* s) {
-  if (!s)
-    s = "";
-  return str_dup_n(s, strlen(s));
 }
 
 static const char* str_skip_ws(const char* s) {
@@ -795,8 +877,8 @@ void far_dict_set(int64_t handle, int64_t key, int64_t value) {
     int64_t slot = (h + i) & (d->cap - 1);
     if (d->used[slot] == 0) {
       int64_t ins = first_tomb >= 0 ? first_tomb : slot;
-      d->keys[ins] = key;
-      d->vals[ins] = value;
+      d->keys[ins] = coll_store_owned(d->key_tag, key);
+      d->vals[ins] = coll_store_owned(d->val_tag, value);
       d->used[ins] = 1;
       d->len++;
       return;
@@ -807,7 +889,8 @@ void far_dict_set(int64_t handle, int64_t key, int64_t value) {
       continue;
     }
     if (coll_keys_equal(d->key_tag, d->keys[slot], key)) {
-      d->vals[slot] = value;
+      coll_release_owned(d->val_tag, d->vals[slot]);
+      d->vals[slot] = coll_store_owned(d->val_tag, value);
       return;
     }
   }
@@ -834,6 +917,10 @@ void far_dict_remove(int64_t handle, int64_t key) {
     int64_t slot = (h + i) & (d->cap - 1);
     if (d->used[slot] == 0) return;
     if (d->used[slot] == 1 && coll_keys_equal(d->key_tag, d->keys[slot], key)) {
+      coll_release_owned(d->val_tag, d->vals[slot]);
+      coll_release_owned(d->key_tag, d->keys[slot]);
+      d->keys[slot] = 0;
+      d->vals[slot] = 0;
       d->used[slot] = 2;
       d->len--;
       return;
@@ -846,7 +933,7 @@ int64_t far_dict_keys(int64_t handle) {
   if (!d) return 0;
   int64_t nh = far_list_new((int16_t)d->key_tag, d->len > 0 ? d->len : 4);
   for (int64_t i = 0; i < d->cap; ++i)
-    if (d->used[i] == 1) far_list_push(nh, d->keys[i]);
+    if (d->used[i] == 1) far_list_push(nh, coll_store_owned(d->key_tag, d->keys[i]));
   return nh;
 }
 
@@ -855,8 +942,23 @@ int64_t far_dict_values(int64_t handle) {
   if (!d) return 0;
   int64_t nh = far_list_new((int16_t)d->val_tag, d->len > 0 ? d->len : 4);
   for (int64_t i = 0; i < d->cap; ++i)
-    if (d->used[i] == 1) far_list_push(nh, d->vals[i]);
+    if (d->used[i] == 1) far_list_push(nh, coll_store_owned(d->val_tag, d->vals[i]));
   return nh;
+}
+
+void far_dict_drop(int64_t handle) {
+  FarDict* d = dict_from_handle(handle);
+  if (!d) return;
+  for (int64_t i = 0; i < d->cap; ++i) {
+    if (d->used[i] == 1) {
+      coll_release_owned(d->key_tag, d->keys[i]);
+      coll_release_owned(d->val_tag, d->vals[i]);
+    }
+  }
+  free(d->keys);
+  free(d->vals);
+  free(d->used);
+  free(d);
 }
 
 int64_t far_set_new(int16_t key_tag) {
@@ -924,7 +1026,7 @@ void far_set_add(int64_t handle, int64_t key) {
     int64_t slot = (h + i) & (s->cap - 1);
     if (s->used[slot] == 0) {
       int64_t ins = first_tomb >= 0 ? first_tomb : slot;
-      s->keys[ins] = key;
+      s->keys[ins] = coll_store_owned(s->key_tag, key);
       s->used[ins] = 1;
       s->len++;
       return;
@@ -960,11 +1062,25 @@ void far_set_remove(int64_t handle, int64_t key) {
     int64_t slot = (h + i) & (s->cap - 1);
     if (s->used[slot] == 0) return;
     if (s->used[slot] == 1 && coll_keys_equal(s->key_tag, s->keys[slot], key)) {
+      coll_release_owned(s->key_tag, s->keys[slot]);
+      s->keys[slot] = 0;
       s->used[slot] = 2;
       s->len--;
       return;
     }
   }
+}
+
+void far_set_drop(int64_t handle) {
+  FarSet* s = set_from_handle(handle);
+  if (!s) return;
+  for (int64_t i = 0; i < s->cap; ++i) {
+    if (s->used[i] == 1)
+      coll_release_owned(s->key_tag, s->keys[i]);
+  }
+  free(s->keys);
+  free(s->used);
+  free(s);
 }
 
 int64_t far_queue_new(int16_t tag) { return far_list_new(tag, 4); }
@@ -980,8 +1096,10 @@ int64_t far_queue_dequeue(int64_t handle) {
   FarList* list = list_from_handle(handle);
   if (!list || list->len <= 0) return 0;
   int64_t v = list->data[0];
-  memmove(list->data, list->data + 1, (size_t)(list->len - 1) * sizeof(int64_t));
+  if (list->len > 1)
+    memmove(list->data, list->data + 1, (size_t)(list->len - 1) * sizeof(int64_t));
   list->len--;
+  list->data[list->len] = 0;
   return v;
 }
 
@@ -1022,7 +1140,7 @@ void far_llist_push_front(int64_t handle, int64_t value) {
   if (!ll) return;
   FarLLNode* n = (FarLLNode*)malloc(sizeof(FarLLNode));
   if (!n) return;
-  n->value = value;
+  n->value = coll_store_owned(ll->type_tag, value);
   n->prev = NULL;
   n->next = ll->head;
   if (ll->head) ll->head->prev = n;
@@ -1036,7 +1154,7 @@ void far_llist_push_back(int64_t handle, int64_t value) {
   if (!ll) return;
   FarLLNode* n = (FarLLNode*)malloc(sizeof(FarLLNode));
   if (!n) return;
-  n->value = value;
+  n->value = coll_store_owned(ll->type_tag, value);
   n->next = NULL;
   n->prev = ll->tail;
   if (ll->tail) ll->tail->next = n;
@@ -1071,6 +1189,20 @@ int64_t far_llist_pop_back(int64_t handle) {
   return v;
 }
 
+void far_llist_drop(int64_t handle) {
+  FarLinkedList* ll = llist_from_handle(handle);
+  if (!ll) return;
+  while (ll->head) {
+    FarLLNode* n = ll->head;
+    coll_release_owned(ll->type_tag, n->value);
+    ll->head = n->next;
+    free(n);
+  }
+  ll->tail = NULL;
+  ll->len = 0;
+  free(ll);
+}
+
 int64_t far_slice_new(int64_t src, int64_t start, int64_t end, int16_t tag) {
   FarTypedArray* arr = tarray_from_handle(src);
   if (!arr) return 0;
@@ -1080,8 +1212,13 @@ int64_t far_slice_new(int64_t src, int64_t start, int64_t end, int16_t tag) {
   int64_t nlen = end - start;
   int64_t nh = far_tarray_new(nlen, tag, 8);
   for (int64_t i = 0; i < nlen; ++i)
-    far_tarray_set(nh, i, arr->data[start + i]);
+    far_tarray_set(nh, i, coll_store_owned((uint16_t)tag, arr->data[start + i]));
   return nh;
+}
+
+void far_range_drop(int64_t handle) {
+  if (handle)
+    free((void*)(intptr_t)handle);
 }
 
 int64_t far_range_new(int64_t start, int64_t end, int64_t step) {
@@ -1382,9 +1519,123 @@ int64_t far_gen_next(int64_t gen_ptr) {
   return 0;
 }
 
+#define FAR_CAP_FORM_STRING 1000
+
+static int64_t far_dict_dup(int64_t handle) {
+  FarDict* d = dict_from_handle(handle);
+  if (!d) return 0;
+  int64_t nh = far_dict_new(d->key_tag, d->val_tag);
+  for (int64_t i = 0; i < d->cap; ++i) {
+    if (d->used[i] == 1)
+      far_dict_set(nh, d->keys[i], d->vals[i]);
+  }
+  return nh;
+}
+
+static int64_t far_set_dup(int64_t handle) {
+  FarSet* s = set_from_handle(handle);
+  if (!s) return 0;
+  int64_t nh = far_set_new(s->key_tag);
+  for (int64_t i = 0; i < s->cap; ++i) {
+    if (s->used[i] == 1)
+      far_set_add(nh, s->keys[i]);
+  }
+  return nh;
+}
+
+static int64_t far_llist_dup(int64_t handle) {
+  FarLinkedList* ll = llist_from_handle(handle);
+  if (!ll) return 0;
+  int64_t nh = far_llist_new((int16_t)ll->type_tag);
+  for (FarLLNode* n = ll->head; n; n = n->next)
+    far_llist_push_back(nh, n->value);
+  return nh;
+}
+
+static int64_t far_range_dup(int64_t handle) {
+  FarRange* r = range_from_handle(handle);
+  if (!r) return 0;
+  return far_range_new(r->start, r->end, r->step);
+}
+
+int64_t far_owned_dup(int64_t form, int64_t value) {
+  if (!value) return 0;
+  switch ((int)form) {
+    case FAR_CAP_FORM_STRING: {
+      const char* s = (const char*)(intptr_t)value;
+      return (int64_t)(intptr_t)str_dup(s ? s : "");
+    }
+    case 1: { /* Array */
+      FarTypedArray* arr = tarray_from_handle(value);
+      if (!arr) return 0;
+      int64_t nh = far_tarray_new(arr->len, (int16_t)arr->type_tag, 8);
+      for (int64_t i = 0; i < arr->len; ++i)
+        far_tarray_set(nh, i, coll_store_owned(arr->type_tag, arr->data[i]));
+      return nh;
+    }
+    case 2:  /* List */
+    case 6:  /* Queue */
+    case 7: { /* Stack */
+      FarList* list = list_from_handle(value);
+      if (!list) return 0;
+      return far_list_slice(value, 0, list->len);
+    }
+    case 4: return far_dict_dup(value);
+    case 5: return far_set_dup(value);
+    case 8: return far_llist_dup(value);
+    case 10: /* Slice */
+    case 11: { /* Tuple */
+      FarTypedArray* arr = tarray_from_handle(value);
+      if (!arr) return 0;
+      int64_t nh = far_tarray_new(arr->len, (int16_t)arr->type_tag, 8);
+      for (int64_t i = 0; i < arr->len; ++i)
+        far_tarray_set(nh, i, coll_store_owned(arr->type_tag, arr->data[i]));
+      return nh;
+    }
+    case 12: return far_range_dup(value);
+    default: return value;
+  }
+}
+
+void far_owned_drop(int64_t form, int64_t value) {
+  if (!value) return;
+  switch ((int)form) {
+    case FAR_CAP_FORM_STRING:
+      free((void*)(intptr_t)value);
+      break;
+    case 1:
+    case 10:
+    case 11:
+      far_tarray_drop(value);
+      break;
+    case 2:
+    case 6:
+    case 7:
+      far_list_drop(value);
+      break;
+    case 4:
+      far_dict_drop(value);
+      break;
+    case 5:
+      far_set_drop(value);
+      break;
+    case 8:
+      far_llist_drop(value);
+      break;
+    case 12:
+      far_range_drop(value);
+      break;
+    default:
+      break;
+  }
+}
+
+char* far_str_copy(const char* s) { return str_dup(s ? s : ""); }
+
 typedef struct FarClosure {
   void* fn;
   int ncaps;
+  int64_t cap_forms[4];
   int64_t caps[4];
 } FarClosure;
 
@@ -1394,16 +1645,29 @@ typedef int64_t (*FarFn3)(int64_t, int64_t, int64_t);
 typedef int64_t (*FarFn4)(int64_t, int64_t, int64_t, int64_t);
 typedef int64_t (*FarFn5)(int64_t, int64_t, int64_t, int64_t, int64_t);
 
-int64_t far_closure_new(void* fn, int64_t ncaps, int64_t c0, int64_t c1, int64_t c2, int64_t c3) {
+int64_t far_closure_new(void* fn, int64_t ncaps, int64_t f0, int64_t c0, int64_t f1, int64_t c1,
+                        int64_t f2, int64_t c2, int64_t f3, int64_t c3) {
   FarClosure* c = (FarClosure*)malloc(sizeof(FarClosure));
   if (!c) return 0;
   c->fn = fn;
   c->ncaps = (int)ncaps;
+  c->cap_forms[0] = f0;
   c->caps[0] = c0;
+  c->cap_forms[1] = f1;
   c->caps[1] = c1;
+  c->cap_forms[2] = f2;
   c->caps[2] = c2;
+  c->cap_forms[3] = f3;
   c->caps[3] = c3;
   return (int64_t)(intptr_t)c;
+}
+
+void far_closure_drop(int64_t handle) {
+  FarClosure* c = (FarClosure*)(intptr_t)handle;
+  if (!c) return;
+  for (int i = 0; i < c->ncaps; ++i)
+    far_owned_drop(c->cap_forms[i], c->caps[i]);
+  free(c);
 }
 
 int64_t far_closure_call(int64_t handle, int64_t arg) {
@@ -3151,8 +3415,6 @@ void far_actor_stop(int64_t handle) {
   pthread_mutex_unlock(&g_spawn_mu);
 }
 
-#include <setjmp.h>
-
 void far_stack_trace(void) {
   fprintf(stderr, "stack trace:\n");
 #ifdef _WIN32
@@ -3300,12 +3562,12 @@ void far_assert(int64_t cond, int64_t msg) {
 #endif
 
 FAR_TLS static struct {
-  jmp_buf buf;
   int64_t tag;
   int64_t value;
 } g_try_stack[FAR_TRY_MAX];
 
 FAR_TLS static int g_try_depth = 0;
+FAR_TLS static int g_far_pending_throw = 0;
 
 extern void far_store_caught(int64_t tag, int64_t value);
 
@@ -3317,16 +3579,12 @@ extern void far_store_caught(int64_t tag, int64_t value);
 #define FAR_NOINLINE
 #endif
 
-FAR_NOINLINE int32_t far_try_enter(void) {
+FAR_NOINLINE void far_try_push(void) {
   if (g_try_depth >= FAR_TRY_MAX) {
     far_panic(0);
-    return 1;
+    return;
   }
-  if (setjmp(g_try_stack[g_try_depth].buf) == 0) {
-    g_try_depth++;
-    return 0;
-  }
-  return 1;
+  g_try_depth++;
 }
 
 FAR_NOINLINE void far_try_success(void) {
@@ -3344,7 +3602,19 @@ FAR_NOINLINE void far_throw(int64_t tag, int64_t value) {
   g_try_stack[idx].tag = tag;
   g_try_stack[idx].value = value;
   far_store_caught(tag, value);
-  longjmp(g_try_stack[idx].buf, 1);
+  g_far_pending_throw = 1;
+}
+
+FAR_NOINLINE int32_t far_pending_throw_active(void) {
+  return g_far_pending_throw ? 1 : 0;
+}
+
+FAR_NOINLINE void far_clear_pending_throw(void) {
+  g_far_pending_throw = 0;
+}
+
+FAR_NOINLINE void far_mark_pending_throw(void) {
+  g_far_pending_throw = 1;
 }
 
 FAR_TLS static volatile int64_t g_far_caught_tag = 0;
@@ -3377,6 +3647,10 @@ int64_t far_option_is_some(int64_t opt) { return opt & 1; }
 
 int64_t far_option_unwrap(int64_t opt) {
   if (!(opt & 1)) {
+    if (g_try_depth > 0) {
+      far_throw(FAR_EX_TAG_UNWRAP_NONE, 0);
+      return 0;
+    }
     fprintf(stderr, "unwrap on None\n");
     far_stack_trace();
     exit(1);
@@ -3402,6 +3676,10 @@ int64_t far_result_is_err(int64_t res) { return (res & 1) ? 0 : 1; }
 
 int64_t far_result_unwrap(int64_t res) {
   if (!(res & 1)) {
+    if (g_try_depth > 0) {
+      far_throw(FAR_EX_TAG_UNWRAP_ERR, (res >> 1));
+      return 0;
+    }
     fprintf(stderr, "unwrap on Err\n");
     far_stack_trace();
     exit(1);
