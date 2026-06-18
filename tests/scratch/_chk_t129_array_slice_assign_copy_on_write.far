@@ -1,0 +1,12 @@
+fun t129_array_slice_assign_copy_on_write() -> i64 {
+  a = [1, 2, 3]
+  sl = a.slice(0, 2)
+  sl2 = sl
+  sl[0] = 99
+  if (a[0] != 1) { return 1 }
+  if (sl[0] != 99) { return 2 }
+  return eq(sl2[0], 1)
+}
+
+
+fun main() -> i64 { return t129_array_slice_assign_copy_on_write() }

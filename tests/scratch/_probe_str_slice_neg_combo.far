@@ -1,0 +1,7 @@
+fun main() -> i64 {
+  s = "abcdef"
+  sl = s[-4:-1]
+  if (len(sl) != 3) { return 1 }
+  if (sl != "cde") { return 2 }
+  return 0
+}

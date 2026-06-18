@@ -1,0 +1,15 @@
+fun t117_box_assign_move_invalidates_source() -> i64 {
+  b = Box<i64>(1)
+  unsafe { *b.get() = 42 }
+  b2 = b
+  if (b.get() != 0) { return 1 }
+  p = b2.get()
+  if (p == 0) { return 2 }
+  v = 0
+  unsafe { v = *p }
+  drop(b)
+  return eq(v, 42)
+}
+
+
+fun main() -> i64 { return t117_box_assign_move_invalidates_source() }

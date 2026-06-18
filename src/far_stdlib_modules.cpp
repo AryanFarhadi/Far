@@ -882,7 +882,7 @@ public class threads {
   public static fun current_id() -> i64 { return current_thread() }
 
   public static fun join(handle: i64) -> i64 { return join(handle) }
-  public static fun cores() -> i64 { return cores() }
+  public static fun cores() -> i64 { return thread_count() }
 }
 
 public class vectorize {

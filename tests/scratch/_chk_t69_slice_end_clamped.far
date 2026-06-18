@@ -1,0 +1,8 @@
+fun t69_slice_end_clamped() -> i64 {
+  a = [1, 2, 3]
+  sl = a.slice(1, 999)
+  return eq(len(sl), 2)
+}
+
+
+fun main() -> i64 { return t69_slice_end_clamped() }

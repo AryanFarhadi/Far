@@ -1,0 +1,7 @@
+import fs
+
+fun main() -> i64 {
+  r = fs.write_text("CON", "x")
+  if (r == 0) { return 1 }
+  return 0
+}

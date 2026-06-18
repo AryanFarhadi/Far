@@ -1,0 +1,13 @@
+fun t123_spawn_join_burst() -> i64 {
+  i = 0
+  while (i < 24) {
+    h = spawn noop_spawn()
+    if (h < 0) { return 1 }
+    if (threads.join(h) != 0) { return 2 }
+    i = i + 1
+  }
+  return 0
+}
+
+
+fun main() -> i64 { return t123_spawn_join_burst() }

@@ -1,0 +1,6 @@
+fun zero_call() -> i64 { return 0 }
+
+fun main() -> i64 {
+  x = (1 && zero_call()) ? 10 : 99
+  return x
+}

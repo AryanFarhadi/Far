@@ -232,6 +232,32 @@ static void validateStdlibImport(const Program& from, const ImportDecl& imp, con
   }
 }
 
+static bool moduleExportsSymbol(const Program& from, const std::string& symbol, ImportKind kind) {
+  for (const auto& fn : from.functions) {
+    if (fn.name != symbol || fn.name == "main")
+      continue;
+    if (isExported(from, fn.name, fn.visibility, kind))
+      return true;
+  }
+  for (const auto& td : from.user_types) {
+    if (td.name == symbol && isExported(from, td.name, td.visibility, kind))
+      return true;
+  }
+  return false;
+}
+
+static void validateSelectiveImportSymbols(const Program& from, const ImportDecl& imp,
+                                           const std::string& mod_name) {
+  if (imp.symbols.empty() || imp.from_import || isStdlibModuleName(mod_name))
+    return;
+  for (const auto& sym : imp.symbols) {
+    if (!moduleExportsSymbol(from, sym.name, imp.kind)) {
+      const std::string& label = mod_name.empty() ? imp.path : mod_name;
+      throw FarError("cannot import '" + sym.name + "' from module '" + label + "'");
+    }
+  }
+}
+
 static void bindFlatStdlibMethods(ModuleAlias& bind, const Program& into, const std::string& module_name,
                                   const std::string& flat_key) {
   const bool fn_mod = isStdlibFunctionModule(flat_key);
@@ -254,6 +280,14 @@ static void bindFlatStdlibMethods(ModuleAlias& bind, const Program& into, const 
 static bool hasMatchingOverload(const Program& program, const Function& fn) {
   for (const auto& existing : program.functions) {
     if (functionSignaturesEqual(existing, fn))
+      return true;
+  }
+  return false;
+}
+
+static bool programHasFunctionNamed(const Program& program, const std::string& name) {
+  for (const auto& existing : program.functions) {
+    if (existing.name == name)
       return true;
   }
   return false;
@@ -289,6 +323,8 @@ static void mergeFunction(Program& into, Function fn, const ImportDecl& imp, con
   if (hasMatchingOverload(into, fn))
     return;
   fn.name = importLocalName(imp, fn.name);
+  if (programHasFunctionNamed(into, fn.name))
+    throw FarError("duplicate import symbol '" + fn.name + "'");
   fn.link_public = imp.alias.empty();
   if (!imp.alias.empty()) {
     ensureImportAlias(into, imp, module_name);
@@ -356,9 +392,12 @@ static void bindModuleAlias(Program& into, const ImportDecl& imp, const std::str
 static void mergeExports(Program& into, Program& from, const ImportDecl& imp) {
   const std::string target_pkg = from.package_name;
   const std::string importer_pkg = into.package_name;
-  const std::string mod_name = moduleFullName(from);
+  std::string mod_name = moduleFullName(from);
+  if (mod_name.empty())
+    mod_name = imp.path;
 
   validateStdlibImport(from, imp, mod_name);
+  validateSelectiveImportSymbols(from, imp, mod_name);
 
   for (auto& fn : from.functions) {
     if (fn.name == "main")
@@ -366,6 +405,10 @@ static void mergeExports(Program& into, Program& from, const ImportDecl& imp) {
     if (!isExported(from, fn.name, fn.visibility, imp.kind))
       continue;
     if (!canImportVisibility(fn.visibility, imp.kind, importer_pkg, target_pkg))
+      continue;
+    // Skip before move — mergeFunction discards unwanted symbols; leaving moved-from
+    // entries in from.functions breaks the private-helper merge loop below.
+    if (!importWantsSymbol(imp, fn.name))
       continue;
     fn.module_name = mod_name;
     mergeFunction(into, std::move(fn), imp, mod_name);
@@ -376,6 +419,8 @@ static void mergeExports(Program& into, Program& from, const ImportDecl& imp) {
       continue;
     if (!canImportVisibility(td.visibility, imp.kind, importer_pkg, target_pkg))
       continue;
+    if (!importWantsSymbol(imp, td.name))
+      continue;
     td.module_name = mod_name;
     mergeType(into, std::move(td), imp, mod_name);
   }
@@ -385,12 +430,21 @@ static void mergeExports(Program& into, Program& from, const ImportDecl& imp) {
     return;
 
   for (auto& fn : from.functions) {
-    if (fn.name.empty() || fn.name == "main" || fn.visibility == Visibility::Private)
+    if (fn.name.empty() || fn.name == "main")
       continue;
+    if (fn.visibility == Visibility::Private) {
+      if (hasMatchingOverload(into, fn))
+        continue;
+      fn.module_name = mod_name;
+      fn.link_public = false;
+      into.functions.push_back(std::move(fn));
+      continue;
+    }
     if (isExported(from, fn.name, fn.visibility, imp.kind))
       continue;
     if (hasMatchingOverload(into, fn))
       continue;
+    fn.module_name = mod_name;
     fn.link_public = false;
     into.functions.push_back(std::move(fn));
   }
@@ -425,7 +479,6 @@ static void resolveImportsInto(Program& program, const std::string& base_dir,
       virt_path += ".far";
       DiagnosticScope diag(std::move(virt_path), mod->text);
       Program imported = parseProgram(mod->text, false);
-      resolveImportsInto(imported, mod->resolve_base, seen_files, loaded_modules);
       mergeExports(program, imported, job.decl);
       continue;
     }

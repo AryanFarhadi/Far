@@ -1,0 +1,7 @@
+fun zero_call() -> i64 { return 0 }
+
+fun main() -> i64 {
+  n = 0
+  if (!zero_call()) { n = 1 }
+  return n
+}

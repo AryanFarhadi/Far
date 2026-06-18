@@ -1,0 +1,8 @@
+fun main() -> i64 {
+  n = 0
+  f = |x| n + 1
+  print(f(0))
+  n = 10
+  print(f(0))
+  return 0
+}

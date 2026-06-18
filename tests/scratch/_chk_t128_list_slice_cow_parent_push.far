@@ -1,0 +1,12 @@
+fun t128_list_slice_cow_parent_push() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  sl = lst.slice(0, 1)
+  lst.push(99)
+  if (len(lst) != 2) { return 1 }
+  if (len(sl) != 1) { return 2 }
+  return eq(sl[0], 1)
+}
+
+
+fun main() -> i64 { return t128_list_slice_cow_parent_push() }

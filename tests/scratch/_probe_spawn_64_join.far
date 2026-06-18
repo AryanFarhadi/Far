@@ -1,0 +1,16 @@
+﻿import perf
+fun noop() -> i64 { return 0 }
+fun main() -> i64 {
+  hs: List<i64> = List<i64>()
+  i = 0
+  while (i < 64) {
+    h = spawn noop()
+    if (h < 0) { return 1 }
+    hs.push(h)
+    i = i + 1
+  }
+  for h in hs {
+    if (threads.join(h) != 0) { return 2 }
+  }
+  return 0
+}

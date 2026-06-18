@@ -14,6 +14,7 @@ enum class CollMethodId {
   Pop,
   Insert,
   Remove,
+  RemoveValue,
   Clear,
   Get,
   Set,

@@ -1,0 +1,10 @@
+fun t21_closure_capture_snapshot() -> i64 {
+  n = 0
+  f = |x| n + 1
+  if (f(0) != 1) { return 1 }
+  n = 10
+  return eq(f(0), 1)
+}
+
+
+fun main() -> i64 { return t21_closure_capture_snapshot() }

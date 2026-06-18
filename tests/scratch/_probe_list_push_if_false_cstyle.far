@@ -1,0 +1,10 @@
+fun main() -> i64 {
+  lst: List<i64> = List<i64>()
+  if (0) {
+    for (i = 0; i < 2; i = i + 1) {
+      lst.push(i)
+    }
+  }
+  lst[0] = 5
+  return 0
+}

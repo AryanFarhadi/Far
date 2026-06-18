@@ -1,0 +1,7 @@
+import fs
+
+fun main() -> i64 {
+  data = fs.read_text("far_fs_max_read_test.bin")
+  big = data + "x"
+  return len(big)
+}

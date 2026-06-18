@@ -1,0 +1,13 @@
+fun main() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  lst.push(2)
+  s = 0
+  for x in lst {
+    if (x == 1) { continue }
+    s = s + x
+  }
+  return eq(s, 2)
+}
+
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }

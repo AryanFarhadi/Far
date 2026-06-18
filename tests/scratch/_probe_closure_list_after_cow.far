@@ -1,0 +1,10 @@
+fun main() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  bump = fn() { lst.push(99); return len(lst) }
+  lst2 = lst
+  if (bump() != 3) { return 1 }
+  if (len(lst) != 2) { return 2 }
+  if (len(lst2) != 3) { return 3 }
+  return 0
+}

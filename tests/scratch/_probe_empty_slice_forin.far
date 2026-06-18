@@ -1,0 +1,10 @@
+fun main() -> i64 {
+  a: i64[] = []
+  sl = a.slice(0, 0)
+  if (len(sl) != 0) { return 1 }
+  n = 0
+  for x in sl {
+    n = n + 1
+  }
+  return n
+}

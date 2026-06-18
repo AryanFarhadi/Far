@@ -1,0 +1,7 @@
+fun main() -> i64 {
+  a = Arena(64)
+  p1 = a.alloc(8)
+  unsafe { *p1 = i8(11) }
+  a.reset()
+  unsafe { return *p1 }
+}

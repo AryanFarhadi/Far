@@ -1,0 +1,11 @@
+import fs
+fun main() {
+  path = "far_stdlib_test_tmp.txt"
+  fs.write_text(path, "x")
+  bad = fs.read_text("../far_stdlib_test_tmp.txt")
+  print(len(bad))
+  good = fs.read_text(path)
+  print(len(good))
+  fs.remove(path)
+  return 0
+}

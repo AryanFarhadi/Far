@@ -1,0 +1,13 @@
+fun t09_sandbox_fs_allow_deny() -> i64 {
+  sandbox.open_sandbox(2)
+  sandbox.allow_path("far_harden_sandbox.txt")
+  if (fs.write_text("far_harden_sandbox.txt", "ok") != 0) { return 1 }
+  if (len(fs.read_text("far_harden_sandbox.txt")) != 2) { return 2 }
+  if (fs.write_text("far_harden_denied.txt", "x") != -1) { return 3 }
+  sandbox.close_sandbox()
+  fs.remove("far_harden_sandbox.txt")
+  return 0
+}
+
+
+fun main() -> i64 { return t09_sandbox_fs_allow_deny() }

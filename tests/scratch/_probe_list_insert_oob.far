@@ -1,0 +1,16 @@
+fun main() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  lst.push(3)
+  lst.insert(1, 2)
+  if (len(lst) != 3) { return 1 }
+  if (lst.get(0) != 1) { return 2 }
+  if (lst.get(1) != 2) { return 3 }
+  if (lst.get(2) != 3) { return 4 }
+  lst.insert(99, 9)
+  if (len(lst) != 4) { return 5 }
+  if (lst.get(3) != 9) { return 6 }
+  lst.insert(-1, 0)
+  if (len(lst) != 4) { return 7 }
+  return 0
+}

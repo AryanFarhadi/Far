@@ -1,0 +1,9 @@
+fun t167_nested_arr_grow_reassign_valid() -> i64 {
+  a = [[1, 2]]
+  a = [[1, 2, 3]]
+  a[0][2] = 88
+  return eq(a[0][2], 88)
+}
+
+
+fun main() -> i64 { return t167_nested_arr_grow_reassign_valid() }

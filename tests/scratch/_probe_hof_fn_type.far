@@ -1,0 +1,5 @@
+fun twice(x: i64) -> i64 { return x * 2 }
+fun apply(f: fun(i64) -> i64, x: i64) -> i64 { return f(x) }
+fun main() -> i64 {
+  return apply(twice, 21)
+}

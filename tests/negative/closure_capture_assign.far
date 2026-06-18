@@ -1,0 +1,5 @@
+fun main() -> i64 {
+  n = 0
+  inc = fn(x) { n = n + 1; return n }
+  return inc(0)
+}

@@ -1,0 +1,6 @@
+fun twice(x: i64, y: i64) -> i64 { return x + y }
+
+fun main() -> i64 {
+  f = twice
+  return f(3, 4)
+}

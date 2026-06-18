@@ -1,0 +1,13 @@
+﻿import fs
+fun main() -> i64 {
+  path = "far_pass68_bin.txt"
+  s = char(0) + char(1) + char(255)
+  if (fs.write_text(path, s) != 0) { return 1 }
+  back = fs.read_text(path)
+  if (len(back) != 3) { return 2 }
+  if (back[0] != 0) { return 3 }
+  if (back[1] != 1) { return 4 }
+  if (back[2] != 255) { return 5 }
+  fs.remove(path)
+  return 0
+}

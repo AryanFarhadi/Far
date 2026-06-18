@@ -1,0 +1,1013 @@
+{
+  "nodes": [
+    {
+      "id": "install-far_ps1",
+      "label": "install-far.ps1",
+      "file_type": "code",
+      "source_file": "install/windows/install-far.ps1",
+      "source_location": "1:256",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "sync-far-install_ps1",
+      "label": "sync-far-install.ps1",
+      "file_type": "code",
+      "source_file": "install/windows/sync-far-install.ps1",
+      "source_location": "1:63",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "uninstall-far_ps1",
+      "label": "uninstall-far.ps1",
+      "file_type": "code",
+      "source_file": "install/windows/uninstall-far.ps1",
+      "source_location": "1:61",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "install-far_find_clang",
+      "label": "Find-Clang",
+      "file_type": "code",
+      "source_file": "install/windows/install-far.ps1",
+      "source_location": "35:55",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "install-far_install_llvm_winget",
+      "label": "Install-LlvmViaWinget",
+      "file_type": "code",
+      "source_file": "install/windows/install-far.ps1",
+      "source_location": "57:70",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "install-far_merge_vscode_settings",
+      "label": "Merge-VsCodeSettings",
+      "file_type": "code",
+      "source_file": "install/windows/install-far.ps1",
+      "source_location": "96:141",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "install-far_install_vscode_extension",
+      "label": "Install-VsCodeExtension",
+      "file_type": "code",
+      "source_file": "install/windows/install-far.ps1",
+      "source_location": "143:175",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "sync-far-install_export_files",
+      "label": "Export-FarInstallFiles",
+      "file_type": "code",
+      "source_file": "install/windows/sync-far-install.ps1",
+      "source_location": "14:38",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "uninstall-far_remove_path_entry",
+      "label": "Remove-UserPathEntry",
+      "file_type": "code",
+      "source_file": "install/windows/uninstall-far.ps1",
+      "source_location": "9:17",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "uninstall-far_clear_vscode_settings",
+      "label": "Clear-VsCodeFarSettings",
+      "file_type": "code",
+      "source_file": "install/windows/uninstall-far.ps1",
+      "source_location": "19:30",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "install-far_install_root",
+      "label": "Far Install Root",
+      "file_type": "rationale",
+      "source_file": "install/windows/install-far.ps1",
+      "source_location": "26:28",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "rationale": "Default install location is %LOCALAPPDATA%\\Programs\\Far, holding far.exe and runtime/ sources and headers."
+    },
+    {
+      "id": "install-far_manifest",
+      "label": "Far Install Manifest",
+      "file_type": "rationale",
+      "source_file": "install/windows/install-far.ps1",
+      "source_location": "31:32",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "rationale": "install.json at %APPDATA%\\Far records version 0.2.2, installRoot, farExe, clangExe, installedAt for sync and uninstall."
+    },
+    {
+      "id": "install-far_far_clang_env",
+      "label": "FAR_CLANG Environment Variable",
+      "file_type": "rationale",
+      "source_file": "install/windows/install-far.ps1",
+      "source_location": "217:218",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "rationale": "User-level FAR_CLANG points the Far compiler toolchain at the discovered clang executable."
+    },
+    {
+      "id": "install-far_llvm_mingw",
+      "label": "LLVM-MinGW (MartinStorsjo.LLVM-MinGW.UCRT)",
+      "file_type": "rationale",
+      "source_file": "install/windows/install-far.ps1",
+      "source_location": "57:64",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "rationale": "Windows installer auto-installs clang via winget when not found on PATH."
+    },
+    {
+      "id": "install-far_vscode_extension",
+      "label": "far-lang VS Code Extension",
+      "file_type": "rationale",
+      "source_file": "install/windows/install-far.ps1",
+      "source_location": "33:33",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "rationale": "VSIX far-lang-0.2.2 provides Far language support; installer builds via package-extension.bat if missing."
+    },
+    {
+      "id": "generate-stdlib-modules_mjs",
+      "label": "generate-stdlib-modules.mjs",
+      "file_type": "code",
+      "source_file": "tools/generate-stdlib-modules.mjs",
+      "source_location": "1:164",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "generate-core-api_mjs",
+      "label": "generate-core-api.mjs",
+      "file_type": "code",
+      "source_file": "tools/generate-core-api.mjs",
+      "source_location": "1:502",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "generate-stdlib-modules_parse_module_meta",
+      "label": "parseModuleMeta",
+      "file_type": "code",
+      "source_file": "tools/generate-stdlib-modules.mjs",
+      "source_location": "59:81",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "generate-stdlib-modules_alias_paths",
+      "label": "aliasPaths",
+      "file_type": "code",
+      "source_file": "tools/generate-stdlib-modules.mjs",
+      "source_location": "40:53",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "generate-stdlib-modules_primary_import_path",
+      "label": "primaryImportPath",
+      "file_type": "code",
+      "source_file": "tools/generate-stdlib-modules.mjs",
+      "source_location": "32:38",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "generate-core-api_parse_aggregates",
+      "label": "parseAggregatesFromCpp",
+      "file_type": "code",
+      "source_file": "tools/generate-core-api.mjs",
+      "source_location": "188:254",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "generate-core-api_parse_stdlib_classes",
+      "label": "parseStdlibClasses",
+      "file_type": "code",
+      "source_file": "tools/generate-core-api.mjs",
+      "source_location": "324:372",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "generate-core-api_parse_from_cpp",
+      "label": "parseFromCpp",
+      "file_type": "code",
+      "source_file": "tools/generate-core-api.mjs",
+      "source_location": "374:397",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "generate-core-api_parse_from_std_dir",
+      "label": "parseFromStdDir",
+      "file_type": "code",
+      "source_file": "tools/generate-core-api.mjs",
+      "source_location": "416:430",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "generate_stdlib_embedding",
+      "label": "Stdlib Module Embedding",
+      "file_type": "rationale",
+      "source_file": "tools/generate-stdlib-modules.mjs",
+      "source_location": "104:144",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "rationale": "Embeds std/**/*.far sources as C string literals in far_stdlib_modules.cpp with lookupStdlibModuleSource and legacy import path normalization."
+    },
+    {
+      "id": "generate_legacy_import_aliases",
+      "label": "Legacy Stdlib Import Aliases",
+      "file_type": "rationale",
+      "source_file": "tools/generate-stdlib-modules.mjs",
+      "source_location": "40:53",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "rationale": "Maps core.*, io.*, net.*, sci.* prefixes and pack/secure aliases to canonical std.* module paths for backward compatibility."
+    },
+    {
+      "id": "core-api_json",
+      "label": "core-api.json",
+      "file_type": "document",
+      "source_file": "vscode/data/core-api.json",
+      "source_location": "1:7725",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "stdlib-classes_json",
+      "label": "stdlib-classes.json",
+      "file_type": "document",
+      "source_file": "vscode/data/stdlib-classes.json",
+      "source_location": "1:3353",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "core-api_intellisense",
+      "label": "Far IntelliSense Core API",
+      "file_type": "rationale",
+      "source_file": "vscode/data/core-api.json",
+      "source_location": "1:35",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "rationale": "Machine-readable API surface for VS Code extension: keywords, types, builtins, importPaths, modules, stdlibClasses, aggregateTypes."
+    },
+    {
+      "id": "far_tmLanguage_json",
+      "label": "far.tmLanguage.json",
+      "file_type": "document",
+      "source_file": "vscode/syntaxes/far.tmLanguage.json",
+      "source_location": "1:388",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "far_textmate_grammar",
+      "label": "Far TextMate Grammar",
+      "file_type": "rationale",
+      "source_file": "vscode/syntaxes/far.tmLanguage.json",
+      "source_location": "1:21",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "rationale": "scopeName source.far defines syntax highlighting for comments, strings, imports, declarations, keywords, aggregate constructors, types, operators, slices."
+    },
+    {
+      "id": "far-dark_svg",
+      "label": "far-dark.svg",
+      "file_type": "image",
+      "source_file": "vscode/icons/far-dark.svg",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "rationale": "Dark-theme Far logo: orange (#FF9F43) rounded square with dark (#1C1917) bold F letter, 24x24 viewBox."
+    },
+    {
+      "id": "far-light_svg",
+      "label": "far-light.svg",
+      "file_type": "image",
+      "source_file": "vscode/icons/far-light.svg",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "rationale": "Light-theme Far logo: orange rounded square with white F letter for contrast on dark UI backgrounds."
+    },
+    {
+      "id": "far-file_png",
+      "label": "far-file.png",
+      "file_type": "image",
+      "source_file": "vscode/icons/far-file.png",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "rationale": "Windows .far file association icon: orange squircle with centered white uppercase F in flat sans-serif style."
+    },
+    {
+      "id": "far_brand_identity",
+      "label": "Far Brand Identity",
+      "file_type": "rationale",
+      "source_file": "vscode/icons/far-file.png",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "rationale": "Consistent orange (#FF9F43 / #FFA54F) squircle with white F used across VS Code themes and Windows file type registration."
+    },
+    {
+      "id": "far_sandbox_ok_txt",
+      "label": "far_sandbox_ok.txt",
+      "file_type": "document",
+      "source_file": "far_sandbox_ok.txt",
+      "source_location": "1:1",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "far_sandbox_ok_result",
+      "label": "Sandbox OK Result",
+      "file_type": "rationale",
+      "source_file": "far_sandbox_ok.txt",
+      "source_location": "1:1",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null,
+      "rationale": "Single-line ok output confirming Far filesystem sandbox test passed."
+    },
+    {
+      "id": "far_stdlib_modules_cpp",
+      "label": "far_stdlib_modules.cpp",
+      "file_type": "code",
+      "source_file": "tools/generate-stdlib-modules.mjs",
+      "source_location": "12:12",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "aggregate_cpp",
+      "label": "aggregate.cpp",
+      "file_type": "code",
+      "source_file": "tools/generate-core-api.mjs",
+      "source_location": "17:17",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "aggregate_types_json",
+      "label": "aggregate-types.json",
+      "file_type": "document",
+      "source_file": "tools/generate-core-api.mjs",
+      "source_location": "16:16",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "register_far_windows_ps1",
+      "label": "register-far-windows.ps1",
+      "file_type": "code",
+      "source_file": "install/windows/install-far.ps1",
+      "source_location": "169:169",
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    }
+  ],
+  "edges": [
+    {
+      "source": "install-far_ps1",
+      "target": "sync-far-install_ps1",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "install/windows/install-far.ps1",
+      "source_location": "195:195",
+      "weight": 1.0
+    },
+    {
+      "source": "install-far_ps1",
+      "target": "install-far_find_clang",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "install/windows/install-far.ps1",
+      "source_location": "199:199",
+      "weight": 1.0
+    },
+    {
+      "source": "install-far_ps1",
+      "target": "install-far_install_llvm_winget",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "install/windows/install-far.ps1",
+      "source_location": "201:201",
+      "weight": 1.0
+    },
+    {
+      "source": "install-far_ps1",
+      "target": "install-far_merge_vscode_settings",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "install/windows/install-far.ps1",
+      "source_location": "239:239",
+      "weight": 1.0
+    },
+    {
+      "source": "install-far_ps1",
+      "target": "install-far_install_vscode_extension",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "install/windows/install-far.ps1",
+      "source_location": "240:240",
+      "weight": 1.0
+    },
+    {
+      "source": "install-far_install_vscode_extension",
+      "target": "register_far_windows_ps1",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "install/windows/install-far.ps1",
+      "source_location": "172:172",
+      "weight": 1.0
+    },
+    {
+      "source": "sync-far-install_ps1",
+      "target": "sync-far-install_export_files",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "install/windows/sync-far-install.ps1",
+      "source_location": "61:61",
+      "weight": 1.0
+    },
+    {
+      "source": "uninstall-far_ps1",
+      "target": "uninstall-far_remove_path_entry",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "install/windows/uninstall-far.ps1",
+      "source_location": "47:48",
+      "weight": 1.0
+    },
+    {
+      "source": "uninstall-far_ps1",
+      "target": "uninstall-far_clear_vscode_settings",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "install/windows/uninstall-far.ps1",
+      "source_location": "52:52",
+      "weight": 1.0
+    },
+    {
+      "source": "install-far_ps1",
+      "target": "install-far_install_root",
+      "relation": "conceptually_related_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "install/windows/install-far.ps1",
+      "source_location": "26:28",
+      "weight": 1.0
+    },
+    {
+      "source": "install-far_ps1",
+      "target": "install-far_manifest",
+      "relation": "conceptually_related_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "install/windows/install-far.ps1",
+      "source_location": "227:236",
+      "weight": 1.0
+    },
+    {
+      "source": "sync-far-install_ps1",
+      "target": "install-far_manifest",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "install/windows/sync-far-install.ps1",
+      "source_location": "45:55",
+      "weight": 1.0
+    },
+    {
+      "source": "uninstall-far_ps1",
+      "target": "install-far_manifest",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "install/windows/uninstall-far.ps1",
+      "source_location": "38:44",
+      "weight": 1.0
+    },
+    {
+      "source": "install-far_ps1",
+      "target": "install-far_far_clang_env",
+      "relation": "conceptually_related_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "install/windows/install-far.ps1",
+      "source_location": "217:218",
+      "weight": 1.0
+    },
+    {
+      "source": "uninstall-far_ps1",
+      "target": "install-far_far_clang_env",
+      "relation": "conceptually_related_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "install/windows/uninstall-far.ps1",
+      "source_location": "50:50",
+      "weight": 1.0
+    },
+    {
+      "source": "install-far_install_llvm_winget",
+      "target": "install-far_llvm_mingw",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "install/windows/install-far.ps1",
+      "source_location": "64:64",
+      "weight": 1.0
+    },
+    {
+      "source": "install-far_install_vscode_extension",
+      "target": "install-far_vscode_extension",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "install/windows/install-far.ps1",
+      "source_location": "143:175",
+      "weight": 1.0
+    },
+    {
+      "source": "install-far_merge_vscode_settings",
+      "target": "install-far_vscode_extension",
+      "relation": "conceptually_related_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "install/windows/install-far.ps1",
+      "source_location": "109:110",
+      "weight": 1.0
+    },
+    {
+      "source": "generate-stdlib-modules_mjs",
+      "target": "generate-stdlib-modules_parse_module_meta",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "tools/generate-stdlib-modules.mjs",
+      "source_location": "100:100",
+      "weight": 1.0
+    },
+    {
+      "source": "generate-stdlib-modules_mjs",
+      "target": "generate-stdlib-modules_alias_paths",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "tools/generate-stdlib-modules.mjs",
+      "source_location": "101:101",
+      "weight": 1.0
+    },
+    {
+      "source": "generate-stdlib-modules_mjs",
+      "target": "generate-stdlib-modules_primary_import_path",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "tools/generate-stdlib-modules.mjs",
+      "source_location": "96:96",
+      "weight": 1.0
+    },
+    {
+      "source": "generate-stdlib-modules_mjs",
+      "target": "far_stdlib_modules_cpp",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "tools/generate-stdlib-modules.mjs",
+      "source_location": "146:146",
+      "weight": 1.0
+    },
+    {
+      "source": "generate-stdlib-modules_mjs",
+      "target": "core-api_json",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "tools/generate-stdlib-modules.mjs",
+      "source_location": "157:157",
+      "weight": 1.0
+    },
+    {
+      "source": "generate-stdlib-modules_mjs",
+      "target": "generate_stdlib_embedding",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "tools/generate-stdlib-modules.mjs",
+      "source_location": "104:144",
+      "weight": 1.0
+    },
+    {
+      "source": "generate-stdlib-modules_alias_paths",
+      "target": "generate_legacy_import_aliases",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "tools/generate-stdlib-modules.mjs",
+      "source_location": "40:53",
+      "weight": 1.0
+    },
+    {
+      "source": "generate-core-api_mjs",
+      "target": "generate-core-api_parse_from_std_dir",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "tools/generate-core-api.mjs",
+      "source_location": "439:439",
+      "weight": 1.0
+    },
+    {
+      "source": "generate-core-api_mjs",
+      "target": "generate-core-api_parse_from_cpp",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "tools/generate-core-api.mjs",
+      "source_location": "442:442",
+      "weight": 1.0
+    },
+    {
+      "source": "generate-core-api_mjs",
+      "target": "generate-core-api_parse_aggregates",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "tools/generate-core-api.mjs",
+      "source_location": "455:455",
+      "weight": 1.0
+    },
+    {
+      "source": "generate-core-api_parse_from_cpp",
+      "target": "generate-core-api_parse_stdlib_classes",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "tools/generate-core-api.mjs",
+      "source_location": "393:393",
+      "weight": 1.0
+    },
+    {
+      "source": "generate-core-api_mjs",
+      "target": "core-api_json",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "tools/generate-core-api.mjs",
+      "source_location": "490:490",
+      "weight": 1.0
+    },
+    {
+      "source": "generate-core-api_mjs",
+      "target": "stdlib-classes_json",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "tools/generate-core-api.mjs",
+      "source_location": "491:491",
+      "weight": 1.0
+    },
+    {
+      "source": "generate-core-api_mjs",
+      "target": "aggregate_types_json",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "tools/generate-core-api.mjs",
+      "source_location": "492:496",
+      "weight": 1.0
+    },
+    {
+      "source": "generate-core-api_parse_aggregates",
+      "target": "aggregate_cpp",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "tools/generate-core-api.mjs",
+      "source_location": "189:189",
+      "weight": 1.0
+    },
+    {
+      "source": "generate-core-api_mjs",
+      "target": "far_stdlib_modules_cpp",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.95,
+      "source_file": "tools/generate-core-api.mjs",
+      "source_location": "13:13",
+      "weight": 1.0
+    },
+    {
+      "source": "generate-core-api_mjs",
+      "target": "generate-stdlib-modules_mjs",
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "tools/generate-core-api.mjs",
+      "source_location": "1:6",
+      "weight": 1.0
+    },
+    {
+      "source": "core-api_json",
+      "target": "core-api_intellisense",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "vscode/data/core-api.json",
+      "source_location": "1:35",
+      "weight": 1.0
+    },
+    {
+      "source": "stdlib-classes_json",
+      "target": "core-api_json",
+      "relation": "shares_data_with",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "tools/generate-core-api.mjs",
+      "source_location": "485:485",
+      "weight": 1.0
+    },
+    {
+      "source": "core-api_json",
+      "target": "far_stdlib_modules_cpp",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "vscode/data/core-api.json",
+      "source_location": "3:3",
+      "weight": 1.0
+    },
+    {
+      "source": "far_tmLanguage_json",
+      "target": "far_textmate_grammar",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "vscode/syntaxes/far.tmLanguage.json",
+      "source_location": "1:21",
+      "weight": 1.0
+    },
+    {
+      "source": "far_tmLanguage_json",
+      "target": "core-api_json",
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.75,
+      "source_file": "vscode/syntaxes/far.tmLanguage.json",
+      "source_location": "171:188",
+      "weight": 1.0
+    },
+    {
+      "source": "install-far_vscode_extension",
+      "target": "core-api_json",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "install/windows/install-far.ps1",
+      "source_location": "143:175",
+      "weight": 1.0
+    },
+    {
+      "source": "install-far_vscode_extension",
+      "target": "far_tmLanguage_json",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "install/windows/install-far.ps1",
+      "source_location": "143:175",
+      "weight": 1.0
+    },
+    {
+      "source": "register_far_windows_ps1",
+      "target": "far-file_png",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "install/windows/install-far.ps1",
+      "source_location": "171:173",
+      "weight": 1.0
+    },
+    {
+      "source": "far-dark_svg",
+      "target": "far_brand_identity",
+      "relation": "conceptually_related_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "vscode/icons/far-dark.svg",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "far-light_svg",
+      "target": "far_brand_identity",
+      "relation": "conceptually_related_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "vscode/icons/far-light.svg",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "far-file_png",
+      "target": "far_brand_identity",
+      "relation": "conceptually_related_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "vscode/icons/far-file.png",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "far-dark_svg",
+      "target": "far-light_svg",
+      "relation": "semantically_similar_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "vscode/icons/far-dark.svg",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "far_sandbox_ok_txt",
+      "target": "far_sandbox_ok_result",
+      "relation": "rationale_for",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "far_sandbox_ok.txt",
+      "source_location": "1:1",
+      "weight": 1.0
+    },
+    {
+      "source": "sync-far-install_export_files",
+      "target": "install-far_install_root",
+      "relation": "implements",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "install/windows/sync-far-install.ps1",
+      "source_location": "20:35",
+      "weight": 1.0
+    }
+  ],
+  "hyperedges": [
+    {
+      "id": "windows_far_install_pipeline",
+      "label": "Windows Far Install Pipeline",
+      "nodes": [
+        "install-far_ps1",
+        "sync-far-install_ps1",
+        "uninstall-far_ps1",
+        "install-far_manifest",
+        "install-far_install_root"
+      ],
+      "relation": "participate_in",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "install/windows/install-far.ps1"
+    },
+    {
+      "id": "vscode_intellisense_generation",
+      "label": "VS Code IntelliSense Data Generation",
+      "nodes": [
+        "generate-core-api_mjs",
+        "generate-stdlib-modules_mjs",
+        "core-api_json",
+        "stdlib-classes_json",
+        "aggregate_types_json",
+        "far_stdlib_modules_cpp",
+        "aggregate_cpp"
+      ],
+      "relation": "participate_in",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "tools/generate-core-api.mjs"
+    },
+    {
+      "id": "far_vscode_branding_assets",
+      "label": "Far VS Code Branding Assets",
+      "nodes": [
+        "far-dark_svg",
+        "far-light_svg",
+        "far-file_png",
+        "far_brand_identity",
+        "far_tmLanguage_json",
+        "install-far_vscode_extension"
+      ],
+      "relation": "form",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "vscode/icons/far-file.png"
+    }
+  ],
+  "input_tokens": 0,
+  "output_tokens": 0
+}

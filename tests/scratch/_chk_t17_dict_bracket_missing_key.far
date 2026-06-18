@@ -1,0 +1,7 @@
+fun t17_dict_bracket_missing_key() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  return eq(d[99], 0)
+}
+
+
+fun main() -> i64 { return t17_dict_bracket_missing_key() }

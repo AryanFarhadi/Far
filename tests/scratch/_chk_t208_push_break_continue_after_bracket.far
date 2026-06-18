@@ -1,0 +1,13 @@
+fun t208_push_break_continue_after_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (i = 0; i < 6; i = i + 1) {
+    if (i == 2) { break }
+    lst.push(i)
+    if (i == 1) { continue }
+  }
+  lst[1] = 22
+  return eq(lst.get(1), 22)
+}
+
+
+fun main() -> i64 { return t208_push_break_continue_after_bracket() }

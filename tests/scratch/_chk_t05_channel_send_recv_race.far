@@ -1,0 +1,11 @@
+fun t05_channel_send_recv_race() -> i64 {
+  ch = Channel<i64>(8)
+  h1 = spawn ch_send_recv(ch, 50)
+  h2 = spawn ch_recv_loop(ch, 50)
+  threads.join(h1)
+  s = threads.join(h2)
+  return eq(s, 1225)
+}
+
+
+fun main() -> i64 { return t05_channel_send_recv_race() }

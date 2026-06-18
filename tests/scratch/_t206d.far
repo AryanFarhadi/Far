@@ -1,0 +1,6 @@
+fun main() -> i64 {
+  x = 1.0 / 0.0
+  if (x) { return 10 }
+  while (x) { return 20 }
+  return 30
+}

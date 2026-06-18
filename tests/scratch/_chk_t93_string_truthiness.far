@@ -1,0 +1,11 @@
+fun t93_string_truthiness() -> i64 {
+  if ("") { return 1 }
+  if ("0") { }
+  else { return 2 }
+  if ("x") { }
+  else { return 3 }
+  return 0
+}
+
+
+fun main() -> i64 { return t93_string_truthiness() }

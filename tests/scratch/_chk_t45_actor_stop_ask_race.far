@@ -1,0 +1,11 @@
+fun t45_actor_stop_ask_race() -> i64 {
+  c = StopAskCounter()
+  h1 = spawn actor_stopper(c)
+  h2 = spawn actor_asker(c)
+  threads.join(h1)
+  threads.join(h2)
+  return 0
+}
+
+
+fun main() -> i64 { return t45_actor_stop_ask_race() }

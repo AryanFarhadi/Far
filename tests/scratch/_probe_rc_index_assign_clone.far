@@ -1,0 +1,9 @@
+fun main() -> i64 {
+  boxes = [Rc<i64>(7), Rc<i64>(8)]
+  r2 = boxes[1]
+  if (r2.get() == 0) { return 1 }
+  v = 0
+  unsafe { v = *r2.get() }
+  if (v != 8) { return 2 }
+  return 0
+}

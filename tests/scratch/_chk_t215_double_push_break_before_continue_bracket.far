@@ -1,0 +1,14 @@
+fun t215_double_push_break_before_continue_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for x in 0..<8 {
+    if (x == 3) { continue }
+    if (x == 6) { break }
+    lst.push(x)
+    lst.push(x + 10)
+  }
+  lst[9] = 99
+  return eq(lst.get(9), 99)
+}
+
+
+fun main() -> i64 { return t215_double_push_break_before_continue_bracket() }

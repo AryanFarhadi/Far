@@ -1,0 +1,19 @@
+fun t54_set_fuzz_permutation() -> i64 {
+  s: Set<i64> = Set<i64>()
+  i = 0
+  while (i < 100) {
+    s.add((i * 23 + 5) % 41)
+    i = i + 1
+  }
+  if (len(s) > 41) { return 1 }
+  i = 0
+  while (i < 41) {
+    s.remove(i)
+    if (len(s) > 41 - i - 1) { return 2 }
+    i = i + 1
+  }
+  return eq(len(s), 0)
+}
+
+
+fun main() -> i64 { return t54_set_fuzz_permutation() }

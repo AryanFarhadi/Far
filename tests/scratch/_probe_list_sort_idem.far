@@ -1,0 +1,13 @@
+﻿fun main() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(3)
+  lst.push(1)
+  lst.push(2)
+  lst.sort()
+  if (lst[0] != 1) { return 1 }
+  if (lst[1] != 2) { return 2 }
+  if (lst[2] != 3) { return 3 }
+  lst.sort()
+  if (lst[0] != 1) { return 4 }
+  return 0
+}

@@ -1,0 +1,7 @@
+fun t25_varargs_empty_and_multi() -> i64 {
+  if (sum_all() != 0) { return 1 }
+  return eq(sum_all(1, 2, 3), 6)
+}
+
+
+fun main() -> i64 { return t25_varargs_empty_and_multi() }

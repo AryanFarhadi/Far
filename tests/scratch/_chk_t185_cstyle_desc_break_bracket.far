@@ -1,0 +1,14 @@
+fun t185_cstyle_desc_break_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (i = 5; i > 0; i = i - 1) {
+    lst.push(i)
+    if (i == 3) {
+      break
+    }
+  }
+  lst[2] = 99
+  return eq(lst.get(2), 99)
+}
+
+
+fun main() -> i64 { return t185_cstyle_desc_break_bracket() }

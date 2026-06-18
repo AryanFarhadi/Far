@@ -1,0 +1,4 @@
+import perf
+fun main() {
+  return threads.join(999999)
+}

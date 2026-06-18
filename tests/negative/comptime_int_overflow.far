@@ -1,0 +1,5 @@
+constexpr OVER = comptime 9223372036854775807 + 1
+
+fun main() -> i64 {
+  return OVER
+}

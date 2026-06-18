@@ -1,0 +1,9 @@
+fun t58_channel_min_capacity_send_recv() -> i64 {
+  ch = Channel<i64>(1)
+  if (ch.try_send(7) != 0) { return 1 }
+  if (ch.try_send(8) != -1) { return 2 }
+  return eq(ch.try_recv(), 7)
+}
+
+
+fun main() -> i64 { return t58_channel_min_capacity_send_recv() }

@@ -1,0 +1,5 @@
+﻿import fixtures.exp_gadget { Gadget }
+fun main() -> i64 {
+  g = Gadget()
+  return g.val
+}

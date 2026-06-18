@@ -1,0 +1,3 @@
+﻿import fixtures.exp_a { alpha }
+import fixtures.exp_b { visible as alpha }
+fun main() -> i64 { return alpha() }

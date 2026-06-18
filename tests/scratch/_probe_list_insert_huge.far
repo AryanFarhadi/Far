@@ -1,0 +1,7 @@
+fun main() -> i64 {
+  xs: List<i64> = List<i64>()
+  xs.insert(999, 42)
+  if (len(xs) != 1) { return 1 }
+  if (xs[0] != 42) { return 2 }
+  return 0
+}

@@ -1,0 +1,7 @@
+fun main() -> i64 {
+  d: Dict<string, i64> = Dict<string, i64>()
+  if (d["missing"] != 0) { return 1 }
+  d["k"] = 42
+  if (d.get("missing") != 0) { return 2 }
+  return 0
+}

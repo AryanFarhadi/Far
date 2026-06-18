@@ -30,6 +30,16 @@ static std::unique_ptr<Expr> substituteMacroExpr(const Expr& tmpl, const std::ve
       }
       throw FarError("unknown macro parameter $" + tmpl.macro_subst.param);
     }
+    case Expr::MacroInvokeExprK: {
+      std::vector<std::unique_ptr<Expr>> nargs;
+      for (const auto& a : tmpl.macro_invoke.args)
+        nargs.push_back(substituteMacroExpr(*a, params, args));
+      auto e = std::make_unique<Expr>();
+      e->kind = Expr::MacroInvokeExprK;
+      e->macro_invoke.name = tmpl.macro_invoke.name;
+      e->macro_invoke.args = std::move(nargs);
+      return e;
+    }
     case Expr::Binary: {
       auto e = std::make_unique<Expr>();
       e->kind = Expr::Binary;
@@ -93,6 +103,16 @@ static std::unique_ptr<Expr> cloneExpr(const Expr& src) {
       auto e = std::make_unique<Expr>();
       e->kind = Expr::MacroSubstExprK;
       e->macro_subst.param = src.macro_subst.param;
+      return e;
+    }
+    case Expr::MacroInvokeExprK: {
+      std::vector<std::unique_ptr<Expr>> args;
+      for (const auto& a : src.macro_invoke.args)
+        args.push_back(cloneExpr(*a));
+      auto e = std::make_unique<Expr>();
+      e->kind = Expr::MacroInvokeExprK;
+      e->macro_invoke.name = src.macro_invoke.name;
+      e->macro_invoke.args = std::move(args);
       return e;
     }
     case Expr::Binary: {

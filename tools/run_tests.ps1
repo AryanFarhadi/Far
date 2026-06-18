@@ -9,6 +9,9 @@ $ErrorActionPreference = "Continue"
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location $root
 
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "ensure_oversize_fs_fixture.ps1") | Out-Null
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "ensure_fs_max_read_fixture.ps1") | Out-Null
+
 if (-not $Far) {
   $Far = Join-Path $root "far.exe"
 }
@@ -78,6 +81,14 @@ if ($checkFail -gt 0 -or $runFail -gt 0) {
 $negBat = Join-Path $root "run_negative_tests.bat"
 if (Test-Path -LiteralPath $negBat) {
   & cmd /c $negBat
+  if ($LASTEXITCODE -ne 0) {
+    exit 1
+  }
+}
+
+$rtNegBat = Join-Path $root "run_runtime_negative_tests.bat"
+if (Test-Path -LiteralPath $rtNegBat) {
+  & cmd /c $rtNegBat
   if ($LASTEXITCODE -ne 0) {
     exit 1
   }

@@ -1,0 +1,6 @@
+fun main() -> i64 {
+  b = Box<i64>(8)
+  p = b.get()
+  drop(b)
+  unsafe { return *p }
+}

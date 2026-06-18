@@ -25,6 +25,7 @@ debug-*.log
 /*.c
 short_*.txt
 far_comprehensive_fs_tmp.txt
+far_oversize_read_test.bin
 tests/negative/oversize_import.far
 benchmark/bin/
 tokdump.exe
@@ -44,3 +45,7 @@ desktop.ini
 
 # Packaged extension output
 vscode/*.vsix
+far_fs_max_read_test.bin
+far_fs_oversize_write_rt.bin
+far_fs_oversize_write_test.bin
+far_fs_roundtrip_test.bin

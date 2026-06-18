@@ -1,0 +1,11 @@
+fun t102_str_index_negative() -> i64 {
+  s = "abc"
+  if (int(s[-1]) != int('c')) { return 1 }
+  if (int(s[-3]) != int('a')) { return 2 }
+  if (int(s[-99]) != 0) { return 3 }
+  if (int(s[99]) != 0) { return 4 }
+  return 0
+}
+
+
+fun main() -> i64 { return t102_str_index_negative() }

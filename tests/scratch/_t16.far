@@ -1,0 +1,9 @@
+﻿fun t16() -> i64 {
+  x = 1
+  switch x {
+    default: return 0
+    case 1: return 1
+  }
+  return 99
+}
+fun main() -> i64 { print(t16()); return t16() }

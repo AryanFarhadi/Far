@@ -1,0 +1,6 @@
+import fs
+
+fun main() -> i64 {
+  if (fs.write_text("", "x") == 0) { return 1 }
+  return 0
+}

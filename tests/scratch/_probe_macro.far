@@ -1,0 +1,6 @@
+macro nest!(n) = $(n)
+macro expand_once!() = nest!(1)
+
+fun main() -> i64 {
+  return expand_once!()
+}

@@ -1,0 +1,18 @@
+﻿fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun helper(trace: List<i64>) -> i64 {
+  try {
+    trace.push(1)
+    return 99
+  } finally {
+    trace.push(2)
+  }
+  return 0
+}
+fun main() -> i64 {
+  trace: List<i64> = List<i64>()
+  r = helper(trace)
+  if (len(trace) != 2) { return 1 }
+  if (trace[0] != 1) { return 2 }
+  if (trace[1] != 2) { return 3 }
+  return eq(r, 99)
+}

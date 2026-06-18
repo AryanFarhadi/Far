@@ -1,0 +1,8 @@
+﻿import fs
+fun main() -> i64 {
+  data = fs.read_text("far_fs_max_read_test.bin")
+  r = fs.write_text("far_fs_oversize_write_test.bin", data)
+  if (r != 0) { return 1 }
+  if (len(fs.read_text("far_fs_oversize_write_test.bin")) != 67108864) { return 2 }
+  return 0
+}

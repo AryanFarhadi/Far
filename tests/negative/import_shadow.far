@@ -1,0 +1,6 @@
+import math
+import hash as math
+
+fun main() -> i64 {
+  return 0
+}

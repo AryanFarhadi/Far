@@ -1,0 +1,5 @@
+import fixtures.tri_b
+
+public fun val_c() -> i64 {
+  return val_b() + 4
+}

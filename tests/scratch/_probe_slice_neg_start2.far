@@ -1,0 +1,7 @@
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun main() -> i64 {
+  a = [10, 20, 30]
+  sl = a.slice(-1, 3)
+  if (len(sl) != 1) { return 1 }
+  return eq(sl[0], 30)
+}

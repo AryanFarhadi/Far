@@ -1,0 +1,10 @@
+﻿fun side(n: i64) -> bool {
+  return n > 0
+}
+fun main() -> i64 {
+  x = 0
+  while (x < 3 && side(x)) {
+    x = x + 1
+  }
+  return x
+}

@@ -1,0 +1,11 @@
+fun t157_slice_var_oob_compile() -> i64 {
+  a = [1, 2, 3, 4, 5]
+  sl = a.slice(1, 4)
+  sl[2] = 99
+  if (sl[2] != 99) { return 1 }
+  if (len(sl) != 3) { return 2 }
+  return 0
+}
+
+
+fun main() -> i64 { return t157_slice_var_oob_compile() }

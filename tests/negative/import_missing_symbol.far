@@ -1,0 +1,5 @@
+import fixtures.exp_a { alpha, missing_sym_xyz }
+
+fun main() -> i64 {
+  return alpha()
+}

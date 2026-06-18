@@ -1,0 +1,9 @@
+fun main() -> i64 {
+  st: Stack<i64> = Stack<i64>()
+  if (st.pop() != 0) { return 1 }
+  if (st.peek() != 0) { return 2 }
+  q: Queue<i64> = Queue<i64>()
+  if (q.dequeue() != 0) { return 3 }
+  if (q.peek() != 0) { return 4 }
+  return 0
+}

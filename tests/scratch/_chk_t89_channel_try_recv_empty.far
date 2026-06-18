@@ -1,0 +1,7 @@
+fun t89_channel_try_recv_empty() -> i64 {
+  ch = Channel<i64>(1)
+  return eq(ch.try_recv(), -9223372036854775808)
+}
+
+
+fun main() -> i64 { return t89_channel_try_recv_empty() }

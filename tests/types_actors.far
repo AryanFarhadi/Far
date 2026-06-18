@@ -22,10 +22,18 @@ fun t02_tell_stop() -> i64 {
   c.stop()
   return 0
 }
+
+fun t03_ask_after_stop_sentinel() -> i64 {
+  c = Counter()
+  c.stop()
+  return eq(c.ask(1), -9223372036854775808)
+}
+
 fun main() {
   r = 0
   r = run(1, t01_ask()); if (r != 0) { return r }
   r = run(2, t02_tell_stop()); if (r != 0) { return r }
+  r = run(3, t03_ask_after_stop_sentinel()); if (r != 0) { return r }
   print(0)
   return 0
-}
+}

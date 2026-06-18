@@ -1,0 +1,7 @@
+fun helper() -> i64 { return 1 }
+
+import perf as helper
+
+fun main() -> i64 {
+  return helper()
+}

@@ -1,0 +1,14 @@
+fun t200_list_continue_after_push_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (i = 0; i < 10; i = i + 1) {
+    lst.push(i)
+    if (i == 5) {
+      continue
+    }
+  }
+  lst[9] = 99
+  return eq(lst.get(9), 99)
+}
+
+
+fun main() -> i64 { return t200_list_continue_after_push_bracket() }

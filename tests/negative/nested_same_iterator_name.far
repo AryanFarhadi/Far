@@ -1,0 +1,9 @@
+fun main() -> i64 {
+  n = 0
+  for i in 0..<3 {
+    for i in 0..<3 {
+      n = n + 1
+    }
+  }
+  return n
+}

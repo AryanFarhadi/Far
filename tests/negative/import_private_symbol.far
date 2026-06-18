@@ -1,0 +1,5 @@
+import fixtures.exp_b { hidden }
+
+fun main() -> i64 {
+  return hidden()
+}

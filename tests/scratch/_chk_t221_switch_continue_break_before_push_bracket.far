@@ -1,0 +1,16 @@
+fun t221_switch_continue_break_before_push_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for x in 0..<8 {
+    switch x {
+      case 3: { continue }
+      default: { }
+    }
+    if (x == 6) { break }
+    lst.push(x)
+  }
+  lst[4] = 44
+  return eq(lst.get(4), 44)
+}
+
+
+fun main() -> i64 { return t221_switch_continue_break_before_push_bracket() }

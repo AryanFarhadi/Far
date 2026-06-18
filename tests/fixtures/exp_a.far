@@ -1,0 +1,7 @@
+public fun alpha() -> i64 {
+  return 10
+}
+
+public fun beta() -> i64 {
+  return 20
+}

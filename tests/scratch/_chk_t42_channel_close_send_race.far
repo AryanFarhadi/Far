@@ -1,0 +1,14 @@
+fun t42_channel_close_send_race() -> i64 {
+  ch = Channel<i64>(4)
+  h = spawn close_send_worker(ch)
+  i = 0
+  while (i < 100) {
+    ch.try_send(i)
+    i = i + 1
+  }
+  threads.join(h)
+  return 0
+}
+
+
+fun main() -> i64 { return t42_channel_close_send_race() }

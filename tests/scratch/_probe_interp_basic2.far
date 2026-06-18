@@ -1,0 +1,9 @@
+fun main() -> i64 {
+  s = $"x"
+  if (len(s) != 1) { return 1 }
+  x = 7
+  s2 = $"v={x}"
+  if (len(s2) != 3) { return 2 }
+  if (s2 != "v=7") { return 3 }
+  return 0
+}

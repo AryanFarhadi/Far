@@ -211,6 +211,9 @@ enum class ConstBool { Unknown, False, True };
 struct ConstLocalsState {
   std::unordered_map<std::string, int64_t> ints;
   std::unordered_map<std::string, double> floats;
+  std::unordered_map<std::string, int64_t> array_lens;
+  // For nested array literals: outer var -> (row index -> inner row length).
+  std::unordered_map<std::string, std::unordered_map<int64_t, int64_t>> nested_row_lens;
 };
 
 static ConstBool constBoolFromExpr(const Expr& e, const ConstLocalsState& locals) {
@@ -363,10 +366,14 @@ static std::optional<int64_t> constIntFromExprImpl(const Expr& e, const ConstLoc
     if (op == "/") {
       if (*r == 0)
         return std::nullopt;
+      if (*l == INT64_MIN && *r == -1)
+        return std::nullopt;
       return *l / *r;
     }
     if (op == "%") {
       if (*r == 0)
+        return std::nullopt;
+      if (*l == INT64_MIN && *r == -1)
         return std::nullopt;
       return *l % *r;
     }
@@ -567,7 +574,9 @@ static bool patternMatchesConstInt(const Pattern& pat, int64_t v, const ObjectRe
 }
 
 static bool rangeForConstEmpty(int64_t start, int64_t end, bool exclusive) {
-  return exclusive ? (start >= end) : (start > end);
+  if (start <= end)
+    return exclusive ? (start >= end) : (start > end);
+  return exclusive ? (start <= end) : (start < end);
 }
 
 static bool parallelForConstSpanTooLarge(int64_t start, int64_t end, bool exclusive) {
@@ -620,6 +629,947 @@ static std::optional<int64_t> constForeachSampleElem(const Expr& iter,
     }
   }
   return std::nullopt;
+}
+
+static std::optional<int64_t> rangeForConstIterCount(int64_t start, int64_t end, bool exclusive) {
+  if (start <= end) {
+    if (rangeForConstEmpty(start, end, exclusive))
+      return 0;
+    int64_t hi = end;
+    if (!exclusive) {
+      if (end == INT64_MAX)
+        return std::nullopt;
+      hi = end + 1;
+    }
+    if (hi < start)
+      return 0;
+    return hi - start;
+  }
+  if (start <= end)
+    return 0;
+  int64_t lo = end;
+  if (!exclusive) {
+    if (end == INT64_MIN)
+      return std::nullopt;
+    lo = end - 1;
+  }
+  if (start < lo)
+    return 0;
+  return start - lo;
+}
+
+static std::optional<std::pair<std::string, int64_t>> constCmpBound(const Expr& e,
+                                                                    const ConstLocalsState& locals,
+                                                                    const char* op) {
+  if (e.kind != Expr::Binary || e.bin_op.op != op)
+    return std::nullopt;
+  if (e.bin_op.left->kind == Expr::Variable) {
+    if (auto r = constIntFromExpr(*e.bin_op.right, locals))
+      return std::make_pair(e.bin_op.left->var.name, *r);
+  }
+  if (e.bin_op.right->kind == Expr::Variable) {
+    if (auto l = constIntFromExpr(*e.bin_op.left, locals))
+      return std::make_pair(e.bin_op.right->var.name, *l);
+  }
+  return std::nullopt;
+}
+
+static std::optional<std::pair<std::string, int64_t>> constLtUpperBound(const Expr& cond,
+                                                                        const ConstLocalsState& locals) {
+  if (auto b = constCmpBound(cond, locals, "<"))
+    return b;
+  if (auto b = constCmpBound(cond, locals, "<=")) {
+    if (b->second == INT64_MAX)
+      return std::nullopt;
+    return std::make_pair(b->first, b->second + 1);
+  }
+  return std::nullopt;
+}
+
+static std::optional<std::pair<std::string, int64_t>> constGtLowerBound(const Expr& cond,
+                                                                        const ConstLocalsState& locals) {
+  if (auto b = constCmpBound(cond, locals, ">"))
+    return b;
+  if (auto b = constCmpBound(cond, locals, ">=")) {
+    if (b->second == INT64_MIN)
+      return std::nullopt;
+    return std::make_pair(b->first, b->second - 1);
+  }
+  return std::nullopt;
+}
+
+static std::optional<std::pair<std::string, int64_t>> constAssignFromForClause(const Stmt& s,
+                                                                               const ConstLocalsState& locals) {
+  if (s.kind == Stmt::LetStmt && s.let.value) {
+    if (auto v = constIntFromExpr(*s.let.value, locals))
+      return std::make_pair(s.let.name, *v);
+    return std::nullopt;
+  }
+  if (s.kind != Stmt::ExprStmtK || !s.expr_stmt.expr || s.expr_stmt.expr->kind != Expr::AssignExprK)
+    return std::nullopt;
+  const Expr& a = *s.expr_stmt.expr;
+  if (a.assign.op != "=" || a.assign.target->kind != Expr::Variable)
+    return std::nullopt;
+  if (auto v = constIntFromExpr(*a.assign.value, locals))
+    return std::make_pair(a.assign.target->var.name, *v);
+  return std::nullopt;
+}
+
+static void applyConstAscCounterExit(const std::string& var, int64_t start, int64_t iters,
+                                     ConstLocalsState& locals) {
+  locals.ints[var] = start + iters;
+}
+
+static void applyConstDescCounterExit(const std::string& var, int64_t start, int64_t iters,
+                                      ConstLocalsState& locals) {
+  locals.ints[var] = start - iters;
+}
+
+static void applyConstWhileCounterExit(const Expr& cond, const ConstLocalsState& saved,
+                                       int64_t iters, ConstLocalsState& locals) {
+  if (auto bound = constLtUpperBound(cond, saved)) {
+    const std::string& var = bound->first;
+    auto start_it = saved.ints.find(var);
+    if (start_it != saved.ints.end())
+      applyConstAscCounterExit(var, start_it->second, iters, locals);
+    return;
+  }
+  if (auto bound = constGtLowerBound(cond, saved)) {
+    const std::string& var = bound->first;
+    auto start_it = saved.ints.find(var);
+    if (start_it != saved.ints.end())
+      applyConstDescCounterExit(var, start_it->second, iters, locals);
+  }
+}
+
+static void applyConstCStyleForCounterExit(const For& fo, const ConstLocalsState& saved,
+                                           int64_t iters, ConstLocalsState& locals) {
+  if (!fo.init || !fo.cond)
+    return;
+  auto start = constAssignFromForClause(*fo.init, saved);
+  if (!start)
+    return;
+  if (auto bound = constLtUpperBound(*fo.cond, saved)) {
+    if (start->first == bound->first)
+      applyConstAscCounterExit(start->first, start->second, iters, locals);
+    return;
+  }
+  if (auto bound = constGtLowerBound(*fo.cond, saved)) {
+    if (start->first == bound->first)
+      applyConstDescCounterExit(start->first, start->second, iters, locals);
+  }
+}
+
+static std::optional<int64_t> cStyleForConstIterCount(const For& fo, const ConstLocalsState& locals) {
+  if (!fo.init || !fo.cond)
+    return std::nullopt;
+  auto start = constAssignFromForClause(*fo.init, locals);
+  if (!start)
+    return std::nullopt;
+  if (auto bound = constLtUpperBound(*fo.cond, locals)) {
+    if (bound->first != start->first)
+      return std::nullopt;
+    return rangeForConstIterCount(start->second, bound->second, true);
+  }
+  if (auto bound = constGtLowerBound(*fo.cond, locals)) {
+    if (bound->first != start->first)
+      return std::nullopt;
+    return rangeForConstIterCount(start->second, bound->second, true);
+  }
+  return std::nullopt;
+}
+
+static bool stmtContainsBreakOrContinue(const Stmt& stmt, bool in_loop_body);
+static bool loopBodyContainsBreakOrContinue(const std::vector<std::unique_ptr<Stmt>>& body);
+
+static bool stmtContainsBreakOrContinue(const Stmt& stmt, bool in_loop_body) {
+  switch (stmt.kind) {
+    case Stmt::BreakStmt:
+    case Stmt::ContinueStmt:
+      return true;
+    case Stmt::IfStmt:
+      for (const auto& c : stmt.if_stmt.clauses) {
+        for (const auto& s : c.body) {
+          if (stmtContainsBreakOrContinue(*s, in_loop_body))
+            return true;
+        }
+      }
+      for (const auto& s : stmt.if_stmt.else_body) {
+        if (stmtContainsBreakOrContinue(*s, in_loop_body))
+          return true;
+      }
+      return false;
+    case Stmt::WhileStmt:
+    case Stmt::ForStmt:
+      if (in_loop_body)
+        return false;
+      for (const auto& s : stmt.kind == Stmt::WhileStmt ? stmt.while_stmt.body : stmt.for_stmt.body) {
+        if (stmtContainsBreakOrContinue(*s, false))
+          return true;
+      }
+      return false;
+    case Stmt::TryStmtK:
+      for (const auto& s : stmt.try_stmt.try_body) {
+        if (stmtContainsBreakOrContinue(*s, in_loop_body))
+          return true;
+      }
+      for (const auto& s : stmt.try_stmt.catch_body) {
+        if (stmtContainsBreakOrContinue(*s, in_loop_body))
+          return true;
+      }
+      for (const auto& s : stmt.try_stmt.finally_body) {
+        if (stmtContainsBreakOrContinue(*s, in_loop_body))
+          return true;
+      }
+      return false;
+    case Stmt::MatchStmtK:
+      for (const auto& arm : stmt.match_stmt.arms) {
+        for (const auto& s : arm.body) {
+          if (stmtContainsBreakOrContinue(*s, in_loop_body))
+            return true;
+        }
+      }
+      return false;
+    case Stmt::UnsafeStmtK:
+      for (const auto& s : stmt.unsafe.body) {
+        if (stmtContainsBreakOrContinue(*s, in_loop_body))
+          return true;
+      }
+      return false;
+    default:
+      return false;
+  }
+}
+
+static bool loopBodyContainsBreakOrContinue(const std::vector<std::unique_ptr<Stmt>>& body) {
+  for (const auto& s : body) {
+    if (stmtContainsBreakOrContinue(*s, true))
+      return true;
+  }
+  return false;
+}
+
+static std::optional<std::string> exprListVarName(const Expr& e) {
+  if (e.kind == Expr::Variable)
+    return e.var.name;
+  if (e.kind == Expr::MethodExpr && e.method_call.object &&
+      e.method_call.object->kind == Expr::Variable)
+    return e.method_call.object->var.name;
+  return std::nullopt;
+}
+
+static bool exprIsListPushOnVar(const Expr& e, const std::string& var) {
+  if (e.kind != Expr::MethodExpr)
+    return false;
+  if (e.method_call.method != "push")
+    return false;
+  if (!e.method_call.object || e.method_call.object->kind != Expr::Variable)
+    return false;
+  return e.method_call.object->var.name == var;
+}
+
+static int64_t countAnyPushInExpr(const Expr& e) {
+  if (e.kind == Expr::MethodExpr && e.method_call.method == "push")
+    return 1;
+  if (e.kind == Expr::Binary)
+    return countAnyPushInExpr(*e.bin_op.left) + countAnyPushInExpr(*e.bin_op.right);
+  if (e.kind == Expr::TernaryExprK)
+    return std::max(countAnyPushInExpr(*e.ternary.then_br), countAnyPushInExpr(*e.ternary.else_br));
+  return 0;
+}
+
+static int64_t countAnyPushInStmt(const Stmt& s) {
+  switch (s.kind) {
+    case Stmt::ExprStmtK:
+      return s.expr_stmt.expr ? countAnyPushInExpr(*s.expr_stmt.expr) : 0;
+    case Stmt::LetStmt:
+      return countAnyPushInExpr(*s.let.value);
+    case Stmt::IfStmt: {
+      int64_t n = 0;
+      for (const auto& c : s.if_stmt.clauses) {
+        for (const auto& st : c.body)
+          n += countAnyPushInStmt(*st);
+      }
+      for (const auto& st : s.if_stmt.else_body)
+        n += countAnyPushInStmt(*st);
+      return n;
+    }
+    case Stmt::TryStmtK: {
+      int64_t n = 0;
+      for (const auto& st : s.try_stmt.try_body)
+        n += countAnyPushInStmt(*st);
+      return n;
+    }
+    case Stmt::ForStmt: {
+      int64_t n = 0;
+      for (const auto& st : s.for_stmt.body)
+        n += countAnyPushInStmt(*st);
+      return n;
+    }
+    default:
+      return 0;
+  }
+}
+
+static int64_t listPushDeltaInBody(const std::vector<std::unique_ptr<Stmt>>& body) {
+  int64_t total = 0;
+  for (const auto& s : body)
+    total += countAnyPushInStmt(*s);
+  return total;
+}
+
+static bool ifCondMatchesVarEqConst(const Expr& cond, const std::string& var, int64_t* out_val) {
+  if (cond.kind != Expr::Binary || (cond.bin_op.op != "==" && cond.bin_op.op != "!="))
+    return false;
+  if (cond.bin_op.left->kind == Expr::Variable && cond.bin_op.left->var.name == var &&
+      cond.bin_op.right->kind == Expr::Int) {
+    *out_val = cond.bin_op.right->int_lit.value;
+    return true;
+  }
+  if (cond.bin_op.right->kind == Expr::Variable && cond.bin_op.right->var.name == var &&
+      cond.bin_op.left->kind == Expr::Int) {
+    *out_val = cond.bin_op.left->int_lit.value;
+    return true;
+  }
+  return false;
+}
+
+static bool stmtBlockContainsContinue(const std::vector<std::unique_ptr<Stmt>>& stmts) {
+  for (const auto& s : stmts) {
+    if (s->kind == Stmt::ContinueStmt)
+      return true;
+    if (s->kind == Stmt::IfStmt) {
+      for (const auto& c : s->if_stmt.clauses) {
+        if (stmtBlockContainsContinue(c.body))
+          return true;
+      }
+      if (stmtBlockContainsContinue(s->if_stmt.else_body))
+        return true;
+    } else if (s->kind == Stmt::TryStmtK) {
+      if (stmtBlockContainsContinue(s->try_stmt.try_body))
+        return true;
+    }
+  }
+  return false;
+}
+
+static int64_t continueSkipsIfVarCompareCond(const Expr& cond, const std::string& loop_var,
+                                             int64_t loop_start, int64_t iters, bool ascending,
+                                             const ConstLocalsState& locals) {
+  if (iters <= 0 || cond.kind != Expr::Binary)
+    return 0;
+  int64_t end = loop_start + iters - 1;
+  auto count_range = [&](int64_t lo, int64_t hi) {
+    int64_t a = std::max(lo, loop_start);
+    int64_t b = std::min(hi, end);
+    return a <= b ? b - a + 1 : 0;
+  };
+  auto from_var_op = [&](const std::string& var, const std::string& op,
+                         const Expr& other) -> int64_t {
+    if (var != loop_var)
+      return 0;
+    auto k = constIntFromExpr(other, locals);
+    if (!k)
+      return 0;
+    if (ascending) {
+      if (op == ">")
+        return count_range(*k + 1, end);
+      if (op == ">=")
+        return count_range(*k, end);
+      if (op == "<")
+        return count_range(loop_start, *k - 1);
+      if (op == "<=")
+        return count_range(loop_start, *k);
+    } else {
+      int64_t lo_val = loop_start - iters + 1;
+      if (op == "<")
+        return count_range(lo_val, *k - 1);
+      if (op == "<=") {
+        if (*k < lo_val)
+          return 0;
+        return *k - lo_val + 1;
+      }
+      if (op == ">")
+        return count_range(*k + 1, end);
+      if (op == ">=")
+        return count_range(*k, end);
+    }
+    return 0;
+  };
+  if (cond.bin_op.left->kind == Expr::Variable) {
+    if (int64_t n = from_var_op(cond.bin_op.left->var.name, cond.bin_op.op, *cond.bin_op.right))
+      return n;
+  }
+  if (cond.bin_op.right->kind == Expr::Variable) {
+    const std::string& op = cond.bin_op.op;
+    if (op == "<")
+      return from_var_op(cond.bin_op.right->var.name, ">", *cond.bin_op.left);
+    if (op == "<=")
+      return from_var_op(cond.bin_op.right->var.name, ">=", *cond.bin_op.left);
+    if (op == ">")
+      return from_var_op(cond.bin_op.right->var.name, "<", *cond.bin_op.left);
+    if (op == ">=")
+      return from_var_op(cond.bin_op.right->var.name, "<=", *cond.bin_op.left);
+  }
+  return 0;
+}
+
+static int64_t continueSkipCountFromStmtTree(const Stmt& s, const std::string& loop_var,
+                                             const ConstLocalsState& locals, int64_t iters,
+                                             int64_t loop_start, bool ascending);
+static int64_t continueSkipCountFromMatchStmt(const Stmt& s, const std::string& loop_var,
+                                              const ConstLocalsState& locals, int64_t iters);
+
+static int64_t continueSkipCountFromStmtTree(const Stmt& s, const std::string& loop_var,
+                                             const ConstLocalsState& locals, int64_t iters,
+                                             int64_t loop_start, bool ascending) {
+  switch (s.kind) {
+    case Stmt::ContinueStmt:
+      return 1;
+    case Stmt::IfStmt: {
+      int64_t n = 0;
+      for (const auto& c : s.if_stmt.clauses) {
+        int64_t lit = 0;
+        if (ifCondMatchesVarEqConst(*c.condition, loop_var, &lit)) {
+          for (const auto& st : c.body) {
+            if (st->kind == Stmt::ContinueStmt)
+              return n + 1;
+            n += continueSkipCountFromStmtTree(*st, loop_var, locals, iters, loop_start,
+                                               ascending);
+          }
+        } else if (stmtBlockContainsContinue(c.body)) {
+          bool direct_continue = false;
+          for (const auto& st : c.body) {
+            if (st->kind == Stmt::ContinueStmt)
+              direct_continue = true;
+          }
+          if (direct_continue) {
+            int64_t lit = 0;
+            if (ifCondMatchesVarEqConst(*c.condition, loop_var, &lit))
+              return n + 1;
+            int64_t cmp_skips = continueSkipsIfVarCompareCond(*c.condition, loop_var, loop_start,
+                                                              iters, ascending, locals);
+            if (cmp_skips > 0)
+              return n + cmp_skips;
+            return n + 1;
+          }
+          int64_t nested = 0;
+          for (const auto& st : c.body)
+            nested += continueSkipCountFromStmtTree(*st, loop_var, locals, iters, loop_start,
+                                                    ascending);
+          if (nested > 0)
+            return n + nested;
+        } else {
+          for (const auto& st : c.body)
+            n += continueSkipCountFromStmtTree(*st, loop_var, locals, iters, loop_start,
+                                               ascending);
+        }
+      }
+      for (const auto& st : s.if_stmt.else_body)
+        n += continueSkipCountFromStmtTree(*st, loop_var, locals, iters, loop_start, ascending);
+      return n;
+    }
+    case Stmt::TryStmtK: {
+      int64_t n = 0;
+      for (const auto& st : s.try_stmt.try_body)
+        n += continueSkipCountFromStmtTree(*st, loop_var, locals, iters, loop_start, ascending);
+      return n;
+    }
+    case Stmt::MatchStmtK:
+      return continueSkipCountFromMatchStmt(s, loop_var, locals, iters);
+    default:
+      return 0;
+  }
+}
+
+static bool matchPatMatchesConstInt(const Pattern& pat, int64_t v) {
+  if (pat.kind == PatKind::Literal && !pat.literal_is_float)
+    return pat.literal == v;
+  if (pat.kind == PatKind::Wildcard || pat.kind == PatKind::Bind)
+    return true;
+  return false;
+}
+
+static int64_t continueSkipCountFromMatchStmt(const Stmt& s, const std::string& loop_var,
+                                              const ConstLocalsState& locals, int64_t iters) {
+  if (s.match_stmt.scrutinee->kind != Expr::Variable ||
+      s.match_stmt.scrutinee->var.name != loop_var)
+    return 0;
+  int64_t literal_continue = 0;
+  int64_t literal_no_continue = 0;
+  bool wildcard_continue = false;
+  for (const auto& arm : s.match_stmt.arms) {
+    if (!arm.pat)
+      continue;
+    bool arm_continue = false;
+    for (const auto& st : arm.body) {
+      if (st->kind == Stmt::ContinueStmt) {
+        arm_continue = true;
+        break;
+      }
+    }
+    if (arm.pat->kind == PatKind::Wildcard || arm.pat->kind == PatKind::Bind) {
+      if (arm_continue)
+        wildcard_continue = true;
+      continue;
+    }
+    if (arm.pat->kind == PatKind::Literal && !arm.pat->literal_is_float) {
+      if (arm_continue)
+        literal_continue++;
+      else
+        literal_no_continue++;
+    }
+  }
+  if (wildcard_continue)
+    return std::max<int64_t>(0, iters - literal_no_continue);
+  (void)locals;
+  return literal_continue;
+}
+
+static bool bodyStmtHasPush(const Stmt& s);
+
+static bool bodyStmtHasPush(const Stmt& s) {
+  if (s.kind == Stmt::ExprStmtK && s.expr_stmt.expr && s.expr_stmt.expr->kind == Expr::MethodExpr &&
+      s.expr_stmt.expr->method_call.method == "push")
+    return true;
+  if (s.kind == Stmt::IfStmt) {
+    for (const auto& c : s.if_stmt.clauses) {
+      for (const auto& st : c.body) {
+        if (bodyStmtHasPush(*st))
+          return true;
+      }
+    }
+    for (const auto& st : s.if_stmt.else_body) {
+      if (bodyStmtHasPush(*st))
+        return true;
+    }
+  }
+  if (s.kind == Stmt::TryStmtK) {
+    for (const auto& st : s.try_stmt.try_body) {
+      if (bodyStmtHasPush(*st))
+        return true;
+    }
+  }
+  return false;
+}
+
+static bool stmtTreeHasBreakBeforePush(const Stmt& s);
+
+static bool stmtTreeHasBreakBeforePush(const Stmt& s) {
+  if (s.kind == Stmt::BreakStmt)
+    return true;
+  if (s.kind == Stmt::IfStmt) {
+    for (const auto& c : s.if_stmt.clauses) {
+      for (const auto& st : c.body) {
+        if (stmtTreeHasBreakBeforePush(*st))
+          return true;
+      }
+    }
+    for (const auto& st : s.if_stmt.else_body) {
+      if (stmtTreeHasBreakBeforePush(*st))
+        return true;
+    }
+  }
+  if (s.kind == Stmt::TryStmtK) {
+    for (const auto& st : s.try_stmt.try_body) {
+      if (stmtTreeHasBreakBeforePush(*st))
+        return true;
+    }
+  }
+  return false;
+}
+
+static bool stmtsHaveBreakBeforePush(const std::vector<std::unique_ptr<Stmt>>& stmts) {
+  for (const auto& s : stmts) {
+    if (bodyStmtHasPush(*s))
+      return false;
+    if (s->kind == Stmt::BreakStmt)
+      return true;
+    if (s->kind == Stmt::TryStmtK) {
+      if (stmtsHaveBreakBeforePush(s->try_stmt.try_body))
+        return true;
+    } else if (stmtTreeHasBreakBeforePush(*s)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+static bool bodyHasCounterBreakBeforePush(const std::vector<std::unique_ptr<Stmt>>& body) {
+  for (const auto& s : body) {
+    if (s->kind == Stmt::TryStmtK) {
+      if (stmtsHaveBreakBeforePush(s->try_stmt.try_body))
+        return true;
+      continue;
+    }
+    if (bodyStmtHasPush(*s))
+      break;
+    if (s->kind == Stmt::BreakStmt)
+      return true;
+    if (stmtTreeHasBreakBeforePush(*s))
+      return true;
+  }
+  return false;
+}
+
+static std::optional<int64_t> breakIterLimitFromCompare(const Expr& cond, const std::string& loop_var,
+                                                        bool ascending, bool break_before_push,
+                                                        int64_t loop_start) {
+  if (cond.kind != Expr::Binary)
+    return std::nullopt;
+  auto try_lim = [&](const std::string& var, const std::string& op,
+                     int64_t k) -> std::optional<int64_t> {
+    if (var != loop_var)
+      return std::nullopt;
+    if (ascending) {
+      if (op == "==")
+        return break_before_push ? k - loop_start : k - loop_start + 1;
+      if (op == ">=")
+        return break_before_push ? k - loop_start : k - loop_start + 1;
+      if (op == ">")
+        return break_before_push ? k - loop_start + 1 : k - loop_start + 2;
+      if (op == "<=")
+        return break_before_push ? k - loop_start + 1 : k - loop_start + 2;
+      if (op == "<")
+        return break_before_push ? k - loop_start : k - loop_start + 1;
+    } else {
+      if (op == "==")
+        return break_before_push ? loop_start - k : loop_start - k + 1;
+      if (op == "<=")
+        return break_before_push ? loop_start - k : loop_start - k + 1;
+      if (op == "<")
+        return break_before_push ? loop_start - k + 1 : loop_start - k + 2;
+      if (op == ">=")
+        return break_before_push ? loop_start - k + 1 : loop_start - k + 2;
+      if (op == ">")
+        return break_before_push ? loop_start - k + 2 : loop_start - k + 3;
+    }
+    return std::nullopt;
+  };
+  if (cond.bin_op.left->kind == Expr::Variable && cond.bin_op.right->kind == Expr::Int)
+    return try_lim(cond.bin_op.left->var.name, cond.bin_op.op, cond.bin_op.right->int_lit.value);
+  if (cond.bin_op.right->kind == Expr::Variable && cond.bin_op.left->kind == Expr::Int) {
+    const std::string& op = cond.bin_op.op;
+    int64_t k = cond.bin_op.left->int_lit.value;
+    if (op == "<")
+      return try_lim(cond.bin_op.right->var.name, ">", k);
+    if (op == "<=")
+      return try_lim(cond.bin_op.right->var.name, ">=", k);
+    if (op == ">")
+      return try_lim(cond.bin_op.right->var.name, "<", k);
+    if (op == ">=")
+      return try_lim(cond.bin_op.right->var.name, "<=", k);
+  }
+  return std::nullopt;
+}
+
+static std::optional<int64_t> breakIterLimitAscInStmts(
+    const std::vector<std::unique_ptr<Stmt>>& stmts, const std::string& loop_var,
+    bool break_before_push, bool ascending, int64_t loop_start) {
+  std::optional<int64_t> min_at;
+  for (const auto& s : stmts) {
+    if (s->kind == Stmt::IfStmt) {
+      for (const auto& c : s->if_stmt.clauses) {
+        bool has_break = false;
+        for (const auto& st : c.body) {
+          if (st->kind == Stmt::BreakStmt)
+            has_break = true;
+        }
+        if (!has_break)
+          continue;
+        std::optional<int64_t> limit;
+        int64_t lit = 0;
+        if (ifCondMatchesVarEqConst(*c.condition, loop_var, &lit)) {
+          if (ascending)
+            limit = break_before_push ? lit - loop_start : lit - loop_start + 1;
+          else
+            limit = break_before_push ? loop_start - lit : loop_start - lit + 1;
+        } else {
+          limit = breakIterLimitFromCompare(*c.condition, loop_var, ascending, break_before_push,
+                                            loop_start);
+        }
+        if (!limit)
+          continue;
+        if (!min_at || *limit < *min_at)
+          min_at = limit;
+      }
+    } else if (s->kind == Stmt::TryStmtK) {
+      if (auto nested = breakIterLimitAscInStmts(s->try_stmt.try_body, loop_var, break_before_push,
+                                                 ascending, loop_start)) {
+        if (!min_at || *nested < *min_at)
+          min_at = nested;
+      }
+    }
+  }
+  return min_at;
+}
+
+static std::optional<int64_t> breakIterLimitAsc(const std::vector<std::unique_ptr<Stmt>>& body,
+                                                const std::string& loop_var, bool break_before_push,
+                                                bool ascending, int64_t loop_start) {
+  return breakIterLimitAscInStmts(body, loop_var, break_before_push, ascending, loop_start);
+}
+
+static int64_t continueSkipCountInOrderedBody(const std::vector<std::unique_ptr<Stmt>>& body,
+                                              const std::string& loop_var,
+                                              const ConstLocalsState& locals, int64_t iters,
+                                              int64_t loop_start, bool ascending);
+
+static int64_t effectiveLoopScaleIters(int64_t iters, const std::string& loop_var,
+                                       const std::vector<std::unique_ptr<Stmt>>& body,
+                                       bool ascending, int64_t loop_start);
+
+static bool bodyHasNestedFor(const std::vector<std::unique_ptr<Stmt>>& body) {
+  for (const auto& s : body) {
+    if (s && s->kind == Stmt::ForStmt)
+      return true;
+  }
+  return false;
+}
+
+static void invalidateSeqLensAfterNestedLoops(
+    const std::unordered_map<std::string, int64_t>& lens_before, ConstLocalsState& locals) {
+  for (const auto& [name, _] : lens_before)
+    locals.array_lens.erase(name);
+}
+
+static int64_t nestedInnerLoopScaleMultiplier(const std::vector<std::unique_ptr<Stmt>>& body,
+                                              const ConstLocalsState& saved_const) {
+  int64_t mult = 1;
+  for (const auto& s : body) {
+    if (!s || s->kind != Stmt::ForStmt)
+      continue;
+    if (s->for_stmt.is_range) {
+      auto rs = constIntFromExpr(*s->for_stmt.range_start, saved_const);
+      auto re = constIntFromExpr(*s->for_stmt.range_end, saved_const);
+      if (!rs || !re)
+        continue;
+      auto iters = rangeForConstIterCount(*rs, *re, s->for_stmt.range_exclusive);
+      if (!iters)
+        continue;
+      bool asc = *rs <= *re;
+      int64_t inner = effectiveLoopScaleIters(*iters, s->for_stmt.range_var, s->for_stmt.body, asc,
+                                              *rs);
+      mult *= inner;
+    } else if (!s->for_stmt.is_foreach && !s->for_stmt.is_parallel && s->for_stmt.init &&
+               s->for_stmt.cond) {
+      auto iters = cStyleForConstIterCount(s->for_stmt, saved_const);
+      if (!iters)
+        continue;
+      std::string loop_var;
+      bool asc = true;
+      int64_t loop_start = 0;
+      if (auto start = constAssignFromForClause(*s->for_stmt.init, saved_const)) {
+        loop_var = start->first;
+        loop_start = start->second;
+        if (constGtLowerBound(*s->for_stmt.cond, saved_const))
+          asc = false;
+      }
+      if (loop_var.empty())
+        continue;
+      int64_t inner =
+          effectiveLoopScaleIters(*iters, loop_var, s->for_stmt.body, asc, loop_start);
+      mult *= inner;
+    }
+  }
+  return mult;
+}
+
+static int64_t continueSkipCountInOrderedBody(const std::vector<std::unique_ptr<Stmt>>& body,
+                                              const std::string& loop_var,
+                                              const ConstLocalsState& locals, int64_t iters,
+                                              int64_t loop_start, bool ascending) {
+  int64_t skips = 0;
+  bool pushed = false;
+  for (const auto& s : body) {
+    if (!pushed)
+      skips += continueSkipCountFromStmtTree(*s, loop_var, locals, iters, loop_start, ascending);
+    if (bodyStmtHasPush(*s))
+      pushed = true;
+  }
+  return skips;
+}
+
+static int64_t effectiveLoopScaleIters(int64_t iters, const std::string& loop_var,
+                                       const std::vector<std::unique_ptr<Stmt>>& body,
+                                       bool ascending, int64_t loop_start) {
+  if (!loopBodyContainsBreakOrContinue(body))
+    return iters;
+  bool break_before = bodyHasCounterBreakBeforePush(body);
+  std::optional<int64_t> break_lim =
+      breakIterLimitAsc(body, loop_var, break_before, ascending, loop_start);
+  int64_t capped = iters;
+  if (break_lim)
+    capped = std::min(iters, *break_lim);
+  int64_t skips =
+      continueSkipCountInOrderedBody(body, loop_var, ConstLocalsState{}, capped, loop_start, ascending);
+  if (skips > 0)
+    return std::max<int64_t>(0, capped - skips);
+  if (break_lim)
+    return *break_lim;
+  return capped;
+}
+
+static void scaleArrayLensAfterConstRangeFor(const std::unordered_map<std::string, int64_t>& lens_before,
+                                             int64_t iters,
+                                             std::unordered_map<std::string, int64_t>& lens_out) {
+  for (const auto& [name, after] : lens_out) {
+    auto it = lens_before.find(name);
+    if (it == lens_before.end())
+      continue;
+    int64_t delta = after - it->second;
+    if (delta > 0)
+      lens_out[name] = it->second + delta * iters;
+  }
+}
+
+static std::optional<int64_t> sliceLenFromBounds(int64_t start, int64_t end,
+                                                 const std::optional<int64_t>& src_len) {
+  if (!src_len)
+    return std::nullopt;
+  int64_t s = start;
+  int64_t en = end;
+  if (s < 0)
+    s = 0;
+  if (en > *src_len)
+    en = *src_len;
+  if (en < s)
+    en = s;
+  return en - s;
+}
+
+static std::optional<int64_t> knownArrayLenFromExpr(const Expr& e,
+                                                    const ConstLocalsState& locals) {
+  if (e.kind == Expr::ArrayLitExpr)
+    return static_cast<int64_t>(e.array_lit.elements.size());
+  if (e.kind == Expr::Variable) {
+    auto it = locals.array_lens.find(e.var.name);
+    if (it != locals.array_lens.end())
+      return it->second;
+  }
+  if (e.kind == Expr::IndexExpr) {
+    auto idx = constIntFromExpr(*e.index.index, locals);
+    if (!idx || *idx < 0)
+      return std::nullopt;
+    if (e.index.array->kind == Expr::ArrayLitExpr) {
+      size_t i = static_cast<size_t>(*idx);
+      if (i < e.index.array->array_lit.elements.size())
+        return knownArrayLenFromExpr(*e.index.array->array_lit.elements[i], locals);
+    }
+    if (e.index.array->kind == Expr::Variable) {
+      auto outer = locals.nested_row_lens.find(e.index.array->var.name);
+      if (outer != locals.nested_row_lens.end()) {
+        auto row = outer->second.find(*idx);
+        if (row != outer->second.end())
+          return row->second;
+      }
+    }
+    return std::nullopt;
+  }
+  if (e.kind == Expr::SliceExpr && e.slice.start && e.slice.end) {
+    auto start = constIntFromExpr(*e.slice.start, locals);
+    auto end = constIntFromExpr(*e.slice.end, locals);
+    auto src_len = knownArrayLenFromExpr(*e.slice.array, locals);
+    if (!start || !end)
+      return std::nullopt;
+    return sliceLenFromBounds(*start, *end, src_len);
+  }
+  if (e.kind == Expr::MethodExpr && e.method_call.method == "slice" &&
+      e.method_call.args.size() >= 2 && e.method_call.object) {
+    auto start = constIntFromExpr(*e.method_call.args[0], locals);
+    auto end = constIntFromExpr(*e.method_call.args[1], locals);
+    auto src_len = knownArrayLenFromExpr(*e.method_call.object, locals);
+    if (!start || !end)
+      return std::nullopt;
+    return sliceLenFromBounds(*start, *end, src_len);
+  }
+  return std::nullopt;
+}
+
+static void trackNestedRowLensFromInit(const std::string& name, const Expr& value,
+                                       ConstLocalsState& locals) {
+  if (value.kind != Expr::ArrayLitExpr) {
+    locals.nested_row_lens.erase(name);
+    return;
+  }
+  std::unordered_map<int64_t, int64_t> rows;
+  int64_t row = 0;
+  for (const auto& el : value.array_lit.elements) {
+    if (auto len = knownArrayLenFromExpr(*el, locals))
+      rows[row] = *len;
+    ++row;
+  }
+  if (!rows.empty())
+    locals.nested_row_lens[name] = std::move(rows);
+  else
+    locals.nested_row_lens.erase(name);
+}
+
+static std::optional<std::string> cStyleForLoopVarName(const Stmt& init) {
+  if (init.kind == Stmt::LetStmt)
+    return init.let.name;
+  if (init.kind == Stmt::ExprStmtK && init.expr_stmt.expr &&
+      init.expr_stmt.expr->kind == Expr::AssignExprK) {
+    const Expr& a = *init.expr_stmt.expr;
+    if (a.assign.op == "=" && a.assign.target->kind == Expr::Variable)
+      return a.assign.target->var.name;
+  }
+  return std::nullopt;
+}
+
+static bool canCallFunction(const Function* caller, const Function* callee) {
+  if (!callee || callee->link_public)
+    return true;
+  if (!caller)
+    return false;
+  if (callee->visibility == Visibility::Private) {
+    if (callee->module_name.empty())
+      return caller->module_name.empty();
+    return caller->module_name == callee->module_name;
+  }
+  // Public symbols imported for internal linkage (link_public=false) stay callable
+  // from any function body; they are not direct API entry points.
+  return true;
+}
+
+static void rejectNonPositiveCapacityArg(const std::string& ctor_name, const Expr& arg,
+                                         const ConstLocalsState& locals, int line = 0, int col = 0) {
+  if (auto cap = constIntFromExpr(arg, locals)) {
+    if (*cap == 0)
+      throw FarError(ctor_name + " capacity must be positive", line, col);
+  }
+}
+
+static bool isNullCharExpr(const Expr& e, const ConstLocalsState& locals) {
+  if (e.kind == Expr::Char)
+    return e.char_lit.value == 0;
+  if (e.kind == Expr::CastExpr && isPrim(e.cast.target, FarTypeId::Char) && e.cast.value) {
+    if (auto v = constIntFromExpr(*e.cast.value, locals))
+      return *v == 0;
+  }
+  if (e.kind == Expr::FnCall && e.call.name == "char" && e.call.args.size() == 1) {
+    if (auto v = constIntFromExpr(*e.call.args[0].value, locals))
+      return *v == 0;
+  }
+  if (auto v = constIntFromExpr(e, locals))
+    return *v == 0;
+  return false;
+}
+
+static void rejectNestedRowCompoundArrayRhs(const Expr& target, const Expr& value, const std::string& op,
+                                            const ConstLocalsState& locals, int line, int col) {
+  if (op == "=" || target.kind != Expr::IndexExpr)
+    return;
+  auto outer_idx = constIntFromExpr(*target.index.index, locals);
+  if (!outer_idx || target.index.array->kind != Expr::Variable)
+    return;
+  auto outer = locals.nested_row_lens.find(target.index.array->var.name);
+  if (outer == locals.nested_row_lens.end())
+    return;
+  if (!outer->second.count(*outer_idx))
+    return;
+  if (value.kind == Expr::ArrayLitExpr)
+    throw FarError("cannot append to nested array row via compound assignment", line, col);
 }
 
 static std::optional<int64_t> tryBodyThrowLiteral(const std::vector<std::unique_ptr<Stmt>>& body,
@@ -962,6 +1912,12 @@ static void collectFreeVarsExpr(const Expr& expr, std::unordered_set<std::string
     case Expr::AwaitExprK:
       collectFreeVarsExpr(*expr.await.value, out);
       break;
+    case Expr::AssignExprK:
+      if (expr.assign.target)
+        collectFreeVarsExpr(*expr.assign.target, out);
+      if (expr.assign.value)
+        collectFreeVarsExpr(*expr.assign.value, out);
+      break;
     default:
       break;
   }
@@ -1128,9 +2084,6 @@ static bool inferParamStringFromExpr(const Expr& e, const std::string& param,
       return true;
   }
   if (e.kind == Expr::FnCall) {
-    if (e.call.name == "len" && !e.call.args.empty() &&
-        exprIsParamRef(*e.call.args[0].value, param))
-      return true;
     for (const auto& a : e.call.args) {
       if (inferParamStringFromExpr(*a.value, param, param_types))
         return true;
@@ -1350,6 +2303,23 @@ class TypeChecker {
   int loop_depth_ = 0;
   int switch_depth_ = 0;
   int parallel_for_depth_ = 0;
+  std::unordered_set<std::string> active_loop_vars_;
+  std::unordered_set<std::string> immutable_capture_vars_;
+
+  void rejectImmutableVarAssign(const std::string& name, int line, int col) {
+    if (active_loop_vars_.count(name))
+      throw FarError("cannot assign to loop iterator '" + name + "'", line, col);
+    if (immutable_capture_vars_.count(name))
+      throw FarError("cannot assign to captured variable '" + name + "'", line, col);
+  }
+
+  void pushLoopVar(const std::string& name, int line, int col) {
+    if (active_loop_vars_.count(name))
+      throw FarError("loop variable '" + name + "' shadows an active loop iterator", line, col);
+    active_loop_vars_.insert(name);
+  }
+
+  void popLoopVar(const std::string& name) { active_loop_vars_.erase(name); }
 
   void trackConstLocal(const std::string& name, const Expr& value) {
     if (auto i = constIntFromExpr(value, const_locals_)) {
@@ -1380,6 +2350,80 @@ class TypeChecker {
   void clearConstLocal(const std::string& name) {
     const_locals_.ints.erase(name);
     const_locals_.floats.erase(name);
+  }
+
+  void trackSeqLenFromInit(const std::string& name, const TypeDesc& ty, const Expr& value) {
+    if (ty.form == TypeForm::List) {
+      if (value.kind == Expr::FnCall && value.call.name == "List" && value.call.args.empty())
+        const_locals_.array_lens[name] = 0;
+      const_locals_.nested_row_lens.erase(name);
+      return;
+    }
+    if (ty.form == TypeForm::Array || isIndexable(ty)) {
+      if (auto len = knownArrayLenFromExpr(value, const_locals_))
+        const_locals_.array_lens[name] = *len;
+      else
+        const_locals_.array_lens.erase(name);
+      trackNestedRowLensFromInit(name, value, const_locals_);
+    }
+  }
+
+  void bumpSeqLen(const std::string& name, int64_t delta) {
+    auto it = const_locals_.array_lens.find(name);
+    if (it == const_locals_.array_lens.end())
+      return;
+    it->second += delta;
+    if (it->second < 0) {
+      const_locals_.array_lens.erase(name);
+      const_locals_.nested_row_lens.erase(name);
+    }
+  }
+
+  void rejectOobIndexAssign(const Expr& arr, const Expr& idx, int line, int col) {
+    auto index = constIntFromExpr(idx, const_locals_);
+    if (!index)
+      return;
+    if (*index < 0)
+      throw FarError("index out of bounds for assignment", line, col);
+    auto len = knownArrayLenFromExpr(arr, const_locals_);
+    if (!len)
+      return;
+    if (*index >= *len)
+      throw FarError("index out of bounds for assignment", line, col);
+  }
+
+  void applyLoopListScaling(const std::unordered_map<std::string, int64_t>& lens_before,
+                            int64_t iters, const std::string& loop_var,
+                            const std::vector<std::unique_ptr<Stmt>>& body, bool ascending,
+                            int64_t loop_start, const ConstLocalsState& saved_const) {
+    if (iters <= 0)
+      return;
+    int64_t scale = effectiveLoopScaleIters(iters, loop_var, body, ascending, loop_start);
+    scale *= nestedInnerLoopScaleMultiplier(body, saved_const);
+    if (scale <= 0)
+      return;
+    int64_t push_delta = listPushDeltaInBody(body);
+    if (push_delta <= 0) {
+      scaleArrayLensAfterConstRangeFor(lens_before, scale, const_locals_.array_lens);
+      return;
+    }
+    bool nested_push_loop = false;
+    for (const auto& s : body) {
+      if (s && s->kind == Stmt::ForStmt && listPushDeltaInBody(s->for_stmt.body) > 0) {
+        nested_push_loop = true;
+        break;
+      }
+    }
+    for (const auto& [name, before] : lens_before) {
+      auto it = const_locals_.array_lens.find(name);
+      if (it == const_locals_.array_lens.end())
+        continue;
+      int64_t delta = it->second - before;
+      if (nested_push_loop)
+        delta = push_delta;
+      if (delta > 0)
+        const_locals_.array_lens[name] = before + delta * scale;
+    }
   }
 
   bool assignTargetCanBeNullish(const Expr& target) const {
@@ -1527,6 +2571,10 @@ class TypeChecker {
   void checkFunction(Function& fn) {
     current_fn_ = &fn;
     current_user_type_ = nullptr;
+    active_loop_vars_.clear();
+    immutable_capture_vars_.clear();
+    for (const auto& cap : fn.captures)
+      immutable_capture_vars_.insert(cap);
     const size_t dollar = fn.name.find('$');
     if (dollar != std::string::npos)
       current_user_type_ = obj_reg_.lookupMut(fn.name.substr(0, dollar));
@@ -1654,6 +2702,7 @@ class TypeChecker {
           locals_[stmt.let.name] = stmt.let.type;
           explicit_locals_.insert(stmt.let.name);
         } else if (locals_.count(stmt.let.name)) {
+          rejectImmutableVarAssign(stmt.let.name, 0, 0);
           TypeDesc existing = locals_.at(stmt.let.name);
           maybeWidenInferredLocal(locals_, explicit_locals_, stmt.let.name, ty, existing);
           rejectIntLiteralOutOfRangeForTarget(*stmt.let.value, existing);
@@ -1670,6 +2719,7 @@ class TypeChecker {
           locals_[stmt.let.name] = ty;
         }
         trackConstLocal(stmt.let.name, *stmt.let.value);
+        trackSeqLenFromInit(stmt.let.name, locals_.at(stmt.let.name), *stmt.let.value);
         if (stmt.let.is_constexpr && stmt.let.value && isEmptyConstexprLiteral(*stmt.let.value))
           constexpr_empty_locals_.insert(stmt.let.name);
         break;
@@ -1727,10 +2777,43 @@ class TypeChecker {
           ++loop_depth_;
           auto saved = locals_;
           auto saved_const = const_locals_;
+          auto lens_before = const_locals_.array_lens;
+          std::optional<int64_t> iters;
+          if (auto bound = constLtUpperBound(*stmt.while_stmt.condition, saved_const)) {
+            auto start_it = saved_const.ints.find(bound->first);
+            if (start_it != saved_const.ints.end())
+              iters = rangeForConstIterCount(start_it->second, bound->second, true);
+          } else if (auto bound = constGtLowerBound(*stmt.while_stmt.condition, saved_const)) {
+            auto start_it = saved_const.ints.find(bound->first);
+            if (start_it != saved_const.ints.end())
+              iters = rangeForConstIterCount(start_it->second, bound->second, true);
+          }
           checkStmtBlock(stmt.while_stmt.body);
+          if (iters) {
+            std::string loop_var;
+            bool asc = true;
+            if (auto bound = constLtUpperBound(*stmt.while_stmt.condition, saved_const)) {
+              loop_var = bound->first;
+              asc = true;
+            } else if (auto bound = constGtLowerBound(*stmt.while_stmt.condition, saved_const)) {
+              loop_var = bound->first;
+              asc = false;
+            }
+            if (!loop_var.empty()) {
+              int64_t loop_start = 0;
+              if (auto sit = saved_const.ints.find(loop_var); sit != saved_const.ints.end())
+                loop_start = sit->second;
+              applyLoopListScaling(lens_before, *iters, loop_var, stmt.while_stmt.body, asc,
+                                   loop_start, saved_const);
+            }
+          }
+          auto scaled_lens = const_locals_.array_lens;
           locals_ = saved;
-          if (cb != ConstBool::True)
-            const_locals_ = saved_const;
+          const_locals_ = saved_const;
+          const_locals_.array_lens = std::move(scaled_lens);
+          if (iters && !loopBodyContainsBreakOrContinue(stmt.while_stmt.body))
+            applyConstWhileCounterExit(*stmt.while_stmt.condition, saved_const, *iters,
+                                       const_locals_);
           --loop_depth_;
         }
         break;
@@ -1782,11 +2865,17 @@ class TypeChecker {
           stmt.for_stmt.parallel_fn = pfor->llvm_name;
           auto saved = locals_;
           auto saved_const = const_locals_;
+          auto saved_captures = immutable_capture_vars_;
+          for (const auto& cap : caps)
+            immutable_capture_vars_.insert(cap);
           locals_[stmt.for_stmt.parallel_var] = TypeDesc::prim(FarTypeId::I64);
+          pushLoopVar(stmt.for_stmt.parallel_var, 0, 0);
           ++parallel_for_depth_;
           for (const auto& s : pfor->body)
             checkStmt(*s);
           --parallel_for_depth_;
+          popLoopVar(stmt.for_stmt.parallel_var);
+          immutable_capture_vars_ = std::move(saved_captures);
           locals_ = saved;
           const_locals_ = saved_const;
           if (skip_body) {
@@ -1806,21 +2895,43 @@ class TypeChecker {
           bool range_known = range_start.has_value() && range_end.has_value();
           locals_[stmt.for_stmt.range_var] = defaultIntType();
           if (!skip_body) {
+            pushLoopVar(stmt.for_stmt.range_var, 0, 0);
             ++loop_depth_;
             {
               auto saved = locals_;
               auto saved_const = const_locals_;
+              auto lens_before = const_locals_.array_lens;
               if (range_known) {
                 if (auto sample = rangeForConstSampleValue(*range_start, *range_end,
                                                            stmt.for_stmt.range_exclusive))
                   const_locals_.ints[stmt.for_stmt.range_var] = *sample;
               }
               checkStmtBlock(stmt.for_stmt.body);
+              auto scaled_lens = const_locals_.array_lens;
               locals_ = saved;
-              if (!range_known)
+              if (range_known) {
+                int64_t iters =
+                    *rangeForConstIterCount(*range_start, *range_end, stmt.for_stmt.range_exclusive);
+                bool asc = *range_start <= *range_end;
+                applyLoopListScaling(lens_before, iters, stmt.for_stmt.range_var,
+                                     stmt.for_stmt.body, asc, *range_start, saved_const);
+                scaled_lens = const_locals_.array_lens;
                 const_locals_ = saved_const;
+                const_locals_.array_lens = std::move(scaled_lens);
+                if (!loopBodyContainsBreakOrContinue(stmt.for_stmt.body)) {
+                  if (asc)
+                    applyConstAscCounterExit(stmt.for_stmt.range_var, *range_start, iters,
+                                             const_locals_);
+                  else
+                    applyConstDescCounterExit(stmt.for_stmt.range_var, *range_start, iters,
+                                            const_locals_);
+                }
+              } else {
+                const_locals_ = saved_const;
+              }
             }
             --loop_depth_;
+            popLoopVar(stmt.for_stmt.range_var);
           }
           locals_.erase(stmt.for_stmt.range_var);
           const_locals_.ints.erase(stmt.for_stmt.range_var);
@@ -1842,6 +2953,7 @@ class TypeChecker {
           TypeDesc elem = elemTypeOf(coll_ty);
           locals_[stmt.for_stmt.foreach_var] = elem;
           if (!skip_body) {
+            pushLoopVar(stmt.for_stmt.foreach_var, 0, 0);
             ++loop_depth_;
             {
               auto saved = locals_;
@@ -1853,6 +2965,7 @@ class TypeChecker {
               locals_ = saved;
             }
             --loop_depth_;
+            popLoopVar(stmt.for_stmt.foreach_var);
           }
           locals_.erase(stmt.for_stmt.foreach_var);
           const_locals_.ints.erase(stmt.for_stmt.foreach_var);
@@ -1872,13 +2985,37 @@ class TypeChecker {
             {
               auto saved = locals_;
               auto saved_const = const_locals_;
+              auto lens_before = const_locals_.array_lens;
+              std::optional<int64_t> loop_iters = cStyleForConstIterCount(stmt.for_stmt, saved_const);
               for (const auto& s : stmt.for_stmt.body)
                 checkStmt(*s);
               if (stmt.for_stmt.step)
                 checkStmt(*stmt.for_stmt.step);
+              if (loop_iters) {
+                std::string loop_var;
+                bool asc = true;
+                if (auto start = constAssignFromForClause(*stmt.for_stmt.init, saved_const)) {
+                  loop_var = start->first;
+                  if (auto bound = constLtUpperBound(*stmt.for_stmt.cond, saved_const))
+                    asc = true;
+                  else if (auto bound = constGtLowerBound(*stmt.for_stmt.cond, saved_const))
+                    asc = false;
+                }
+                if (!loop_var.empty()) {
+                  int64_t loop_start = 0;
+                  if (auto start = constAssignFromForClause(*stmt.for_stmt.init, saved_const))
+                    loop_start = start->second;
+                  applyLoopListScaling(lens_before, *loop_iters, loop_var, stmt.for_stmt.body, asc,
+                                       loop_start, saved_const);
+                }
+              }
+              auto scaled_lens = const_locals_.array_lens;
               locals_ = saved;
-              if (for_cb != ConstBool::True)
-                const_locals_ = saved_const;
+              const_locals_ = saved_const;
+              const_locals_.array_lens = std::move(scaled_lens);
+              if (loop_iters && !loopBodyContainsBreakOrContinue(stmt.for_stmt.body))
+                applyConstCStyleForCounterExit(stmt.for_stmt, saved_const, *loop_iters,
+                                               const_locals_);
             }
             --loop_depth_;
           }
@@ -2150,8 +3287,16 @@ class TypeChecker {
             expr.bin_op.left->int_lit.value == 0 && isAggregateDesc(rt))
           ty = TypeDesc::prim(checkUnaryAggregateOp(op, aggregateDescId(rt)));
         else if (op == "+" && (isPrim(lt, FarTypeId::String) || isPrim(rt, FarTypeId::String) ||
-                               isPrim(lt, FarTypeId::Char) || isPrim(rt, FarTypeId::Char)))
+                               isPrim(lt, FarTypeId::Char) || isPrim(rt, FarTypeId::Char))) {
+          if (isPrim(lt, FarTypeId::Char) && expr.bin_op.left->kind == Expr::Variable)
+            throwAt(expr, "cannot concatenate char variable in string expression");
+          if (isPrim(rt, FarTypeId::Char) && expr.bin_op.right->kind == Expr::Variable)
+            throwAt(expr, "cannot concatenate char variable in string expression");
+          if (isNullCharExpr(*expr.bin_op.left, const_locals_) ||
+              isNullCharExpr(*expr.bin_op.right, const_locals_))
+            throwAt(expr, "cannot embed null character in string");
           ty = TypeDesc::prim(FarTypeId::String);
+        }
         else if (isAggregateDesc(lt) || isAggregateDesc(rt))
           ty = TypeDesc::prim(checkAggregateBinOp(op, aggregateDescId(lt), aggregateDescId(rt)));
         else if (op == "in" || op == "not in") {
@@ -2282,11 +3427,13 @@ class TypeChecker {
           locals_[expr.assign.target->var.name] = ty;
           expr.assign.target->type = ty;
           trackConstLocal(expr.assign.target->var.name, *expr.assign.value);
+          trackSeqLenFromInit(expr.assign.target->var.name, ty, *expr.assign.value);
           break;
         }
         checkExpr(*expr.assign.target);
         TypeDesc target_ty = expr.assign.target->type;
         if (expr.assign.target->kind == Expr::Variable) {
+          rejectImmutableVarAssign(expr.assign.target->var.name, expr.line, expr.col);
           auto it = locals_.find(expr.assign.target->var.name);
           if (it != locals_.end())
             target_ty = it->second;
@@ -2308,6 +3455,10 @@ class TypeChecker {
                   locals_.count(expr.assign.target->var.name)))
           rejectNarrowingStore(ty, target_ty);
         if (expr.assign.target->kind == Expr::IndexExpr) {
+          rejectOobIndexAssign(*expr.assign.target->index.array, *expr.assign.target->index.index,
+                               expr.line, expr.col);
+          rejectNestedRowCompoundArrayRhs(*expr.assign.target, *expr.assign.value, expr.assign.op,
+                                          const_locals_, expr.line, expr.col);
           TypeDesc arr_ty = expr.assign.target->index.array->type;
           if (arr_ty.form == TypeForm::Dict) {
             TypeDesc key_ty = arr_ty.args[0];
@@ -2339,6 +3490,11 @@ class TypeChecker {
             trackConstLocal(expr.assign.target->var.name, *expr.assign.value);
           else
             clearConstLocal(expr.assign.target->var.name);
+        }
+        if (expr.assign.op == "=" && expr.assign.target->kind == Expr::Variable) {
+          auto it = locals_.find(expr.assign.target->var.name);
+          if (it != locals_.end())
+            trackSeqLenFromInit(expr.assign.target->var.name, it->second, *expr.assign.value);
         }
         break;
       }
@@ -2379,6 +3535,7 @@ class TypeChecker {
         } else if (expr.prefix.op == "++" || expr.prefix.op == "--") {
           if (expr.prefix.operand->kind != Expr::Variable)
             throwAt(expr, "increment/decrement requires a variable");
+          rejectImmutableVarAssign(expr.prefix.operand->var.name, expr.line, expr.col);
           clearConstLocal(expr.prefix.operand->var.name);
           ty = inner;
         } else {
@@ -2391,6 +3548,9 @@ class TypeChecker {
         if ((expr.postfix.op == "++" || expr.postfix.op == "--") &&
             expr.postfix.operand->kind != Expr::Variable)
           throwAt(expr, "increment/decrement requires a variable");
+        if ((expr.postfix.op == "++" || expr.postfix.op == "--") &&
+            expr.postfix.operand->kind == Expr::Variable)
+          rejectImmutableVarAssign(expr.postfix.operand->var.name, expr.line, expr.col);
         if ((expr.postfix.op == "++" || expr.postfix.op == "--") &&
             expr.postfix.operand->kind == Expr::Variable)
           clearConstLocal(expr.postfix.operand->var.name);
@@ -2718,6 +3878,7 @@ class TypeChecker {
       Param cp;
       cp.name = cap;
       cp.type = locals_.at(cap);
+      cp.type_explicit = true;
       prefixed.push_back(std::move(cp));
     }
     for (auto& p : lit.params)
@@ -3107,6 +4268,12 @@ class TypeChecker {
       for (const auto& a : expr.method_call.args)
         arg_ty = checkExpr(*a);
       (void)arg_ty;
+      if (mi->id == CollMethodId::Push && expr.method_call.object->kind == Expr::Variable)
+        bumpSeqLen(expr.method_call.object->var.name, 1);
+      else if (mi->id == CollMethodId::Pop && expr.method_call.object->kind == Expr::Variable)
+        bumpSeqLen(expr.method_call.object->var.name, -1);
+      else if (mi->id == CollMethodId::Clear && expr.method_call.object->kind == Expr::Variable)
+        const_locals_.array_lens[expr.method_call.object->var.name] = 0;
       return collMethodRetType(obj_ty.form, mi->id, obj_ty, arg_ty);
     }
     if (!isAggregateDesc(obj_ty))
@@ -3117,6 +4284,32 @@ class TypeChecker {
       throw FarError(geomInstanceMethodHint(obj_id, expr.method_call.method, mi->nargs));
     }
     throw FarError("unknown method '" + expr.method_call.method + "' on " + typeInfo(obj_id).name);
+  }
+
+  bool tryResolveEnclosingClassMethodCall(Call& call) {
+    if (!current_user_type_)
+      return false;
+    TypeDesc self_ty = TypeDesc::user(current_user_type_->name);
+    const UserMethod* um = obj_reg_.lookupMethod(self_ty, call.name);
+    if (!um || um->is_constructor)
+      return false;
+    if (um->visibility == Visibility::Private) {
+      // private methods are callable from sibling methods on the same type
+    }
+    const std::string mname = userMangleMethod(current_user_type_->name, call.name);
+    if (!fn_overloads_.count(mname))
+      return false;
+    if (!um->is_static) {
+      CallArg this_arg;
+      this_arg.name = "this";
+      auto th = std::make_unique<Expr>();
+      th->kind = Expr::Variable;
+      th->var.name = "this";
+      this_arg.value = std::move(th);
+      call.args.insert(call.args.begin(), std::move(this_arg));
+    }
+    call.name = mname;
+    return true;
   }
 
   TypeDesc checkCall(Expr& expr) {
@@ -3151,6 +4344,9 @@ class TypeChecker {
             throw FarError(call.name + "() argument type mismatch");
           rejectNarrowingCallArg(*a.value, at, elem_ty);
         }
+        if (mc->form == TypeForm::MemPool && !call.args.empty())
+          rejectNonPositiveCapacityArg(call.name, *call.args[0].value, const_locals_, expr.line,
+                                       expr.col);
         if (mc->form == TypeForm::Box)
           return TypeDesc::box(call.type_args[0]);
         if (mc->form == TypeForm::Rc)
@@ -3161,6 +4357,9 @@ class TypeChecker {
         throw FarError(call.name + "() argument count mismatch");
       for (const auto& a : call.args)
         checkExpr(*a.value);
+      if (!call.args.empty() && mc->form == TypeForm::Arena)
+        rejectNonPositiveCapacityArg(call.name, *call.args[0].value, const_locals_, expr.line,
+                                     expr.col);
       return TypeDesc::arena();
     }
     if (const ConcConstructorInfo* cc = lookupConcConstructor(call.name)) {
@@ -3176,6 +4375,10 @@ class TypeChecker {
             throw FarError(call.name + "() argument type mismatch");
           rejectNarrowingCallArg(*a.value, at, elem_ty);
         }
+        if ((cc->form == TypeForm::Channel || cc->form == TypeForm::LockFreeQueue) &&
+            !call.args.empty())
+          rejectNonPositiveCapacityArg(call.name, *call.args[0].value, const_locals_, expr.line,
+                                       expr.col);
         if (cc->form == TypeForm::Channel)
           return TypeDesc::channel(call.type_args[0]);
         if (cc->form == TypeForm::Atomic)
@@ -3186,6 +4389,9 @@ class TypeChecker {
         throw FarError(call.name + "() argument count mismatch");
       for (const auto& a : call.args)
         checkExpr(*a.value);
+      if (cc->form == TypeForm::ThreadPool && !call.args.empty())
+        rejectNonPositiveCapacityArg(call.name, *call.args[0].value, const_locals_, expr.line,
+                                     expr.col);
       if (cc->form == TypeForm::Mutex)
         return TypeDesc::mutex();
       if (cc->form == TypeForm::Semaphore)
@@ -3273,6 +4479,23 @@ class TypeChecker {
       return TypeDesc::prim(FarTypeId::I64);
     }
     if (auto suffix = enclosingMethodSuffix(current_fn_); suffix && call.name == *suffix) {
+      // Stdlib facades (e.g. threads.join -> join) must call legacy runtime builtins,
+      // not recurse into the enclosing static method with the same name.
+      if (isLegacyGlobalOnly(call.name)) {
+        if (!allowLegacyRuntimeCall(current_fn_))
+          rejectDisallowedGlobalCall(call.name, current_fn_);
+        if (call.name == "join") {
+          if (call.args.size() != 1)
+            throw FarError("join() takes exactly one argument");
+          checkExpr(*call.args[0].value);
+          return TypeDesc::prim(FarTypeId::I64);
+        }
+        if (call.name == "thread_count" || call.name == "cores") {
+          if (!call.args.empty())
+            throw FarError(call.name + "() takes no arguments");
+          return TypeDesc::prim(FarTypeId::I64);
+        }
+      }
       if (const BuiltinInfo* builtin = lookupBuiltin(call.name)) {
         rejectDisallowedGlobalCall(call.name, current_fn_);
         checkBuiltinArgs(builtin, call.args, [&](Expr& e) {
@@ -3286,10 +4509,12 @@ class TypeChecker {
         return TypeDesc::prim(builtin->ret);
       }
     }
+    if (!fn_overloads_.count(call.name))
+      tryResolveEnclosingClassMethodCall(call);
     if (fn_overloads_.count(call.name)) {
       bool callable = false;
       for (const Function* f : fn_overloads_[call.name]) {
-        if (f->link_public || current_fn_) {
+        if (canCallFunction(current_fn_, f)) {
           callable = true;
           break;
         }
@@ -3298,6 +4523,8 @@ class TypeChecker {
         throwAt(expr, "undefined function '" + call.name + "'");
       BoundCall bc = resolveCall(call.name, call, fn_overloads_, [&](Expr& e) { return checkExpr(e); },
                                  program_, &obj_reg_);
+      if (!canCallFunction(current_fn_, bc.fn))
+        throwAt(expr, "cannot call private function '" + call.name + "' from this module");
       if (bc.fn->is_consteval && comptime_depth_ == 0)
         throw FarError("consteval function '" + call.name + "' must be called via comptime");
       if (bc.fn->is_async)
@@ -3459,6 +4686,8 @@ class TypeChecker {
       size_t nparams = ft.args.empty() ? 0 : ft.args.size() - 1;
       if (call.args.size() != nparams)
         throw FarError("function value argument count mismatch");
+      if (call.args.size() > 1)
+        throw FarError("higher-order call supports at most one argument");
       call.is_hof_call = true;
       call.bound_exprs.clear();
       for (size_t i = 0; i < call.args.size(); ++i) {

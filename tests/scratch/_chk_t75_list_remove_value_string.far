@@ -1,0 +1,14 @@
+fun t75_list_remove_value_string() -> i64 {
+  lst: List<string> = List<string>()
+  lst.push("a")
+  lst.push("b")
+  lst.push("c")
+  if (lst.remove_value("b") != 1) { return 1 }
+  if (len(lst) != 2) { return 2 }
+  if (lst.get(0) != "a") { return 3 }
+  if (lst.get(1) != "c") { return 4 }
+  return 0
+}
+
+
+fun main() -> i64 { return t75_list_remove_value_string() }

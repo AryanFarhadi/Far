@@ -1,0 +1,7 @@
+fun apply2(f: fn(i64, i64) -> i64, a: i64, b: i64) -> i64 {
+  return f(a, b)
+}
+
+fun main() -> i64 {
+  return apply2(fn(a, b) { return a + b }, 3, 4)
+}

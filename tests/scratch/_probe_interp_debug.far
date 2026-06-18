@@ -1,0 +1,10 @@
+fun main() -> i64 {
+  s = $"{{}}"
+  print(len(s))
+  x = 7
+  s2 = $"v={x}"
+  print(len(s2))
+  print(s)
+  print(s2)
+  return 0
+}

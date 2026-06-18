@@ -1,0 +1,10 @@
+fun noop() -> i64 { return 0 }
+fun main() -> i64 {
+  i = 0
+  while (i < 4200) {
+    h = spawn noop()
+    if (h < 0) { return i }
+    i = i + 1
+  }
+  return i
+}

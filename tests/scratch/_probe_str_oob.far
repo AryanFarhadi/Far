@@ -1,0 +1,8 @@
+import fs
+
+fun main() -> i64 {
+  s = "hello"
+  if (s[-1] != 0) { return 1 }
+  if (s[99] != 0) { return 2 }
+  return 0
+}

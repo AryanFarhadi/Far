@@ -1,0 +1,10 @@
+fun main() -> i64 {
+  a = [[1, 2], [3, 4]]
+  row = a[0]
+  row[1] = 99
+  if (a[0][1] != 2) { return 1 }
+  if (row[1] != 99) { return 2 }
+  row = a[1]
+  if (a[0][0] != 1) { return 3 }
+  return 0
+}

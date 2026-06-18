@@ -1,0 +1,8 @@
+fun main() -> i64 {
+  n = 0
+  if (true or (n = 1) != 0) { } else { return 1 }
+  if (n != 0) { return 2 }
+  if (false or (n = 3) != 0) { } else { return 3 }
+  if (n != 3) { return 4 }
+  return 0
+}

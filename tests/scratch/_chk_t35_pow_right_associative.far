@@ -1,0 +1,6 @@
+fun t35_pow_right_associative() -> i64 {
+  return eq(2 ** 3 ** 2, 512)
+}
+
+
+fun main() -> i64 { return t35_pow_right_associative() }

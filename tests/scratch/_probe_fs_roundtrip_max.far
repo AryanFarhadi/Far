@@ -1,0 +1,11 @@
+import fs
+
+fun main() -> i64 {
+  data = fs.read_text("far_fs_max_read_test.bin")
+  if (len(data) != 67108864) { return 1 }
+  path = "far_fs_roundtrip_test.bin"
+  if (fs.write_text(path, data) != 0) { return 2 }
+  back = fs.read_text(path)
+  if (len(back) != 67108864) { return 3 }
+  return 0
+}

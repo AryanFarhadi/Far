@@ -1,0 +1,17 @@
+fun t190_list_double_continue_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (i = 0; i < 10; i = i + 1) {
+    if (i == 3) {
+      continue
+    }
+    if (i == 7) {
+      continue
+    }
+    lst.push(i)
+  }
+  lst[7] = 88
+  return eq(lst.get(7), 88)
+}
+
+
+fun main() -> i64 { return t190_list_double_continue_bracket() }

@@ -1,0 +1,8 @@
+fun main() -> i64 {
+  ch: Channel<i64> = Channel<i64>(1)
+  ch.send(1)
+  if (ch.recv() != 1) { return 1 }
+  if (ch.try_send(2) != 0) { return 2 }
+  if (ch.recv() != 2) { return 3 }
+  return 0
+}

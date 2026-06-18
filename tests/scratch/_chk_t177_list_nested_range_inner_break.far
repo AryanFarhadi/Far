@@ -1,0 +1,16 @@
+fun t177_list_nested_range_inner_break() -> i64 {
+  lst: List<i64> = List<i64>()
+  for i in 0..<3 {
+    for j in 0..<2 {
+      if (j == 1) {
+        break
+      }
+      lst.push(i * 10 + j)
+    }
+  }
+  lst[2] = 88
+  return eq(lst.get(2), 88)
+}
+
+
+fun main() -> i64 { return t177_list_nested_range_inner_break() }

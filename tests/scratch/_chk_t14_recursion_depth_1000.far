@@ -1,0 +1,6 @@
+fun t14_recursion_depth_1000() -> i64 {
+  return eq(rec_depth(1000), 1000)
+}
+
+
+fun main() -> i64 { return t14_recursion_depth_1000() }

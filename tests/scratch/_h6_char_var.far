@@ -1,0 +1,6 @@
+fun main() -> i64 {
+  c: char = 0
+  s = "a" + c + "b"
+  print(len(s))
+  return 0
+}

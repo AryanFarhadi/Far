@@ -1,0 +1,9 @@
+fun main() -> i64 {
+  a = 1.0 / 0.0
+  b = 0.0 / 0.0
+  c = -1.0 / 0.0
+  if (a == 0.0) { return 1 }
+  if (b == b) { return 2 }
+  if (c == 0.0) { return 3 }
+  return 0
+}

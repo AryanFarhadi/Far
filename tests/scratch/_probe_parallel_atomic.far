@@ -1,0 +1,8 @@
+﻿import perf
+fun main() -> i64 {
+  at = Atomic<i64>(0)
+  parallel for i in 0..<64 {
+    at.fetch_add(1)
+  }
+  return at.load()
+}

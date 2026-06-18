@@ -1,0 +1,7 @@
+fun main() -> i64 {
+  inf = 1.0 / 0.0
+  nan = 0.0 / 0.0
+  if (!inf) { return 1 }
+  if (nan) { return 2 }
+  return 0
+}

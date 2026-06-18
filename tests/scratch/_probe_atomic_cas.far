@@ -1,0 +1,8 @@
+fun main() -> i64 {
+  at = Atomic<i64>(5)
+  if (at.compare_exchange(5, 7) != 1) { return 1 }
+  if (at.load() != 7) { return 2 }
+  if (at.compare_exchange(5, 9) != 0) { return 3 }
+  if (at.load() != 7) { return 4 }
+  return 0
+}

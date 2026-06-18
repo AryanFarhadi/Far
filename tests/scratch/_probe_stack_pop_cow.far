@@ -1,0 +1,10 @@
+fun main() -> i64 {
+  st: Stack<i64> = Stack<i64>()
+  st.push(10)
+  st2 = st
+  st2.push(20)
+  if (len(st) != 1) { return 1 }
+  if (st.pop() != 10) { return 2 }
+  if (st2.pop() != 20) { return 3 }
+  return 0
+}

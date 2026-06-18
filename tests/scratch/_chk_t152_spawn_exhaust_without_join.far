@@ -1,0 +1,12 @@
+fun t152_spawn_exhaust_without_join() -> i64 {
+  i = 0
+  while (i < 5000) {
+    h = spawn noop_unjoined()
+    if (h < 0) { return eq(i, 4096) }
+    i = i + 1
+  }
+  return 1
+}
+
+
+fun main() -> i64 { return t152_spawn_exhaust_without_join() }

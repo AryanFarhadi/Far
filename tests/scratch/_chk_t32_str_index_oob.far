@@ -1,0 +1,7 @@
+fun t32_str_index_oob() -> i64 {
+  s = "ab"
+  return eq(int(s[99]), 0)
+}
+
+
+fun main() -> i64 { return t32_str_index_oob() }

@@ -1,0 +1,11 @@
+fun t92_int_truthiness() -> i64 {
+  if (0) { return 1 }
+  if (42) { }
+  else { return 2 }
+  if (-1) { }
+  else { return 3 }
+  return 0
+}
+
+
+fun main() -> i64 { return t92_int_truthiness() }

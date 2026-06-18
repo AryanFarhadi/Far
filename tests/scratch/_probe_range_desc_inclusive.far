@@ -1,0 +1,11 @@
+fun main() -> i64 {
+  n = 0
+  s = 0
+  for i in 5..1 {
+    n = n + 1
+    s = s + i
+  }
+  print(n)
+  print(s)
+  return 0
+}

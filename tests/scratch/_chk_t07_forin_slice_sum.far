@@ -1,0 +1,12 @@
+fun t07_forin_slice_sum() -> i64 {
+  a = [1, 2, 3, 4, 5]
+  s = a.slice(1, 4)
+  n = 0
+  for x in s {
+    n = n + x
+  }
+  return eq(n, 9)
+}
+
+
+fun main() -> i64 { return t07_forin_slice_sum() }

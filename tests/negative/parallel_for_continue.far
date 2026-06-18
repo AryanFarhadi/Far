@@ -1,0 +1,6 @@
+fun main() -> i64 {
+  parallel for i in 0..<4 {
+    if (i == 2) { continue }
+  }
+  return 0
+}

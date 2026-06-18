@@ -54,6 +54,14 @@ fun test_fs() -> i64 {
   if (fs.write_text(path, "far") != 0) { return 40 }
   data = fs.read_text(path)
   if (len(data) != 3) { return 41 }
+  if (len(fs.read_text("../far_stdlib_test_tmp.txt")) != 0) { return 43 }
+  if (fs.write_text("../evil.txt", "x") != -1) { return 44 }
+  if (len(fs.read_text("/etc/passwd")) != 0) { return 45 }
+  if (len(fs.read_text("C:\\Windows\\win.ini")) != 0) { return 46 }
+  if (fs.write_text("C:\\evil_far_test.txt", "x") != -1) { return 47 }
+  if (fs.write_text("CON", "x") != -1) { return 48 }
+  if (fs.write_text("NUL", "x") != -1) { return 49 }
+  if (fs.write_text("", "x") != -1) { return 50 }
   if (fs.remove(path) != 0) { return 42 }
   return 0
 }

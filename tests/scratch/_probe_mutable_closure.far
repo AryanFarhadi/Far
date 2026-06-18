@@ -1,0 +1,11 @@
+fun counter() -> fn() -> i64 {
+  n = 0
+  return fn() { n = n + 1; return n }
+}
+
+fun main() -> i64 {
+  f = counter()
+  if (f() != 1) { return 1 }
+  if (f() != 2) { return 2 }
+  return 0
+}

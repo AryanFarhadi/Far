@@ -1,0 +1,4 @@
+fun main() -> i64 {
+  p: ptr<i64> = ptr<i64>(0)
+  unsafe { return *p }
+}

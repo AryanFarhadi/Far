@@ -1,0 +1,13 @@
+﻿class Counter {
+  public n: i64 = 0
+  public Counter(start: i64) { n = start }
+  public fun bump() -> i64 { n = n + 1; return n }
+}
+fun f(ctr: Counter, x: i64 = ctr.bump()) -> i64 { return x }
+fun main() -> i64 {
+  ctr = Counter(0)
+  if (f(ctr) != 1) { return 1 }
+  if (f(ctr) != 2) { return 2 }
+  if (f(ctr, 99) != 99) { return 3 }
+  return 0
+}

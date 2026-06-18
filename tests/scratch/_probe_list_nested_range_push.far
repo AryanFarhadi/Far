@@ -1,0 +1,11 @@
+fun main() -> i64 {
+  lst: List<i64> = List<i64>()
+  for i in 0..<2 {
+    for j in 0..<2 {
+      lst.push(i * 10 + j)
+    }
+  }
+  lst[3] = 99
+  return eq(lst.get(3), 99)
+}
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }

@@ -1,0 +1,13 @@
+fun t169_list_push_while_valid_assign() -> i64 {
+  lst: List<i64> = List<i64>()
+  i = 0
+  while (i < 2) {
+    lst.push(i + 10)
+    i = i + 1
+  }
+  lst[1] = 55
+  return eq(lst.get(1), 55)
+}
+
+
+fun main() -> i64 { return t169_list_push_while_valid_assign() }

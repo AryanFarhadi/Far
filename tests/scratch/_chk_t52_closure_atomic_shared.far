@@ -1,0 +1,9 @@
+fun t52_closure_atomic_shared() -> i64 {
+  acc = Atomic<i64>(0)
+  bump = fn(x) { acc.fetch_add(x); return acc.load() }
+  if (bump(3) != 3) { return 1 }
+  return eq(bump(2), 5)
+}
+
+
+fun main() -> i64 { return t52_closure_atomic_shared() }

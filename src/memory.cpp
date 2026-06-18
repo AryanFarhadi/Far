@@ -117,6 +117,18 @@ void declareMemoryRuntime(std::ostringstream& out) {
   out << "declare void @far_pool_drop(i64)\n";
   out << "declare void @far_ptr_store_i64(i64, i64)\n";
   out << "declare i64 @far_ptr_load_i64(i64)\n";
+  out << "declare i64 @far_ptr_load_i8_as_i64(i64)\n";
+  out << "declare i64 @far_ptr_load_i16_as_i64(i64)\n";
+  out << "declare i64 @far_ptr_load_i32_as_i64(i64)\n";
+  out << "declare double @far_ptr_load_f64(i64)\n";
+  out << "declare double @far_ptr_load_f32_as_f64(i64)\n";
+  out << "declare i16 @far_ptr_load_f16(i64)\n";
+  out << "declare void @far_ptr_store_i8(i64, i64)\n";
+  out << "declare void @far_ptr_store_i16(i64, i64)\n";
+  out << "declare void @far_ptr_store_i32(i64, i64)\n";
+  out << "declare void @far_ptr_store_f64(i64, double)\n";
+  out << "declare void @far_ptr_store_f32(i64, double)\n";
+  out << "declare void @far_ptr_store_f16(i64, i16)\n";
 }
 
 }  // namespace far

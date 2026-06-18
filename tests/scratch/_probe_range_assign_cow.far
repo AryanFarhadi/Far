@@ -1,0 +1,7 @@
+fun main() -> i64 {
+  r1 = 0..<5
+  r2 = r1
+  if (len(r1) != 5) { return 1 }
+  if (len(r2) != 5) { return 2 }
+  return 0
+}

@@ -1,0 +1,14 @@
+fun t218_while_desc_break_before_push_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  i = 6
+  while (i > 0) {
+    if (i == 2) { break }
+    lst.push(i)
+    i = i - 1
+  }
+  lst[3] = 33
+  return eq(lst.get(3), 33)
+}
+
+
+fun main() -> i64 { return t218_while_desc_break_before_push_bracket() }

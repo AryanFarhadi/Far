@@ -1,0 +1,7 @@
+fun main() -> i64 {
+  b = Box<i64>(42)
+  b2 = b
+  p = b.get()
+  if (p == 0) { return 0 }
+  return 1
+}

@@ -1,0 +1,4 @@
+fun main() -> i64 {
+  q = LockFreeQueue<i64>(0)
+  return 0
+}

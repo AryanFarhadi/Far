@@ -1,0 +1,8 @@
+fun main() -> i64 {
+  arr = [[1, 2], [3, 4]]
+  row = arr[0]
+  arr[1][0] = 99
+  if (row[0] != 1) { return 1 }
+  if (arr[1][0] != 99) { return 2 }
+  return 0
+}

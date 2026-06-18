@@ -1,0 +1,9 @@
+fun add(x: i64, y: i64 = 10) -> i64 {
+  return x + y
+}
+
+fun main() -> i64 {
+  if (add(5) != 15) { return 1 }
+  if (add(5, 3) != 8) { return 2 }
+  return 0
+}

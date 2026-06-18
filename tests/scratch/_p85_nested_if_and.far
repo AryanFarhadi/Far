@@ -1,0 +1,14 @@
+fun main() -> i64 {
+  n = 0
+  if (1 == 1) {
+    if (false and (n = 1) != 0) { } else { n = 5 }
+  }
+  if (n != 5) { return 1 }
+  if (0 == 1) {
+    if (true and (n = 9) != 0) { }
+  } else {
+    if (true and (n = 7) != 0) { }
+  }
+  if (n != 7) { return 2 }
+  return 0
+}

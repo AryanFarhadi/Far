@@ -1,0 +1,5 @@
+﻿fun main() -> i64 {
+  a = [1, 2, 3]
+  s = a.slice(1, 10)
+  return len(s)
+}

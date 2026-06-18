@@ -1,0 +1,8 @@
+fun main() -> i64 {
+  if (42) { }
+  else { return 1 }
+  if (0) { return 2 }
+  if (-1) { }
+  else { return 3 }
+  return 0
+}

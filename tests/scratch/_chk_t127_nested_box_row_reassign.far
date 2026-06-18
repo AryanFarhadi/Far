@@ -1,0 +1,18 @@
+fun t127_nested_box_row_reassign() -> i64 {
+  a = [[Box<i64>(1)]]
+  b = a[0][0]
+  a[0][0] = Box<i64>(9)
+  p = b.get()
+  if (p == 0) { return 1 }
+  v = 0
+  unsafe { v = *p }
+  if (v != 1) { return 2 }
+  p2 = a[0][0].get()
+  if (p2 == 0) { return 3 }
+  v2 = 0
+  unsafe { v2 = *p2 }
+  return eq(v2, 9)
+}
+
+
+fun main() -> i64 { return t127_nested_box_row_reassign() }

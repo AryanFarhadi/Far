@@ -1,0 +1,6 @@
+fun main() -> i64 {
+  if (false and (trap() == 1)) { return 1 }
+  if (true or (trap() == 1)) { return 2 }
+  return 0
+}
+fun trap() -> i64 { return 1 / 0 }

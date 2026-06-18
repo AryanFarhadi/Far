@@ -1,0 +1,6 @@
+fun t61_channel_runtime_zero_cap_invalid() -> i64 {
+  return eq(channel_dyn_zero_fail(0), -1)
+}
+
+
+fun main() -> i64 { return t61_channel_runtime_zero_cap_invalid() }

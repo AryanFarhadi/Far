@@ -1,0 +1,7 @@
+fun main() -> i64 {
+  s = "hello"
+  sl = s[-2:5]
+  if (len(sl) != 2) { return 1 }
+  if (sl != "lo") { return 2 }
+  return 0
+}

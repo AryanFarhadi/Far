@@ -1,0 +1,10 @@
+fun main() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  lst.push(2)
+  lst.push(3)
+  for x in lst {
+    lst.push(99)
+  }
+  return lst.len()
+}

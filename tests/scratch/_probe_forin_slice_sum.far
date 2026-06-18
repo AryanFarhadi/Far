@@ -1,0 +1,10 @@
+fun main() -> i64 {
+  a = [1, 2, 3, 4, 5]
+  s = 0
+  for x in a.slice(1, 4) {
+    s = s + x
+  }
+  return eq(s, 9)
+}
+
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }

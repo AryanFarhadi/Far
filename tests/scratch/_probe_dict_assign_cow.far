@@ -1,0 +1,10 @@
+fun main() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d.set(1, 10)
+  d2 = d
+  d2.set(2, 20)
+  if (len(d) != 1) { return 1 }
+  if (len(d2) != 2) { return 2 }
+  if (d.get(1) != 10) { return 3 }
+  return 0
+}

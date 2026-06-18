@@ -1,0 +1,14 @@
+fun t187_list_cstyle_continue_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (i = 0; i < 10; i = i + 1) {
+    if (i == 5) {
+      continue
+    }
+    lst.push(i)
+  }
+  lst[8] = 99
+  return eq(lst.get(8), 99)
+}
+
+
+fun main() -> i64 { return t187_list_cstyle_continue_bracket() }

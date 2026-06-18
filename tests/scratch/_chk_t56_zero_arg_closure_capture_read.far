@@ -1,0 +1,8 @@
+fun t56_zero_arg_closure_capture_read() -> i64 {
+  n = 7
+  f = fn() { return n + 1 }
+  return eq(f(), 8)
+}
+
+
+fun main() -> i64 { return t56_zero_arg_closure_capture_read() }

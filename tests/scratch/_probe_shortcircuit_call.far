@@ -1,0 +1,11 @@
+fun side(tag: i64) -> i64 {
+  if (tag == 1) { return 0 }
+  return 1
+}
+
+fun main() -> i64 {
+  a = 0
+  if (0 && side(1) != 0) { a = 1 }
+  if (1 || side(2) != 0) { a = a + 10 }
+  return a
+}

@@ -1,0 +1,17 @@
+fun t155_set_remove_all_empty() -> i64 {
+  s: Set<i64> = Set<i64>()
+  i = 0
+  while (i < 50) {
+    s.add(i)
+    i = i + 1
+  }
+  j = 0
+  while (j < 50) {
+    s.remove(j)
+    j = j + 1
+  }
+  return eq(len(s), 0)
+}
+
+
+fun main() -> i64 { return t155_set_remove_all_empty() }

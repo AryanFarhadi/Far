@@ -167,60 +167,75 @@ std::string emitStackAlloc(MemCodegenCtx ctx, const TypeDesc& elem_ty, const std
 
 std::string emitPtrDeref(MemCodegenCtx ctx, const TypeDesc& ptr_ty, const std::string& ptr_val) {
   TypeDesc elem = pointeeOf(ptr_ty);
-  const char* lt = ptrElemLlvmTypeFor(elem);
-  std::string p = ctx.fresh("dptr");
-  ctx.out << "  %" << p << " = inttoptr i64 " << ptr_val << " to " << lt << "*\n";
   std::string tmp = ctx.fresh("dval");
-  ctx.out << "  %" << tmp << " = load " << lt << ", " << lt << "* %" << p << "\n";
-  if (isPrimitiveDesc(elem) && elem.primitive == FarTypeId::F16) {
-    std::string ext = ctx.fresh("dwh");
-    ctx.out << "  %" << ext << " = fpext " << kF16 << " %" << tmp << " to " << kF64 << "\n";
-    return "%" + ext;
+  if (isPrimitiveDesc(elem) && elem.primitive == FarTypeId::F64) {
+    ctx.out << "  %" << tmp << " = call " << kF64 << " @far_ptr_load_f64(i64 " << ptr_val << ")\n";
+    return "%" + tmp;
   }
   if (isPrimitiveDesc(elem) && elem.primitive == FarTypeId::F32) {
-    std::string ext = ctx.fresh("dwf");
-    ctx.out << "  %" << ext << " = fpext " << kF32 << " %" << tmp << " to " << kF64 << "\n";
+    ctx.out << "  %" << tmp << " = call " << kF64 << " @far_ptr_load_f32_as_f64(i64 " << ptr_val << ")\n";
+    return "%" + tmp;
+  }
+  if (isPrimitiveDesc(elem) && elem.primitive == FarTypeId::F16) {
+    std::string raw = ctx.fresh("d16");
+    ctx.out << "  %" << raw << " = call i16 @far_ptr_load_f16(i64 " << ptr_val << ")\n";
+    std::string ext = ctx.fresh("dwh");
+    ctx.out << "  %" << ext << " = fpext " << kF16 << " %" << raw << " to " << kF64 << "\n";
     return "%" + ext;
   }
-  if (isPrimitiveDesc(elem) && elem.primitive == FarTypeId::F64)
-    return "%" + tmp;
   int esz = elemSizeBytes(elem);
-  if (esz == 8)
+  if (esz == 8) {
+    ctx.out << "  %" << tmp << " = call " << kI64 << " @far_ptr_load_i64(i64 " << ptr_val << ")\n";
+    return "%" + tmp;
+  }
+  if (esz == 4) {
+    ctx.out << "  %" << tmp << " = call " << kI64 << " @far_ptr_load_i32_as_i64(i64 " << ptr_val << ")\n";
+  } else if (esz == 2) {
+    ctx.out << "  %" << tmp << " = call " << kI64 << " @far_ptr_load_i16_as_i64(i64 " << ptr_val << ")\n";
+  } else {
+    ctx.out << "  %" << tmp << " = call " << kI64 << " @far_ptr_load_i8_as_i64(i64 " << ptr_val << ")\n";
+  }
+  if (isPrimitiveDesc(elem) && isIntegerType(elem.primitive) && typeInfo(elem.primitive).is_signed)
     return "%" + tmp;
   std::string wide = ctx.fresh("dw");
-  if (isPrimitiveDesc(elem) && isIntegerType(elem.primitive) && typeInfo(elem.primitive).is_signed)
-    ctx.out << "  %" << wide << " = sext " << lt << " %" << tmp << " to " << kI64 << "\n";
-  else
-    ctx.out << "  %" << wide << " = zext " << lt << " %" << tmp << " to " << kI64 << "\n";
+  const char* lt = ptrElemLlvmTypeFor(elem);
+  ctx.out << "  %" << wide << " = zext " << lt << " %" << tmp << " to " << kI64 << "\n";
   return "%" + wide;
 }
 
 void emitPtrStore(MemCodegenCtx ctx, const TypeDesc& ptr_ty, const std::string& ptr_val,
                   const std::string& value) {
   TypeDesc elem = pointeeOf(ptr_ty);
-  const char* lt = ptrElemLlvmTypeFor(elem);
-  std::string p = ctx.fresh("sptr");
-  ctx.out << "  %" << p << " = inttoptr i64 " << ptr_val << " to " << lt << "*\n";
-  std::string stored = value;
   if (isPrimitiveDesc(elem) && elem.primitive == FarTypeId::F16) {
     std::string narrow = ctx.fresh("snh");
     ctx.out << "  %" << narrow << " = fptrunc " << kF64 << " " << value << " to " << kF16 << "\n";
-    stored = "%" + narrow;
-  } else if (isPrimitiveDesc(elem) && elem.primitive == FarTypeId::F32) {
-    std::string narrow = ctx.fresh("snf");
-    ctx.out << "  %" << narrow << " = fptrunc " << kF64 << " " << value << " to " << kF32 << "\n";
-    stored = "%" + narrow;
-  } else if (isPrimitiveDesc(elem) && elem.primitive == FarTypeId::F64) {
-    stored = value;
-  } else {
-    int esz = elemSizeBytes(elem);
-    if (esz != 8) {
-      std::string narrow = ctx.fresh("sn");
-      ctx.out << "  %" << narrow << " = trunc " << kI64 << " " << value << " to " << lt << "\n";
-      stored = "%" + narrow;
-    }
+    std::string bits = ctx.fresh("snb");
+    ctx.out << "  %" << bits << " = bitcast " << kF16 << " %" << narrow << " to i16\n";
+    ctx.out << "  call void @far_ptr_store_f16(i64 " << ptr_val << ", i16 %" << bits << ")\n";
+    return;
   }
-  ctx.out << "  store " << lt << " " << stored << ", " << lt << "* %" << p << "\n";
+  if (isPrimitiveDesc(elem) && elem.primitive == FarTypeId::F32) {
+    ctx.out << "  call void @far_ptr_store_f32(i64 " << ptr_val << ", " << kF64 << " " << value << ")\n";
+    return;
+  }
+  if (isPrimitiveDesc(elem) && elem.primitive == FarTypeId::F64) {
+    ctx.out << "  call void @far_ptr_store_f64(i64 " << ptr_val << ", " << kF64 << " " << value << ")\n";
+    return;
+  }
+  int esz = elemSizeBytes(elem);
+  if (esz == 8) {
+    ctx.out << "  call void @far_ptr_store_i64(i64 " << ptr_val << ", " << kI64 << " " << value << ")\n";
+    return;
+  }
+  if (esz == 4) {
+    ctx.out << "  call void @far_ptr_store_i32(i64 " << ptr_val << ", " << kI64 << " " << value << ")\n";
+    return;
+  }
+  if (esz == 2) {
+    ctx.out << "  call void @far_ptr_store_i16(i64 " << ptr_val << ", " << kI64 << " " << value << ")\n";
+    return;
+  }
+  ctx.out << "  call void @far_ptr_store_i8(i64 " << ptr_val << ", " << kI64 << " " << value << ")\n";
 }
 
 std::string emitAddressOf(MemCodegenCtx ctx, const std::string& slot_name, const char* llvm_slot_ty) {

@@ -1,0 +1,10 @@
+fun main() -> i64 {
+  lst: List<i64> = List<i64>()
+  i = 2
+  while (i > 0) {
+    lst.push(i)
+    i = i - 1
+  }
+  lst[1] = 77
+  return lst.get(1)
+}

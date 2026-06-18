@@ -1,0 +1,11 @@
+fun t06_lfq_push_pop_race() -> i64 {
+  q = LockFreeQueue<i64>(16)
+  h1 = spawn lfq_push(q, 100)
+  h2 = spawn lfq_pop_sum(q, 100)
+  threads.join(h1)
+  s = threads.join(h2)
+  return eq(s, 4950)
+}
+
+
+fun main() -> i64 { return t06_lfq_push_pop_race() }

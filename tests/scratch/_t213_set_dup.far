@@ -1,0 +1,7 @@
+fun main() -> i64 {
+  s: Set<i64> = Set<i64>()
+  s.add(1)
+  s.add(1)
+  s.add(2)
+  return eq(len(s), 2)
+}

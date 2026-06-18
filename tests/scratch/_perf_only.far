@@ -1,0 +1,2 @@
+import perf
+fun main() { return 0 }

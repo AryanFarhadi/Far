@@ -1,0 +1,2656 @@
+# Hardening pass — concurrency and cross-module edge cases
+import perf
+import fs
+import security
+import fixtures.tri_c
+import vectors
+
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(id: i64, r: i64) -> i64 { if (r != 0) { print(id); return id } return 0 }
+
+fun inc_loop(at: Atomic<i64>, n: i64) -> i64 {
+  i = 0
+  while (i < n) {
+    at.fetch_add(1)
+    i = i + 1
+  }
+  return 0
+}
+
+fun t01_atomic_fetch_add_race() -> i64 {
+  at = Atomic<i64>(0)
+  h1 = spawn inc_loop(at, 500)
+  h2 = spawn inc_loop(at, 500)
+  threads.join(h1)
+  threads.join(h2)
+  return eq(at.load(), 1000)
+}
+
+fun t02_dict_tombstone_reinsert() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  i = 0
+  while (i < 32) {
+    d.set(i, i)
+    i = i + 1
+  }
+  i = 0
+  while (i < 16) {
+    d.remove(i)
+    i = i + 1
+  }
+  d.set(99, 990)
+  return eq(d.get(99), 990)
+}
+
+fun t03_forin_shrink_no_oob() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  lst.push(2)
+  lst.push(3)
+  n = 0
+  for x in lst {
+    n = n + x
+    if (x == 2) { lst.remove(1) }
+  }
+  return eq(n, 3)
+}
+
+fun t04_forin_grow_bounded() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  lst.push(2)
+  n = 0
+  for x in lst {
+    n = n + 1
+    if (n == 2) { break }
+    lst.push(99)
+  }
+  return eq(n, 2)
+}
+
+fun ch_send_recv(ch: Channel<i64>, n: i64) -> i64 {
+  i = 0
+  while (i < n) {
+    ch.send(i)
+    i = i + 1
+  }
+  return 0
+}
+
+fun ch_recv_loop(ch: Channel<i64>, n: i64) -> i64 {
+  got = 0
+  i = 0
+  while (i < n) {
+    v = ch.recv()
+    got = got + v
+    i = i + 1
+  }
+  return got
+}
+
+fun t05_channel_send_recv_race() -> i64 {
+  ch = Channel<i64>(8)
+  h1 = spawn ch_send_recv(ch, 50)
+  h2 = spawn ch_recv_loop(ch, 50)
+  threads.join(h1)
+  s = threads.join(h2)
+  return eq(s, 1225)
+}
+
+fun t06_lfq_push_pop_race() -> i64 {
+  q = LockFreeQueue<i64>(16)
+  h1 = spawn lfq_push(q, 100)
+  h2 = spawn lfq_pop_sum(q, 100)
+  threads.join(h1)
+  s = threads.join(h2)
+  return eq(s, 4950)
+}
+
+fun t07_forin_slice_sum() -> i64 {
+  a = [1, 2, 3, 4, 5]
+  s = a.slice(1, 4)
+  n = 0
+  for x in s {
+    n = n + x
+  }
+  return eq(n, 9)
+}
+
+fun t08_set_remove_all_readd() -> i64 {
+  st: Set<i64> = Set<i64>()
+  i = 0
+  while (i < 8) {
+    st.add(i)
+    i = i + 1
+  }
+  i = 0
+  while (i < 8) {
+    st.remove(i)
+    i = i + 1
+  }
+  st.add(42)
+  return eq(st.contains(42), 1)
+}
+
+fun t09_sandbox_fs_allow_deny() -> i64 {
+  sandbox.open_sandbox(2)
+  sandbox.allow_path("far_harden_sandbox.txt")
+  if (fs.write_text("far_harden_sandbox.txt", "ok") != 0) { return 1 }
+  if (len(fs.read_text("far_harden_sandbox.txt")) != 2) { return 2 }
+  if (fs.write_text("far_harden_denied.txt", "x") != -1) { return 3 }
+  sandbox.close_sandbox()
+  fs.remove("far_harden_sandbox.txt")
+  return 0
+}
+
+fun t10_dict_duplicate_key() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d.set(1, 10)
+  d.set(1, 20)
+  if (len(d) != 1) { return 1 }
+  return eq(d.get(1), 20)
+}
+
+fun t11_semaphore_try_wait() -> i64 {
+  sem = Semaphore(0)
+  if (sem.try_wait() != 0) { return 1 }
+  sem.signal()
+  if (sem.try_wait() != 1) { return 2 }
+  if (sem.try_wait() != 0) { return 3 }
+  return 0
+}
+
+fun t12_deep_short_circuit() -> i64 {
+  n = 0
+  if (0 && (n = 1) != 0 && (n = 2) != 0) { return 1 }
+  if (n != 0) { return 2 }
+  x = 0
+  if (1 || (x = 1) != 0) { }
+  return eq(x, 0)
+}
+
+fun mutex_holder(m: Mutex, ch: Channel<i64>) -> i64 {
+  m.lock()
+  ch.send(1)
+  i = 0
+  while (i < 500000) {
+    i = i + 1
+  }
+  m.unlock()
+  return 0
+}
+
+fun t13_mutex_cross_thread_block() -> i64 {
+  m = Mutex()
+  ch = Channel<i64>(1)
+  h = spawn mutex_holder(m, ch)
+  ch.recv()
+  m.lock()
+  m.unlock()
+  threads.join(h)
+  return 0
+}
+
+fun rec_depth(n: i64) -> i64 {
+  if (n <= 0) { return 0 }
+  return rec_depth(n - 1) + 1
+}
+
+fun t14_recursion_depth_1000() -> i64 {
+  return eq(rec_depth(1000), 1000)
+}
+
+fun t15_list_insert_huge_index() -> i64 {
+  xs: List<i64> = List<i64>()
+  xs.insert(999, 42)
+  if (len(xs) != 1) { return 1 }
+  return eq(xs[0], 42)
+}
+
+fun t16_parallel_for_zero_iters() -> i64 {
+  parallel for i in 0..<0 { return 1 }
+  return 0
+}
+
+fun t17_dict_bracket_missing_key() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  return eq(d[99], 0)
+}
+
+fun with_default(x: i64, y: i64 = 99) -> i64 {
+  return x + y
+}
+
+fun t18_default_param_skipped() -> i64 {
+  if (with_default(1, 2) != 3) { return 1 }
+  return eq(with_default(5), 104)
+}
+
+fun t19_dict_extreme_keys() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d.set(-9223372036854775808, 42)
+  d.set(9223372036854775807, 99)
+  if (d.get(-9223372036854775808) != 42) { return 1 }
+  return eq(d.get(9223372036854775807), 99)
+}
+
+fun t20_dict_bracket_assign() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d[7] = 42
+  if (len(d) != 1) { return 1 }
+  d[7] = 100
+  return eq(d.get(7), 100)
+}
+
+fun t21_closure_capture_snapshot() -> i64 {
+  n = 0
+  f = |x| n + 1
+  if (f(0) != 1) { return 1 }
+  n = 10
+  return eq(f(0), 1)
+}
+
+fun t22_match_wildcard_source_order() -> i64 {
+  match 2 {
+    1 => return 1
+    _ => return 0
+    2 => return 2
+  }
+  return 99
+}
+
+fun t23_match_wildcard_before_literal() -> i64 {
+  match 2 {
+    _ => return 0
+    2 => return 2
+  }
+  return 99
+}
+
+class Counter {
+  public n: i64 = 0
+  public Counter(start: i64) { n = start }
+  public fun bump() -> i64 { n = n + 1; return n }
+}
+
+fun with_ctr_default(ctr: Counter, x: i64 = ctr.bump()) -> i64 {
+  return x
+}
+
+fun t24_default_param_side_effect() -> i64 {
+  ctr = Counter(0)
+  if (with_ctr_default(ctr) != 1) { return 1 }
+  if (with_ctr_default(ctr) != 2) { return 2 }
+  return eq(with_ctr_default(ctr, 99), 99)
+}
+
+fun sum_all(...nums) -> i64 {
+  total = 0
+  for i in 0..<len(nums) {
+    total = total + nums[i]
+  }
+  return total
+}
+
+fun t25_varargs_empty_and_multi() -> i64 {
+  if (sum_all() != 0) { return 1 }
+  return eq(sum_all(1, 2, 3), 6)
+}
+
+fun t26_match_f64_nan_wildcard() -> i64 {
+  x = 0.0 / 0.0
+  match x {
+    _ => return 0
+  }
+  return 1
+}
+
+fun t27_deep_binop_runtime() -> i64 {
+  x = 1
+  s = 0
+  i = 0
+  while (i < 40) {
+    s = s + x
+    i = i + 1
+  }
+  return eq(s, 40)
+}
+
+fun t28_switch_runtime_default_order() -> i64 {
+  x = 2
+  r = 99
+  switch x {
+    default: r = 0
+    case 1: r = 1
+    case 2: r = 2
+  }
+  return eq(r, 2)
+}
+
+fun t29_nested_break_continue() -> i64 {
+  n = 0
+  for i in 0..<3 {
+    for j in 0..<3 {
+      if (j == 1) { continue }
+      if (i == 2 && j == 2) { break }
+      n = n + 1
+    }
+  }
+  return eq(n, 5)
+}
+
+fun t30_mod_i64min() -> i64 {
+  return eq((-9223372036854775808) % 7, -1)
+}
+
+fun t31_channel_recv_closed_empty() -> i64 {
+  ch = Channel<i64>(1)
+  ch.close()
+  return eq(ch.recv(), -9223372036854775808)
+}
+
+fun t32_str_index_oob() -> i64 {
+  s = "ab"
+  return eq(int(s[99]), 0)
+}
+
+fun t33_dict_insert_count_property() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d.set(1, 10)
+  d.set(2, 20)
+  d.set(3, 30)
+  d.set(4, 40)
+  d.set(5, 50)
+  if (len(d) != 5) { return 1 }
+  d.set(3, 99)
+  if (len(d) != 5) { return 2 }
+  return eq(d.get(3), 99)
+}
+
+fun t34_set_insert_count_property() -> i64 {
+  s: Set<i64> = Set<i64>()
+  s.add(1)
+  s.add(2)
+  s.add(1)
+  s.add(3)
+  if (len(s) != 3) { return 1 }
+  s.remove(2)
+  return eq(len(s), 2)
+}
+
+fun t35_pow_right_associative() -> i64 {
+  return eq(2 ** 3 ** 2, 512)
+}
+
+fun t36_f64_nan_neq_self() -> i64 {
+  x = 0.0 / 0.0
+  if (x == x) { return 1 }
+  return 0
+}
+
+fun t37_dict_zero_value_key() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d.set(1, 0)
+  if (!d.contains_key(1)) { return 1 }
+  return eq(d.get(1), 0)
+}
+
+fun t38_arr_negative_index_oob() -> i64 {
+  a = [10, 20, 30]
+  return eq(a[-1], 0)
+}
+
+fun t39_channel_try_send_closed() -> i64 {
+  ch = Channel<i64>(1)
+  ch.close()
+  return eq(ch.try_send(1), -1)
+}
+
+fun t40_range_exclusive_empty() -> i64 {
+  n = 0
+  for i in 5..<5 { n = 1 }
+  return eq(n, 0)
+}
+
+fun t41_defer_nested_break() -> i64 {
+  n = 0
+  for i in 0..<3 {
+    defer n = n + 10
+    if (i == 1) {
+      defer n = n + 1
+      break
+    }
+  }
+  return eq(n, 21)
+}
+
+fun close_send_worker(ch: Channel<i64>) -> i64 {
+  i = 0
+  while (i < 50) {
+    if (i == 25) { ch.close() }
+    ch.try_send(99)
+    i = i + 1
+  }
+  return 0
+}
+
+fun t42_channel_close_send_race() -> i64 {
+  ch = Channel<i64>(4)
+  h = spawn close_send_worker(ch)
+  i = 0
+  while (i < 100) {
+    ch.try_send(i)
+    i = i + 1
+  }
+  threads.join(h)
+  return 0
+}
+
+fun try_finally_trace_helper(trace: List<i64>) -> i64 {
+  try {
+    trace.push(1)
+    return 99
+  } finally {
+    trace.push(2)
+  }
+  return 0
+}
+
+fun t43_try_finally_before_return() -> i64 {
+  trace: List<i64> = List<i64>()
+  r = try_finally_trace_helper(trace)
+  if (len(trace) != 2) { return 1 }
+  if (trace[0] != 1) { return 2 }
+  if (trace[1] != 2) { return 3 }
+  return eq(r, 99)
+}
+
+fun t44_dict_len_insert_remove_property() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  i = 0
+  while (i < 32) {
+    d.set(i, i * 10)
+    if (len(d) != i + 1) { return 1 }
+    i = i + 1
+  }
+  i = 0
+  while (i < 32) {
+    d.remove(i)
+    if (len(d) != 31 - i) { return 2 }
+    i = i + 1
+  }
+  return eq(len(d), 0)
+}
+
+actor StopAskCounter {
+  fun on_msg(msg: i64) -> i64 { return msg + 1 }
+}
+
+fun actor_stopper(c: StopAskCounter) -> i64 {
+  i = 0
+  while (i < 100) {
+    c.stop()
+    i = i + 1
+  }
+  return 0
+}
+
+fun actor_asker(c: StopAskCounter) -> i64 {
+  i = 0
+  while (i < 100) {
+    c.ask(1)
+    i = i + 1
+  }
+  return 0
+}
+
+fun t45_actor_stop_ask_race() -> i64 {
+  c = StopAskCounter()
+  h1 = spawn actor_stopper(c)
+  h2 = spawn actor_asker(c)
+  threads.join(h1)
+  threads.join(h2)
+  return 0
+}
+
+fun t46_box_double_drop_safe() -> i64 {
+  b = Box<i64>(42)
+  drop(b)
+  drop(b)
+  return 0
+}
+
+fun t47_denorm_float_ops() -> i64 {
+  x = 0.0000000000000000000000000000000000000001
+  y = x * 2.0
+  if (y == 0.0) { return 1 }
+  z = x + x
+  if (z == 0.0) { return 2 }
+  return 0
+}
+
+fun t48_parallel_for_atomic_add() -> i64 {
+  at = Atomic<i64>(0)
+  parallel for i in 0..<64 {
+    at.fetch_add(1)
+  }
+  return eq(at.load(), 64)
+}
+
+fun t49_dict_hash_collision_len() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  i = 0
+  while (i < 100) {
+    k = (i * 17 + 3) % 50
+    d.set(k, i)
+    i = i + 1
+  }
+  if (len(d) > 50) { return 1 }
+  i = 0
+  while (i < 50) {
+    d.remove(i)
+    if (len(d) > 50 - i - 1) { return 2 }
+    i = i + 1
+  }
+  return eq(len(d), 0)
+}
+
+fun t50_rc_double_drop_safe() -> i64 {
+  r = Rc<i64>(9)
+  drop(r)
+  drop(r)
+  if (r.get() != 0) { return 1 }
+  if (r.clone() != 0) { return 2 }
+  return 0
+}
+
+fun t51_parallel_for_capture_read_only() -> i64 {
+  mul = 3
+  acc = Atomic<i64>(0)
+  parallel for i in 0..<8 {
+    acc.fetch_add(mul)
+  }
+  return eq(acc.load(), 24)
+}
+
+fun t52_closure_atomic_shared() -> i64 {
+  acc = Atomic<i64>(0)
+  bump = fn(x) { acc.fetch_add(x); return acc.load() }
+  if (bump(3) != 3) { return 1 }
+  return eq(bump(2), 5)
+}
+
+fun t53_dict_fuzz_permutation() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  i = 0
+  while (i < 120) {
+    k = (i * 31 + 7) % 67
+    d.set(k, i)
+    i = i + 1
+  }
+  if (len(d) > 67) { return 1 }
+  i = 0
+  while (i < 67) {
+    d.remove(i)
+    if (len(d) > 67 - i - 1) { return 2 }
+    i = i + 1
+  }
+  return eq(len(d), 0)
+}
+
+fun t54_set_fuzz_permutation() -> i64 {
+  s: Set<i64> = Set<i64>()
+  i = 0
+  while (i < 100) {
+    s.add((i * 23 + 5) % 41)
+    i = i + 1
+  }
+  if (len(s) > 41) { return 1 }
+  i = 0
+  while (i < 41) {
+    s.remove(i)
+    if (len(s) > 41 - i - 1) { return 2 }
+    i = i + 1
+  }
+  return eq(len(s), 0)
+}
+
+fun t55_zero_arg_closure_call() -> i64 {
+  f = fn() { return 42 }
+  return eq(f(), 42)
+}
+
+fun t56_zero_arg_closure_capture_read() -> i64 {
+  n = 7
+  f = fn() { return n + 1 }
+  return eq(f(), 8)
+}
+
+fun t57_inclusive_range_singleton() -> i64 {
+  n = 0
+  for i in 5..5 { n = n + 1 }
+  return eq(n, 1)
+}
+
+fun t58_channel_min_capacity_send_recv() -> i64 {
+  ch = Channel<i64>(1)
+  if (ch.try_send(7) != 0) { return 1 }
+  if (ch.try_send(8) != -1) { return 2 }
+  return eq(ch.try_recv(), 7)
+}
+
+fun t60_lfqueue_min_capacity_push_pop() -> i64 {
+  q = LockFreeQueue<i64>(1)
+  if (q.push(3) != 0) { return 1 }
+  if (q.push(4) != -1) { return 2 }
+  return eq(q.pop(), 3)
+}
+
+fun channel_dyn_zero_fail(n: i64) -> i64 {
+  ch = Channel<i64>(n)
+  return ch.try_send(1)
+}
+
+fun t61_channel_runtime_zero_cap_invalid() -> i64 {
+  return eq(channel_dyn_zero_fail(0), -1)
+}
+
+fun tp_worker(x: i64) -> i64 { return x + 1 }
+
+fun threadpool_dyn_zero_fail(n: i64) -> i64 {
+  p = ThreadPool(n)
+  return p.submit(tp_worker, 41)
+}
+
+fun t62_threadpool_runtime_zero_workers_invalid() -> i64 {
+  return eq(threadpool_dyn_zero_fail(0), -1)
+}
+
+fun t63_slice_negative_start() -> i64 {
+  a = [10, 20, 30, 40]
+  sl = a.slice(-2, 4)
+  if (len(sl) != 2) { return 1 }
+  n = 0
+  for x in sl { n = n + x }
+  return eq(n, 70)
+}
+
+fun t64_dict_fuzz_seed7919() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  i = 0
+  while (i < 80) {
+    k = (i * 7919 + 13) % 97
+    d.set(k, i)
+    i = i + 1
+  }
+  if (len(d) > 97) { return 1 }
+  j = 0
+  while (j < 40) {
+    rk = (j * 7919 + 13) % 97
+    d.remove(rk)
+    j = j + 1
+  }
+  if (len(d) > 57) { return 2 }
+  return 0
+}
+
+fun t65_stack_queue_empty_peek() -> i64 {
+  st: Stack<i64> = Stack<i64>()
+  q: Queue<i64> = Queue<i64>()
+  if (st.pop() != 0) { return 1 }
+  if (st.peek() != 0) { return 2 }
+  if (q.dequeue() != 0) { return 3 }
+  if (q.peek() != 0) { return 4 }
+  return 0
+}
+
+fun t66_set_fuzz_seed9973() -> i64 {
+  s: Set<i64> = Set<i64>()
+  i = 0
+  while (i < 64) {
+    s.add((i * 9973 + 41) % 127)
+    if (len(s) > i + 1) { return 1 }
+    i = i + 1
+  }
+  j = 0
+  while (j < 32) {
+    s.remove((j * 9973 + 41) % 127)
+    j = j + 1
+  }
+  if (len(s) > 64) { return 2 }
+  return 0
+}
+
+fun t67_linkedlist_empty_pop() -> i64 {
+  ll: LinkedList<i64> = LinkedList<i64>()
+  if (ll.pop_front() != 0) { return 1 }
+  if (ll.pop_back() != 0) { return 2 }
+  return eq(len(ll), 0)
+}
+
+fun t68_nested_range_no_outer_mutate() -> i64 {
+  n = 0
+  for i in 0..<3 {
+    for j in 0..<3 {
+      n = n + 1
+    }
+  }
+  return eq(n, 9)
+}
+
+fun t69_slice_end_clamped() -> i64 {
+  a = [1, 2, 3]
+  sl = a.slice(1, 999)
+  return eq(len(sl), 2)
+}
+
+fun t70_list_remove_is_by_index() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(10)
+  lst.push(20)
+  lst.remove(0)
+  if (len(lst) != 1) { return 1 }
+  return eq(lst.get(0), 20)
+}
+
+fun t71_list_remove_value() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(10)
+  lst.push(20)
+  lst.push(30)
+  if (lst.remove_value(20) != 1) { return 1 }
+  if (len(lst) != 2) { return 2 }
+  if (lst.get(0) != 10) { return 3 }
+  if (lst.get(1) != 30) { return 4 }
+  if (lst.remove_value(99) != 0) { return 5 }
+  return 0
+}
+
+fun t72_list_remove_value_during_forin() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(10)
+  lst.push(20)
+  lst.push(30)
+  n = 0
+  for v in lst {
+    if (v == 20) { lst.remove_value(v) }
+    n = n + 1
+  }
+  return eq(n, 2)
+}
+
+fun t73_range_desc_inclusive() -> i64 {
+  n = 0
+  s = 0
+  for i in 5..1 {
+    n = n + 1
+    s = s + i
+  }
+  if (n != 5) { return 1 }
+  return eq(s, 15)
+}
+
+fun t74_range_desc_exclusive() -> i64 {
+  n = 0
+  s = 0
+  for i in 5..<1 {
+    n = n + 1
+    s = s + i
+  }
+  if (n != 4) { return 1 }
+  return eq(s, 14)
+}
+
+fun t75_list_remove_value_string() -> i64 {
+  lst: List<string> = List<string>()
+  lst.push("a")
+  lst.push("b")
+  lst.push("c")
+  if (lst.remove_value("b") != 1) { return 1 }
+  if (len(lst) != 2) { return 2 }
+  if (lst.get(0) != "a") { return 3 }
+  if (lst.get(1) != "c") { return 4 }
+  return 0
+}
+
+fun t76_box_get_after_drop_null() -> i64 {
+  b = Box<i64>(8)
+  drop(b)
+  p = b.get()
+  if (p != 0) { return 1 }
+  return 0
+}
+
+fun t77_fs_missing_read_empty() -> i64 {
+  return eq(len(fs.read_text("far_harden_missing_xyz_999.far")), 0)
+}
+
+fun t78_arena_reset_fresh_alloc() -> i64 {
+  a = Arena(64)
+  p1 = a.alloc(8)
+  unsafe { *p1 = i8(11) }
+  a.reset()
+  p2 = a.alloc(8)
+  unsafe { *p2 = i8(22) }
+  return eq(*p2, 22)
+}
+
+fun t79_arena_many_allocs() -> i64 {
+  a = Arena(8192)
+  i = 0
+  while (i < 512) {
+    p = a.alloc(8)
+    if (p == 0) { return 1 }
+    i = i + 1
+  }
+  return eq(i, 512)
+}
+
+fun t80_channel_send_closed() -> i64 {
+  ch = Channel<i64>(1)
+  ch.close()
+  return eq(ch.send(42), -1)
+}
+
+fun t81_dict_bracket_zero_key() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d[0] = 42
+  if (!d.contains_key(0)) { return 1 }
+  return eq(d.get(0), 42)
+}
+
+fun t82_list_clear_forin_empty() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  lst.push(2)
+  lst.clear()
+  n = 0
+  for x in lst { n = n + 1 }
+  return eq(n, 0)
+}
+
+fun t83_slice_negative_end() -> i64 {
+  a = [1, 2, 3, 4, 5]
+  sl = a.slice(1, -1)
+  if (len(sl) != 3) { return 1 }
+  if (sl[0] != 2) { return 2 }
+  if (sl[2] != 4) { return 3 }
+  sl2 = a.slice(0, -1)
+  return eq(len(sl2), 4)
+}
+
+fun t84_set_duplicate_add_idempotent() -> i64 {
+  s: Set<i64> = Set<i64>()
+  s.add(5)
+  s.add(5)
+  if (len(s) != 1) { return 1 }
+  s.remove(5)
+  s.add(5)
+  return eq(len(s), 1)
+}
+
+fun t85_slice_negative_start_end_combo() -> i64 {
+  a = [10, 20, 30, 40, 50]
+  sl = a.slice(-2, -1)
+  if (len(sl) != 1) { return 1 }
+  return eq(sl[0], 40)
+}
+
+fun t86_dict_overwrite_same_key() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d.set(1, 10)
+  d.set(1, 20)
+  if (len(d) != 1) { return 1 }
+  return eq(d.get(1), 20)
+}
+
+fun t87_str_slice_negative_end() -> i64 {
+  s = "hello"
+  sl = s[1:-1]
+  if (len(sl) != 3) { return 1 }
+  if (sl != "ell") { return 2 }
+  return 0
+}
+
+fun t90_str_slice_negative_start() -> i64 {
+  s = "hello"
+  sl = s[-2:5]
+  if (len(sl) != 2) { return 1 }
+  if (sl != "lo") { return 2 }
+  return 0
+}
+
+fun t91_str_slice_negative_combo() -> i64 {
+  s = "abcdef"
+  sl = s[-4:-1]
+  if (len(sl) != 3) { return 1 }
+  if (sl != "cde") { return 2 }
+  return 0
+}
+
+fun t88_slice_extreme_negative_indices() -> i64 {
+  a = [1, 2, 3]
+  sl = a.slice(-100, 100)
+  if (len(sl) != 3) { return 1 }
+  return eq(sl[0] + sl[1] + sl[2], 6)
+}
+
+fun t89_channel_try_recv_empty() -> i64 {
+  ch = Channel<i64>(1)
+  return eq(ch.try_recv(), -9223372036854775808)
+}
+
+fun t92_int_truthiness() -> i64 {
+  if (0) { return 1 }
+  if (42) { }
+  else { return 2 }
+  if (-1) { }
+  else { return 3 }
+  return 0
+}
+
+fun t93_string_truthiness() -> i64 {
+  if ("") { return 1 }
+  if ("0") { }
+  else { return 2 }
+  if ("x") { }
+  else { return 3 }
+  return 0
+}
+
+fun t94_nan_falsy() -> i64 {
+  x = 0.0 / 0.0
+  if (x) { return 1 }
+  return 0
+}
+
+fun t95_fdiv_zero_yields_zero() -> i64 {
+  if (1.0 / 0.0 != 0.0) { return 1 }
+  if (-1.0 / 0.0 != 0.0) { return 2 }
+  return 0
+}
+
+fun t96_dict_len_growth_invariant() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  i = 0
+  while (i < 200) {
+    d.set(i, i)
+    if (len(d) != i + 1) { return 1 }
+    i = i + 1
+  }
+  return 0
+}
+
+fun t97_queue_fifo_order() -> i64 {
+  q: Queue<i64> = Queue<i64>()
+  q.enqueue(1)
+  q.enqueue(2)
+  q.enqueue(3)
+  if (q.dequeue() != 1) { return 1 }
+  if (q.dequeue() != 2) { return 2 }
+  if (q.peek() != 3) { return 3 }
+  if (q.dequeue() != 3) { return 4 }
+  return eq(len(q), 0)
+}
+
+fun t98_parser_depth_62() -> i64 {
+  v = ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((1))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  return eq(v, 1)
+}
+
+fun t99_fs_is_file_blocks_reserved() -> i64 {
+  if (fs.is_file("CON")) { return 1 }
+  if (fs.is_dir("NUL")) { return 2 }
+  if (fs.is_file("a/../b")) { return 3 }
+  return 0
+}
+
+fun t100_fs_is_file_sandbox_denied() -> i64 {
+  if (fs.write_text("far_harden_outside.txt", "x") != 0) { return 1 }
+  sandbox.open_sandbox(2)
+  sandbox.allow_path("far_harden_inside.txt")
+  if (fs.is_file("far_harden_outside.txt")) { return 2 }
+  if (fs.is_dir("far_harden_outside.txt")) { return 3 }
+  sandbox.close_sandbox()
+  fs.remove("far_harden_outside.txt")
+  return 0
+}
+
+fun t101_dict_string_keys_bracket() -> i64 {
+  d: Dict<string, i64> = Dict<string, i64>()
+  d.set("alpha", 10)
+  d["beta"] = 20
+  if (d.get("alpha") != 10) { return 1 }
+  if (d["beta"] != 20) { return 2 }
+  d.remove("alpha")
+  return eq(len(d), 1)
+}
+
+fun t102_str_index_negative() -> i64 {
+  s = "abc"
+  if (int(s[-1]) != int('c')) { return 1 }
+  if (int(s[-3]) != int('a')) { return 2 }
+  if (int(s[-99]) != 0) { return 3 }
+  if (int(s[99]) != 0) { return 4 }
+  return 0
+}
+
+fun t103_set_fuzz_seed31337() -> i64 {
+  s: Set<i64> = Set<i64>()
+  i = 0
+  while (i < 80) {
+    s.add((i * 31337 + 17) % 101)
+    if (len(s) > i + 1) { return 1 }
+    i = i + 1
+  }
+  j = 0
+  while (j < 40) {
+    s.remove((j * 31337 + 17) % 101)
+    j = j + 1
+  }
+  if (len(s) > 80) { return 2 }
+  return 0
+}
+
+fun t104_tri_circular_import_val_c() -> i64 {
+  return eq(val_c(), 7)
+}
+
+fun t105_array_assign_copy_on_write() -> i64 {
+  a = [1, 2, 3]
+  b = a
+  b[0] = 99
+  if (a[0] != 1) { return 1 }
+  if (b[0] != 99) { return 2 }
+  return 0
+}
+
+fun t106_list_assign_copy_on_write() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  lst.push(2)
+  lst2 = lst
+  lst2.push(99)
+  if (len(lst) != 2) { return 1 }
+  if (len(lst2) != 3) { return 2 }
+  if (lst.get(0) != 1) { return 3 }
+  if (lst2.get(2) != 99) { return 4 }
+  return 0
+}
+
+fun t107_nested_row_index_assign_copy() -> i64 {
+  a = [[1, 2], [3, 4]]
+  b = a[0]
+  b[0] = 99
+  if (a[0][0] != 1) { return 1 }
+  if (b[0] != 99) { return 2 }
+  b = a[1]
+  if (a[0][0] != 1) { return 3 }
+  if (a[0][1] != 2) { return 4 }
+  if (b[0] != 3) { return 5 }
+  return 0
+}
+
+fun t108_dict_fuzz_seed65537() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  i = 0
+  while (i < 64) {
+    d.set((i * 65537 + 11) % 127, i)
+    if (len(d) > i + 1) { return 1 }
+    i = i + 1
+  }
+  j = 0
+  while (j < 32) {
+    d.remove((j * 65537 + 11) % 127)
+    j = j + 1
+  }
+  return eq(len(d), 32)
+}
+
+fun t109_queue_assign_copy_on_write() -> i64 {
+  q: Queue<i64> = Queue<i64>()
+  q.enqueue(1)
+  q2 = q
+  q2.enqueue(2)
+  if (len(q) != 1) { return 1 }
+  if (len(q2) != 2) { return 2 }
+  return eq(q.dequeue(), 1)
+}
+
+fun t110_stack_assign_copy_on_write() -> i64 {
+  st: Stack<i64> = Stack<i64>()
+  st.push(1)
+  st2 = st
+  st2.push(2)
+  if (len(st) != 1) { return 1 }
+  if (len(st2) != 2) { return 2 }
+  return eq(st.pop(), 1)
+}
+
+fun t111_dict_assign_copy_on_write() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d.set(1, 10)
+  d2 = d
+  d2.set(2, 20)
+  if (len(d) != 1) { return 1 }
+  if (len(d2) != 2) { return 2 }
+  return eq(d.get(1), 10)
+}
+
+fun t112_rc_assign_clone_refcount() -> i64 {
+  r = Rc<i64>(8)
+  unsafe { *r.get() = 42 }
+  r2 = r
+  drop(r)
+  p = r2.get()
+  if (p == 0) { return 1 }
+  v = 0
+  unsafe { v = *p }
+  return eq(v, 42)
+}
+
+fun t113_linkedlist_assign_copy_on_write() -> i64 {
+  ll: LinkedList<i64> = LinkedList<i64>()
+  ll.push_back(1)
+  ll2 = ll
+  ll2.push_back(2)
+  if (len(ll) != 1) { return 1 }
+  if (len(ll2) != 2) { return 2 }
+  return 0
+}
+
+fun t114_set_fuzz_seed48271() -> i64 {
+  s: Set<i64> = Set<i64>()
+  i = 0
+  while (i < 96) {
+    s.add((i * 48271 + 29) % 149)
+    if (len(s) > i + 1) { return 1 }
+    i = i + 1
+  }
+  j = 0
+  while (j < 48) {
+    s.remove((j * 48271 + 29) % 149)
+    j = j + 1
+  }
+  return eq(len(s), 48)
+}
+
+fun t115_array_slice_independent_mutate() -> i64 {
+  a = [1, 2, 3]
+  sl = a.slice(1, 3)
+  sl[0] = 99
+  if (a[1] != 2) { return 1 }
+  if (sl[0] != 99) { return 2 }
+  return 0
+}
+
+fun t116_nested_row_direct_mutate() -> i64 {
+  a = [[1, 2], [3, 4]]
+  a[0][0] = 99
+  if (a[0][0] != 99) { return 1 }
+  if (a[1][0] != 3) { return 2 }
+  return 0
+}
+
+fun t117_box_assign_move_invalidates_source() -> i64 {
+  b = Box<i64>(1)
+  unsafe { *b.get() = 42 }
+  b2 = b
+  if (b.get() != 0) { return 1 }
+  p = b2.get()
+  if (p == 0) { return 2 }
+  v = 0
+  unsafe { v = *p }
+  drop(b)
+  return eq(v, 42)
+}
+
+fun t118_closure_list_capture_typed() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  bump = fn() { lst.push(2); return len(lst) }
+  if (bump() != 2) { return 1 }
+  return eq(len(lst), 1)
+}
+
+fun t119_closure_list_capture_cow_independent() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  bump = fn() { lst.push(99); return len(lst) }
+  lst2 = lst
+  if (bump() != 2) { return 1 }
+  if (len(lst) != 1) { return 2 }
+  if (len(lst2) != 1) { return 3 }
+  return 0
+}
+
+fun zero_call() -> i64 { return 0 }
+
+fun t120_if_and_shortcircuit_call() -> i64 {
+  n = 0
+  if (1 && zero_call()) { n = 1 }
+  return n
+}
+
+fun t121_if_or_shortcircuit_call() -> i64 {
+  n = 0
+  if (0 || zero_call()) { n = 1 }
+  return n
+}
+
+fun t122_box_index_assign_move() -> i64 {
+  boxes = [Box<i64>(1), Box<i64>(2)]
+  b2 = boxes[0]
+  if (boxes[0].get() != 0) { return 1 }
+  p = b2.get()
+  if (p == 0) { return 2 }
+  v = 0
+  unsafe { v = *p }
+  return eq(v, 1)
+}
+
+fun noop_spawn() -> i64 { return 0 }
+
+fun t123_spawn_join_burst() -> i64 {
+  i = 0
+  while (i < 24) {
+    h = spawn noop_spawn()
+    if (h < 0) { return 1 }
+    if (threads.join(h) != 0) { return 2 }
+    i = i + 1
+  }
+  return 0
+}
+
+fun t124_ternary_and_shortcircuit_call() -> i64 {
+  x = (1 && zero_call()) ? 10 : 99
+  return eq(x, 99)
+}
+
+fun t125_ternary_or_shortcircuit_call() -> i64 {
+  x = (0 || zero_call()) ? 99 : 20
+  return eq(x, 20)
+}
+
+fun t126_channel_recv_sentinel_after_send() -> i64 {
+  ch: Channel<i64> = Channel<i64>(2)
+  ch.send(7)
+  ch.close()
+  if (ch.recv() != 7) { return 1 }
+  return eq(ch.recv(), -9223372036854775808)
+}
+
+fun t127_nested_box_row_reassign() -> i64 {
+  a = [[Box<i64>(1)]]
+  b = a[0][0]
+  a[0][0] = Box<i64>(9)
+  p = b.get()
+  if (p == 0) { return 1 }
+  v = 0
+  unsafe { v = *p }
+  if (v != 1) { return 2 }
+  p2 = a[0][0].get()
+  if (p2 == 0) { return 3 }
+  v2 = 0
+  unsafe { v2 = *p2 }
+  return eq(v2, 9)
+}
+
+fun t128_list_slice_cow_parent_push() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  sl = lst.slice(0, 1)
+  lst.push(99)
+  if (len(lst) != 2) { return 1 }
+  if (len(sl) != 1) { return 2 }
+  return eq(sl[0], 1)
+}
+
+fun t129_array_slice_assign_copy_on_write() -> i64 {
+  a = [1, 2, 3]
+  sl = a.slice(0, 2)
+  sl2 = sl
+  sl[0] = 99
+  if (a[0] != 1) { return 1 }
+  if (sl[0] != 99) { return 2 }
+  return eq(sl2[0], 1)
+}
+
+fun t130_array_rebind_leaves_copy() -> i64 {
+  a = [1, 2, 3]
+  b = a
+  a = [9, 8]
+  if (len(b) != 3) { return 1 }
+  if (b[0] != 1) { return 2 }
+  return eq(a[0], 9)
+}
+
+fun t131_arena_live_table_stress() -> i64 {
+  a = Arena(8192)
+  i = 0
+  while (i < 1000) {
+    p = a.alloc(8)
+    if (p == 0) { return 1 }
+    i = i + 1
+  }
+  return eq(i, 1000)
+}
+
+fun t132_pool_acquire_exhaust() -> i64 {
+  pool = Pool<i64>(2)
+  o1 = pool.acquire()
+  o2 = pool.acquire()
+  o3 = pool.acquire()
+  if (o1 == 0) { return 1 }
+  if (o2 == 0) { return 2 }
+  if (o3 != 0) { return 3 }
+  pool.release(o1)
+  o4 = pool.acquire()
+  if (o4 == 0) { return 4 }
+  return 0
+}
+
+fun t133_channel_try_recv_buffered_closed() -> i64 {
+  ch: Channel<i64> = Channel<i64>(2)
+  ch.send(5)
+  ch.send(6)
+  ch.close()
+  if (ch.try_recv() != 5) { return 1 }
+  if (ch.try_recv() != 6) { return 2 }
+  return eq(ch.try_recv(), -9223372036854775808)
+}
+
+fun t134_sandbox_blocks_dotdot_path() -> i64 {
+  sandbox.open_sandbox(2)
+  sandbox.allow_path("far_harden_inner.txt")
+  if (fs.write_text("far_harden_inner.txt", "ok") != 0) {
+    sandbox.close_sandbox()
+    return 1
+  }
+  if (len(fs.read_text("far_harden_inner.txt")) != 2) {
+    sandbox.close_sandbox()
+    fs.remove("far_harden_inner.txt")
+    return 2
+  }
+  if (len(fs.read_text("far_harden_inner/../far_harden_inner.txt")) != 0) {
+    sandbox.close_sandbox()
+    fs.remove("far_harden_inner.txt")
+    return 3
+  }
+  sandbox.close_sandbox()
+  fs.remove("far_harden_inner.txt")
+  return 0
+}
+
+fun t135_list_insert_at_end_index() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  lst.insert(1, 2)
+  if (len(lst) != 2) { return 1 }
+  if (lst.get(0) != 1) { return 2 }
+  if (lst.get(1) != 2) { return 3 }
+  lst.insert(2, 3)
+  return eq(len(lst), 3)
+}
+
+fun t136_set_assign_copy_on_write() -> i64 {
+  s: Set<i64> = Set<i64>()
+  s.add(1)
+  s2 = s
+  s2.add(2)
+  if (len(s) != 1) { return 1 }
+  if (len(s2) != 2) { return 2 }
+  if (s.contains(2)) { return 3 }
+  return 0
+}
+
+fun t137_arena_byte_cap_exhaust() -> i64 {
+  a = Arena(64)
+  p = a.alloc(57)
+  if (p == 0) { return 1 }
+  p2 = a.alloc(8)
+  if (p2 != 0) { return 2 }
+  return 0
+}
+
+fun t138_queue_dequeue_cow_independent() -> i64 {
+  q: Queue<i64> = Queue<i64>()
+  q.enqueue(1)
+  q2 = q
+  q2.enqueue(2)
+  if (len(q) != 1) { return 1 }
+  if (q.dequeue() != 1) { return 2 }
+  if (len(q2) != 2) { return 3 }
+  if (q2.dequeue() != 1) { return 4 }
+  return eq(q2.dequeue(), 2)
+}
+
+fun t139_rc_index_assign_survives_drop() -> i64 {
+  boxes = [Rc<i64>(10), Rc<i64>(20)]
+  r2 = boxes[1]
+  drop(boxes[1])
+  p = r2.get()
+  if (p == 0) { return 1 }
+  v = 0
+  unsafe { v = *p }
+  return eq(v, 20)
+}
+
+fun t140_box_index_assign_survives_drop() -> i64 {
+  boxes = [Box<i64>(1), Box<i64>(2)]
+  b2 = boxes[1]
+  drop(boxes[1])
+  p = b2.get()
+  if (p == 0) { return 1 }
+  v = 0
+  unsafe { v = *p }
+  return eq(v, 2)
+}
+
+fun t141_while_and_shortcircuit_skip() -> i64 {
+  n = 0
+  i = 0
+  while (0 && zero_call()) { n = 1; i = i + 1 }
+  if (n != 0) { return 1 }
+  return eq(i, 0)
+}
+
+fun chain127(x: i64) -> i64 { return x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x }
+
+fun t142_codegen_binop_depth_127() -> i64 {
+  return eq(chain127(1), 128)
+}
+
+fun t143_for_init_runs_const_false_cond() -> i64 {
+  log: List<i64> = List<i64>()
+  for (log.push(1); 0; log.push(2)) { }
+  if (len(log) != 1) { return 1 }
+  return eq(log.get(0), 1)
+}
+
+fun t144_list_insert_at_zero() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(2)
+  lst.insert(0, 1)
+  if (len(lst) != 2) { return 1 }
+  if (lst.get(0) != 1) { return 2 }
+  return eq(lst.get(1), 2)
+}
+
+fun t145_row_rebind_leaves_copy() -> i64 {
+  a = [[1, 2], [3, 4]]
+  b = a[0]
+  a[0] = [9, 8]
+  if (b[0] != 1) { return 1 }
+  if (b[1] != 2) { return 2 }
+  return eq(a[0][0], 9)
+}
+
+fun t146_dict_remove_all_reinsert() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d.set(1, 10)
+  d.set(2, 20)
+  d.remove(1)
+  d.remove(2)
+  if (len(d) != 0) { return 1 }
+  d.set(3, 30)
+  if (len(d) != 1) { return 2 }
+  return eq(d.get(3), 30)
+}
+
+fun t147_atomic_cas_returns_previous() -> i64 {
+  at = Atomic<i64>(5)
+  if (at.compare_exchange(5, 7) != 5) { return 1 }
+  if (at.load() != 7) { return 2 }
+  if (at.compare_exchange(5, 9) != 7) { return 3 }
+  return eq(at.load(), 7)
+}
+
+fun t148_parallel_for_atomic_sum() -> i64 {
+  at = Atomic<i64>(0)
+  parallel for i in 0..<64 {
+    at.fetch_add(1)
+  }
+  return eq(at.load(), 64)
+}
+
+fun t149_for_cstyle_accumulator() -> i64 {
+  a = [1, 2, 3]
+  i = 0
+  s = 0
+  for (i = 0; i < 3; i = i + 1) {
+    s = s + a[i]
+  }
+  return eq(s, 6)
+}
+
+fun t150_dict_len_invariant_200() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  i = 0
+  while (i < 200) {
+    d.set(i, i * 3)
+    i = i + 1
+  }
+  j = 0
+  c = 0
+  while (j < 200) {
+    if (d.contains_key(j)) { c = c + 1 }
+    j = j + 1
+  }
+  return eq(c, 200)
+}
+
+fun t151_arr_neg_index_read_still_oob() -> i64 {
+  a = [10, 20, 30]
+  return eq(a[-1], 0)
+}
+
+fun noop_unjoined() -> i64 { return 0 }
+
+fun t152_spawn_exhaust_without_join() -> i64 {
+  i = 0
+  while (i < 5000) {
+    h = spawn noop_unjoined()
+    if (h < 0) { return eq(i, 4096) }
+    i = i + 1
+  }
+  return 1
+}
+
+fun t153_arr_pos_index_read_oob() -> i64 {
+  a = [1, 2, 3]
+  return eq(a[99], 0)
+}
+
+fun t154_list_forin_continue_skips() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  lst.push(2)
+  lst.push(3)
+  s = 0
+  for x in lst {
+    if (x == 2) { continue }
+    s = s + x
+  }
+  return eq(s, 4)
+}
+
+fun t155_set_remove_all_empty() -> i64 {
+  s: Set<i64> = Set<i64>()
+  i = 0
+  while (i < 50) {
+    s.add(i)
+    i = i + 1
+  }
+  j = 0
+  while (j < 50) {
+    s.remove(j)
+    j = j + 1
+  }
+  return eq(len(s), 0)
+}
+
+fun t156_inclusive_desc_two_step() -> i64 {
+  n = 0
+  for i in 1..0 { n = n + 1 }
+  return eq(n, 2)
+}
+
+fun t157_slice_var_oob_compile() -> i64 {
+  a = [1, 2, 3, 4, 5]
+  sl = a.slice(1, 4)
+  sl[2] = 99
+  if (sl[2] != 99) { return 1 }
+  if (len(sl) != 3) { return 2 }
+  return 0
+}
+
+fun t158_slice_neg_end_len() -> i64 {
+  a = [1, 2, 3, 4, 5]
+  sl = a.slice(1, -1)
+  return eq(len(sl), 3)
+}
+
+fun t159_nested_arr_index_oob_read() -> i64 {
+  a = [[1, 2], [3, 4]]
+  return eq(a[0][99], 0)
+}
+
+fun t160_nested_arr_valid_inner_assign() -> i64 {
+  a = [[1, 2], [3, 4]]
+  a[0][1] = 99
+  return eq(a[0][1], 99)
+}
+
+fun t161_list_push_len_oob_compile() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  lst.push(2)
+  lst[1] = 77
+  return eq(lst.get(1), 77)
+}
+
+fun t162_ternary_short_circuit_false() -> i64 {
+  n = 0
+  x = 0 ? side_for_t162() : 42
+  return eq(x, 42)
+}
+
+fun side_for_t162() -> i64 { return 1 }
+
+fun t163_while_break_continue_count() -> i64 {
+  n = 0
+  i = 0
+  while (i < 200) {
+    if (i == 100) { break }
+    if (i != 50) { n = n + 1 }
+    i = i + 1
+  }
+  return eq(n, 99)
+}
+
+fun t164_list_push_in_if_valid_assign() -> i64 {
+  lst: List<i64> = List<i64>()
+  if (1) {
+    lst.push(10)
+    lst.push(11)
+  }
+  lst[1] = 77
+  return eq(lst.get(1), 77)
+}
+
+fun t165_arr_index_pluseq_valid() -> i64 {
+  a = [10, 20, 30]
+  a[1] += 5
+  return eq(a[1], 25)
+}
+
+fun t166_list_push_in_for_range_valid_assign() -> i64 {
+  lst: List<i64> = List<i64>()
+  for i in 0..<2 {
+    lst.push(i + 10)
+  }
+  lst[1] = 77
+  return eq(lst.get(1), 77)
+}
+
+fun t167_nested_arr_grow_reassign_valid() -> i64 {
+  a = [[1, 2]]
+  a = [[1, 2, 3]]
+  a[0][2] = 88
+  return eq(a[0][2], 88)
+}
+
+fun t168_list_push_cstyle_for_valid_assign() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (i = 0; i < 2; i = i + 1) {
+    lst.push(i + 1)
+  }
+  lst[1] = 77
+  return eq(lst.get(1), 77)
+}
+
+fun t169_list_push_while_valid_assign() -> i64 {
+  lst: List<i64> = List<i64>()
+  i = 0
+  while (i < 2) {
+    lst.push(i + 10)
+    i = i + 1
+  }
+  lst[1] = 55
+  return eq(lst.get(1), 55)
+}
+
+fun t170_interp_brace_escape() -> i64 {
+  s = $"{{}}"
+  if (len(s) != 2) { return 1 }
+  x = 7
+  s2 = $"v={x}"
+  if (len(s2) != 3) { return 2 }
+  return 0
+}
+
+fun t171_dict_forin_keys_remove() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d.set(1, 10)
+  d.set(2, 20)
+  d.set(3, 30)
+  sum = 0
+  for k in d.keys() {
+    sum = sum + k
+    if (k == 2) { d.remove(2) }
+  }
+  return eq(sum, 6)
+}
+
+fun t172_list_push_cstyle_desc_for_valid_assign() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (i = 2; i > 0; i = i - 1) {
+    lst.push(i)
+  }
+  lst[1] = 88
+  return eq(lst.get(1), 88)
+}
+
+fun t173_list_push_while_desc_valid_assign() -> i64 {
+  lst: List<i64> = List<i64>()
+  i = 2
+  while (i > 0) {
+    lst.push(i)
+    i = i - 1
+  }
+  lst[1] = 77
+  return eq(lst.get(1), 77)
+}
+
+fun t174_dict_forin_values_sum() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d.set(1, 10)
+  d.set(2, 20)
+  d.set(3, 30)
+  sum = 0
+  for v in d.values() {
+    sum = sum + v
+  }
+  return eq(sum, 60)
+}
+
+fun t175_dict_forin_values_remove() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d.set(1, 10)
+  d.set(2, 20)
+  d.set(3, 30)
+  sum = 0
+  for v in d.values() {
+    sum = sum + v
+    if (v == 20) { d.remove(2) }
+  }
+  return eq(sum, 60)
+}
+
+fun t176_list_push_break_set() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (i = 0; i < 10; i = i + 1) {
+    lst.push(i)
+    if (i == 1) {
+      break
+    }
+  }
+  lst[1] = 9
+  return eq(lst.get(1), 9)
+}
+
+fun t177_list_nested_range_inner_break() -> i64 {
+  lst: List<i64> = List<i64>()
+  for i in 0..<3 {
+    for j in 0..<2 {
+      if (j == 1) {
+        break
+      }
+      lst.push(i * 10 + j)
+    }
+  }
+  lst[2] = 88
+  return eq(lst.get(2), 88)
+}
+
+fun t178_arr_range_pluseq() -> i64 {
+  a = [1, 2, 3, 4, 5]
+  for i in 0..<3 {
+    a[i] += 1
+  }
+  if (a[0] != 2) { return 1 }
+  if (a[2] != 4) { return 2 }
+  return 0
+}
+
+fun t179_arr_after_while_valid_assign() -> i64 {
+  a = [1, 2, 3]
+  i = 0
+  while (i < 2) {
+    i = i + 1
+  }
+  a[i] = 99
+  return eq(a[i], 99)
+}
+
+fun t180_set_keys_forin_sum() -> i64 {
+  s: Set<i64> = Set<i64>()
+  s.add(1)
+  s.add(2)
+  s.add(3)
+  sum = 0
+  for k in s.keys() {
+    sum = sum + k
+  }
+  return eq(sum, 6)
+}
+
+fun t181_set_keys_forin_remove() -> i64 {
+  s: Set<i64> = Set<i64>()
+  s.add(1)
+  s.add(2)
+  s.add(3)
+  sum = 0
+  for k in s.keys() {
+    sum = sum + k
+    if (k == 2) {
+      s.remove(2)
+    }
+  }
+  return eq(sum, 6)
+}
+
+fun t182_list_cstyle_break_bracket_assign() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (i = 0; i < 10; i = i + 1) {
+    lst.push(i)
+    if (i == 1) {
+      break
+    }
+  }
+  lst[1] = 42
+  return eq(lst.get(1), 42)
+}
+
+fun t183_if_assign_shortcircuit() -> i64 {
+  x = 0
+  if (false && (x = 1) != 0) { }
+  if (x != 0) { return 1 }
+  y = 0
+  if (true || (y = 1) != 0) { }
+  if (y != 0) { return 2 }
+  return 0
+}
+
+fun t184_range_break_bracket_assign() -> i64 {
+  lst: List<i64> = List<i64>()
+  for x in 0..<5 {
+    lst.push(x)
+    if (x == 2) {
+      break
+    }
+  }
+  lst[2] = 77
+  return eq(lst.get(2), 77)
+}
+
+fun t185_cstyle_desc_break_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (i = 5; i > 0; i = i - 1) {
+    lst.push(i)
+    if (i == 3) {
+      break
+    }
+  }
+  lst[2] = 99
+  return eq(lst.get(2), 99)
+}
+
+fun t186_for_and_in_condition() -> i64 {
+  a = [0, 0, 0]
+  for (i = 0; i < 3 && i < 10; i = i + 1) {
+    a[i] = i + 1
+  }
+  if (a[2] != 3) { return 1 }
+  return 0
+}
+
+fun t187_list_cstyle_continue_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (i = 0; i < 10; i = i + 1) {
+    if (i == 5) {
+      continue
+    }
+    lst.push(i)
+  }
+  lst[8] = 99
+  return eq(lst.get(8), 99)
+}
+
+fun t188_range_continue_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for x in 0..<10 {
+    if (x == 5) {
+      continue
+    }
+    lst.push(x)
+  }
+  lst[8] = 55
+  return eq(lst.get(8), 55)
+}
+
+fun t189_chained_logical_shortcircuit() -> i64 {
+  x = 0
+  y = 0
+  z = 0
+  if (false && false && (x = 1) != 0) { }
+  if (true || false || (y = 1) != 0) { }
+  if (true && (z = 1) != 0) { }
+  if (x != 0) { return 1 }
+  if (y != 0) { return 2 }
+  if (z != 1) { return 3 }
+  return 0
+}
+
+fun t190_list_double_continue_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (i = 0; i < 10; i = i + 1) {
+    if (i == 3) {
+      continue
+    }
+    if (i == 7) {
+      continue
+    }
+    lst.push(i)
+  }
+  lst[7] = 88
+  return eq(lst.get(7), 88)
+}
+
+fun t191_list_ge_break_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (i = 0; i < 10; i = i + 1) {
+    lst.push(i)
+    if (i >= 2) {
+      break
+    }
+  }
+  lst[2] = 77
+  return eq(lst.get(2), 77)
+}
+
+fun t192_list_gt_break_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (i = 0; i < 10; i = i + 1) {
+    lst.push(i)
+    if (i > 2) {
+      break
+    }
+  }
+  lst[3] = 88
+  return eq(lst.get(3), 88)
+}
+
+fun t193_list_desc_le_break_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (i = 5; i > 0; i = i - 1) {
+    lst.push(i)
+    if (i <= 2) {
+      break
+    }
+  }
+  lst[3] = 66
+  return eq(lst.get(3), 66)
+}
+
+fun t194_list_ge_continue_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (i = 0; i < 10; i = i + 1) {
+    if (i >= 5) {
+      continue
+    }
+    lst.push(i)
+  }
+  lst[4] = 44
+  return eq(lst.get(4), 44)
+}
+
+fun t195_list_gt_continue_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (i = 0; i < 10; i = i + 1) {
+    if (i > 5) {
+      continue
+    }
+    lst.push(i)
+  }
+  lst[5] = 55
+  return eq(lst.get(5), 55)
+}
+
+fun t196_list_desc_le_continue_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (i = 5; i > 0; i = i - 1) {
+    if (i <= 2) {
+      continue
+    }
+    lst.push(i)
+  }
+  lst[2] = 33
+  return eq(lst.get(2), 33)
+}
+
+fun t197_list_break_before_push_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (i = 0; i < 10; i = i + 1) {
+    if (i == 2) {
+      break
+    }
+    lst.push(i)
+  }
+  lst[1] = 77
+  return eq(lst.get(1), 77)
+}
+
+fun t198_while_break_array_assign() -> i64 {
+  a = [0, 0, 0, 0, 0]
+  i = 0
+  while (i < 5) {
+    if (i == 3) {
+      break
+    }
+    a[i] = i + 1
+    i = i + 1
+  }
+  a[2] = 99
+  return eq(a[2], 99)
+}
+
+fun t199_range_break_before_push_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for x in 0..<5 {
+    if (x == 2) {
+      break
+    }
+    lst.push(x)
+  }
+  lst[1] = 11
+  return eq(lst.get(1), 11)
+}
+
+fun t200_list_continue_after_push_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (i = 0; i < 10; i = i + 1) {
+    lst.push(i)
+    if (i == 5) {
+      continue
+    }
+  }
+  lst[9] = 99
+  return eq(lst.get(9), 99)
+}
+
+fun t201_while_float_reassign() -> i64 {
+  x = 1.0
+  while (x < 4.0) {
+    x = x + 1.0
+  }
+  if (x != 4.0) {
+    return 1
+  }
+  y: double = 2.0
+  n = 0
+  while (y > 0.0) {
+    y = y - 1.0
+    n = n + 1
+  }
+  if (n != 2) {
+    return 2
+  }
+  return 0
+}
+
+fun t202_combined_break_continue_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (i = 0; i < 8; i = i + 1) {
+    if (i == 3) {
+      continue
+    }
+    if (i == 6) {
+      break
+    }
+    lst.push(i)
+  }
+  lst[4] = 44
+  return eq(lst.get(4), 44)
+}
+
+fun t203_dvec2_scalar_mul_assign() -> i64 {
+  a = dvec2(3.0, 4.0)
+  s = a * 2.0
+  if (s.x != 6.0) {
+    return 1
+  }
+  if (s.y != 8.0) {
+    return 2
+  }
+  c = a + dvec2(1.0, 1.0)
+  if (c.x != 4.0) {
+    return 3
+  }
+  return 0
+}
+
+fun t204_while_float_truthiness() -> i64 {
+  x = 2.0
+  n = 0
+  while (x) {
+    x = x - 1.0
+    n = n + 1
+  }
+  if (n != 2) {
+    return 1
+  }
+  if (x != 0.0) {
+    return 2
+  }
+  return 0
+}
+
+fun t205_while_nan_falsy() -> i64 {
+  x = 0.0 / 0.0
+  n = 0
+  while (x) {
+    n = n + 1
+  }
+  return eq(n, 0)
+}
+
+fun t206_nested_inner_break_list_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (i = 0; i < 3; i = i + 1) {
+    for (j = 0; j < 5; j = j + 1) {
+      if (j == 2) {
+        break
+      }
+      lst.push(i * 10 + j)
+    }
+  }
+  lst[5] = 55
+  return eq(lst.get(5), 55)
+}
+
+fun t207_range_combined_break_continue_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for x in 0..<8 {
+    if (x == 3) { continue }
+    if (x == 6) { break }
+    lst.push(x)
+  }
+  lst[4] = 44
+  return eq(lst.get(4), 44)
+}
+
+fun t208_push_break_continue_after_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (i = 0; i < 6; i = i + 1) {
+    if (i == 2) { break }
+    lst.push(i)
+    if (i == 1) { continue }
+  }
+  lst[1] = 22
+  return eq(lst.get(1), 22)
+}
+
+fun t209_inclusive_range_combined_break_continue_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for x in 0..7 {
+    if (x == 3) { continue }
+    if (x == 6) { break }
+    lst.push(x)
+  }
+  lst[4] = 44
+  return eq(lst.get(4), 44)
+}
+
+fun t210_range_push_continue_before_break_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for x in 0..<6 {
+    if (x == 1) { continue }
+    lst.push(x)
+    if (x == 3) { break }
+  }
+  lst[2] = 22
+  return eq(lst.get(2), 22)
+}
+
+fun t211_cstyle_push_continue_before_break_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (x = 0; x < 6; x = x + 1) {
+    if (x == 1) { continue }
+    lst.push(x)
+    if (x == 3) { break }
+  }
+  lst[2] = 22
+  return eq(lst.get(2), 22)
+}
+
+fun t212_nested_range_combined_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for i in 0..<3 {
+    for x in 0..<8 {
+      if (x == 3) { continue }
+      if (x == 6) { break }
+      lst.push(i * 10 + x)
+    }
+  }
+  lst[14] = 99
+  return eq(lst.get(14), 99)
+}
+
+fun t213_desc_inclusive_combined_break_continue_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for x in 7..1 {
+    if (x == 4) { continue }
+    if (x == 2) { break }
+    lst.push(x)
+  }
+  lst[3] = 33
+  return eq(lst.get(3), 33)
+}
+
+fun t214_double_push_continue_before_break_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for x in 0..<6 {
+    if (x == 1) { continue }
+    lst.push(x)
+    lst.push(x + 10)
+    if (x == 3) { break }
+  }
+  lst[5] = 55
+  return eq(lst.get(5), 55)
+}
+
+fun t215_double_push_break_before_continue_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for x in 0..<8 {
+    if (x == 3) { continue }
+    if (x == 6) { break }
+    lst.push(x)
+    lst.push(x + 10)
+  }
+  lst[9] = 99
+  return eq(lst.get(9), 99)
+}
+
+fun t216_while_break_before_push_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  i = 0
+  while (i < 6) {
+    if (i == 3) { break }
+    lst.push(i)
+    i = i + 1
+  }
+  lst[2] = 22
+  return eq(lst.get(2), 22)
+}
+
+fun t217_while_push_continue_before_break_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  i = 0
+  while (i < 6) {
+    if (i == 1) {
+      i = i + 1
+      continue
+    }
+    lst.push(i)
+    if (i == 3) { break }
+    i = i + 1
+  }
+  lst[2] = 22
+  return eq(lst.get(2), 22)
+}
+
+fun t218_while_desc_break_before_push_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  i = 6
+  while (i > 0) {
+    if (i == 2) { break }
+    lst.push(i)
+    i = i - 1
+  }
+  lst[3] = 33
+  return eq(lst.get(3), 33)
+}
+
+fun t219_while_desc_push_continue_before_break_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  i = 5
+  while (i > 0) {
+    if (i == 3) {
+      i = i - 1
+      continue
+    }
+    lst.push(i)
+    if (i == 2) { break }
+    i = i - 1
+  }
+  lst[2] = 22
+  return eq(lst.get(2), 22)
+}
+
+fun t220_nested_if_continue_before_push_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for x in 0..<6 {
+    if (x > -1) {
+      if (x == 1) { continue }
+    }
+    lst.push(x)
+    if (x == 3) { break }
+  }
+  lst[2] = 22
+  return eq(lst.get(2), 22)
+}
+
+fun t221_switch_continue_break_before_push_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for x in 0..<8 {
+    switch x {
+      case 3: { continue }
+      default: { }
+    }
+    if (x == 6) { break }
+    lst.push(x)
+  }
+  lst[4] = 44
+  return eq(lst.get(4), 44)
+}
+
+fun t222_switch_default_continue_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for x in 0..<6 {
+    switch x {
+      case 0: { }
+      case 2: { }
+      default: { continue }
+    }
+    if (x == 4) { break }
+    lst.push(x)
+  }
+  lst[1] = 22
+  return eq(lst.get(1), 22)
+}
+
+fun t223_try_continue_push_break_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for x in 0..<6 {
+    try {
+      if (x == 1) { continue }
+      lst.push(x)
+      if (x == 3) { break }
+    } catch (e) {
+    }
+  }
+  lst[2] = 22
+  return eq(lst.get(2), 22)
+}
+
+fun t224_match_continue_push_break_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for x in 0..<6 {
+    match x {
+      1 => { continue }
+      _ => { }
+    }
+    lst.push(x)
+    if (x == 3) { break }
+  }
+  lst[2] = 22
+  return eq(lst.get(2), 22)
+}
+
+fun t59_list_forin_remove_by_value() -> i64 {
+  lst: List<i64> = List<i64>()
+  i = 0
+  while (i < 32) {
+    lst.push(i)
+    i = i + 1
+  }
+  for x in lst {
+    lst.remove(x)
+  }
+  return eq(len(lst), 20)
+}
+
+fun lfq_push(q: LockFreeQueue<i64>, n: i64) -> i64 {
+  i = 0
+  while (i < n) {
+    if (q.push(i) == 0) {
+      i = i + 1
+    }
+  }
+  return 0
+}
+
+fun lfq_pop_sum(q: LockFreeQueue<i64>, n: i64) -> i64 {
+  s = 0
+  got = 0
+  while (got < n) {
+    v = q.pop()
+    if (v >= 0) {
+      s = s + v
+      got = got + 1
+    }
+  }
+  return s
+}
+
+fun main() {
+  r = 0
+  r = run(1, t01_atomic_fetch_add_race()); if (r != 0) { return r }
+  r = run(2, t02_dict_tombstone_reinsert()); if (r != 0) { return r }
+  r = run(3, t03_forin_shrink_no_oob()); if (r != 0) { return r }
+  r = run(4, t04_forin_grow_bounded()); if (r != 0) { return r }
+  r = run(5, t05_channel_send_recv_race()); if (r != 0) { return r }
+  r = run(6, t06_lfq_push_pop_race()); if (r != 0) { return r }
+  r = run(7, t07_forin_slice_sum()); if (r != 0) { return r }
+  r = run(8, t08_set_remove_all_readd()); if (r != 0) { return r }
+  r = run(9, t09_sandbox_fs_allow_deny()); if (r != 0) { return r }
+  r = run(10, t10_dict_duplicate_key()); if (r != 0) { return r }
+  r = run(11, t11_semaphore_try_wait()); if (r != 0) { return r }
+  r = run(12, t12_deep_short_circuit()); if (r != 0) { return r }
+  r = run(13, t13_mutex_cross_thread_block()); if (r != 0) { return r }
+  r = run(14, t14_recursion_depth_1000()); if (r != 0) { return r }
+  r = run(15, t15_list_insert_huge_index()); if (r != 0) { return r }
+  r = run(16, t16_parallel_for_zero_iters()); if (r != 0) { return r }
+  r = run(17, t17_dict_bracket_missing_key()); if (r != 0) { return r }
+  r = run(18, t18_default_param_skipped()); if (r != 0) { return r }
+  r = run(19, t19_dict_extreme_keys()); if (r != 0) { return r }
+  r = run(20, t20_dict_bracket_assign()); if (r != 0) { return r }
+  r = run(21, t21_closure_capture_snapshot()); if (r != 0) { return r }
+  r = run(22, t22_match_wildcard_source_order()); if (r != 0) { return r }
+  r = run(23, t23_match_wildcard_before_literal()); if (r != 0) { return r }
+  r = run(24, t24_default_param_side_effect()); if (r != 0) { return r }
+  r = run(25, t25_varargs_empty_and_multi()); if (r != 0) { return r }
+  r = run(26, t26_match_f64_nan_wildcard()); if (r != 0) { return r }
+  r = run(27, t27_deep_binop_runtime()); if (r != 0) { return r }
+  r = run(28, t28_switch_runtime_default_order()); if (r != 0) { return r }
+  r = run(29, t29_nested_break_continue()); if (r != 0) { return r }
+  r = run(30, t30_mod_i64min()); if (r != 0) { return r }
+  r = run(31, t31_channel_recv_closed_empty()); if (r != 0) { return r }
+  r = run(32, t32_str_index_oob()); if (r != 0) { return r }
+  r = run(33, t33_dict_insert_count_property()); if (r != 0) { return r }
+  r = run(34, t34_set_insert_count_property()); if (r != 0) { return r }
+  r = run(35, t35_pow_right_associative()); if (r != 0) { return r }
+  r = run(36, t36_f64_nan_neq_self()); if (r != 0) { return r }
+  r = run(37, t37_dict_zero_value_key()); if (r != 0) { return r }
+  r = run(38, t38_arr_negative_index_oob()); if (r != 0) { return r }
+  r = run(39, t39_channel_try_send_closed()); if (r != 0) { return r }
+  r = run(40, t40_range_exclusive_empty()); if (r != 0) { return r }
+  r = run(41, t41_defer_nested_break()); if (r != 0) { return r }
+  r = run(42, t42_channel_close_send_race()); if (r != 0) { return r }
+  r = run(43, t43_try_finally_before_return()); if (r != 0) { return r }
+  r = run(44, t44_dict_len_insert_remove_property()); if (r != 0) { return r }
+  r = run(45, t45_actor_stop_ask_race()); if (r != 0) { return r }
+  r = run(46, t46_box_double_drop_safe()); if (r != 0) { return r }
+  r = run(47, t47_denorm_float_ops()); if (r != 0) { return r }
+  r = run(48, t48_parallel_for_atomic_add()); if (r != 0) { return r }
+  r = run(49, t49_dict_hash_collision_len()); if (r != 0) { return r }
+  r = run(50, t50_rc_double_drop_safe()); if (r != 0) { return r }
+  r = run(51, t51_parallel_for_capture_read_only()); if (r != 0) { return r }
+  r = run(52, t52_closure_atomic_shared()); if (r != 0) { return r }
+  r = run(53, t53_dict_fuzz_permutation()); if (r != 0) { return r }
+  r = run(54, t54_set_fuzz_permutation()); if (r != 0) { return r }
+  r = run(55, t55_zero_arg_closure_call()); if (r != 0) { return r }
+  r = run(56, t56_zero_arg_closure_capture_read()); if (r != 0) { return r }
+  r = run(57, t57_inclusive_range_singleton()); if (r != 0) { return r }
+  r = run(58, t58_channel_min_capacity_send_recv()); if (r != 0) { return r }
+  r = run(59, t59_list_forin_remove_by_value()); if (r != 0) { return r }
+  r = run(60, t60_lfqueue_min_capacity_push_pop()); if (r != 0) { return r }
+  r = run(61, t61_channel_runtime_zero_cap_invalid()); if (r != 0) { return r }
+  r = run(62, t62_threadpool_runtime_zero_workers_invalid()); if (r != 0) { return r }
+  r = run(63, t63_slice_negative_start()); if (r != 0) { return r }
+  r = run(64, t64_dict_fuzz_seed7919()); if (r != 0) { return r }
+  r = run(65, t65_stack_queue_empty_peek()); if (r != 0) { return r }
+  r = run(66, t66_set_fuzz_seed9973()); if (r != 0) { return r }
+  r = run(67, t67_linkedlist_empty_pop()); if (r != 0) { return r }
+  r = run(68, t68_nested_range_no_outer_mutate()); if (r != 0) { return r }
+  r = run(69, t69_slice_end_clamped()); if (r != 0) { return r }
+  r = run(70, t70_list_remove_is_by_index()); if (r != 0) { return r }
+  r = run(71, t71_list_remove_value()); if (r != 0) { return r }
+  r = run(72, t72_list_remove_value_during_forin()); if (r != 0) { return r }
+  r = run(73, t73_range_desc_inclusive()); if (r != 0) { return r }
+  r = run(74, t74_range_desc_exclusive()); if (r != 0) { return r }
+  r = run(75, t75_list_remove_value_string()); if (r != 0) { return r }
+  r = run(76, t76_box_get_after_drop_null()); if (r != 0) { return r }
+  r = run(77, t77_fs_missing_read_empty()); if (r != 0) { return r }
+  r = run(78, t78_arena_reset_fresh_alloc()); if (r != 0) { return r }
+  r = run(79, t79_arena_many_allocs()); if (r != 0) { return r }
+  r = run(80, t80_channel_send_closed()); if (r != 0) { return r }
+  r = run(81, t81_dict_bracket_zero_key()); if (r != 0) { return r }
+  r = run(82, t82_list_clear_forin_empty()); if (r != 0) { return r }
+  r = run(83, t83_slice_negative_end()); if (r != 0) { return r }
+  r = run(84, t84_set_duplicate_add_idempotent()); if (r != 0) { return r }
+  r = run(85, t85_slice_negative_start_end_combo()); if (r != 0) { return r }
+  r = run(86, t86_dict_overwrite_same_key()); if (r != 0) { return r }
+  r = run(87, t87_str_slice_negative_end()); if (r != 0) { return r }
+  r = run(90, t90_str_slice_negative_start()); if (r != 0) { return r }
+  r = run(91, t91_str_slice_negative_combo()); if (r != 0) { return r }
+  r = run(88, t88_slice_extreme_negative_indices()); if (r != 0) { return r }
+  r = run(89, t89_channel_try_recv_empty()); if (r != 0) { return r }
+  r = run(92, t92_int_truthiness()); if (r != 0) { return r }
+  r = run(93, t93_string_truthiness()); if (r != 0) { return r }
+  r = run(94, t94_nan_falsy()); if (r != 0) { return r }
+  r = run(95, t95_fdiv_zero_yields_zero()); if (r != 0) { return r }
+  r = run(96, t96_dict_len_growth_invariant()); if (r != 0) { return r }
+  r = run(97, t97_queue_fifo_order()); if (r != 0) { return r }
+  r = run(98, t98_parser_depth_62()); if (r != 0) { return r }
+  r = run(99, t99_fs_is_file_blocks_reserved()); if (r != 0) { return r }
+  r = run(100, t100_fs_is_file_sandbox_denied()); if (r != 0) { return r }
+  r = run(101, t101_dict_string_keys_bracket()); if (r != 0) { return r }
+  r = run(102, t102_str_index_negative()); if (r != 0) { return r }
+  r = run(103, t103_set_fuzz_seed31337()); if (r != 0) { return r }
+  r = run(104, t104_tri_circular_import_val_c()); if (r != 0) { return r }
+  r = run(105, t105_array_assign_copy_on_write()); if (r != 0) { return r }
+  r = run(106, t106_list_assign_copy_on_write()); if (r != 0) { return r }
+  r = run(107, t107_nested_row_index_assign_copy()); if (r != 0) { return r }
+  r = run(108, t108_dict_fuzz_seed65537()); if (r != 0) { return r }
+  r = run(109, t109_queue_assign_copy_on_write()); if (r != 0) { return r }
+  r = run(110, t110_stack_assign_copy_on_write()); if (r != 0) { return r }
+  r = run(111, t111_dict_assign_copy_on_write()); if (r != 0) { return r }
+  r = run(112, t112_rc_assign_clone_refcount()); if (r != 0) { return r }
+  r = run(113, t113_linkedlist_assign_copy_on_write()); if (r != 0) { return r }
+  r = run(114, t114_set_fuzz_seed48271()); if (r != 0) { return r }
+  r = run(115, t115_array_slice_independent_mutate()); if (r != 0) { return r }
+  r = run(116, t116_nested_row_direct_mutate()); if (r != 0) { return r }
+  r = run(117, t117_box_assign_move_invalidates_source()); if (r != 0) { return r }
+  r = run(118, t118_closure_list_capture_typed()); if (r != 0) { return r }
+  r = run(119, t119_closure_list_capture_cow_independent()); if (r != 0) { return r }
+  r = run(120, t120_if_and_shortcircuit_call()); if (r != 0) { return r }
+  r = run(121, t121_if_or_shortcircuit_call()); if (r != 0) { return r }
+  r = run(122, t122_box_index_assign_move()); if (r != 0) { return r }
+  r = run(123, t123_spawn_join_burst()); if (r != 0) { return r }
+  r = run(124, t124_ternary_and_shortcircuit_call()); if (r != 0) { return r }
+  r = run(125, t125_ternary_or_shortcircuit_call()); if (r != 0) { return r }
+  r = run(126, t126_channel_recv_sentinel_after_send()); if (r != 0) { return r }
+  r = run(127, t127_nested_box_row_reassign()); if (r != 0) { return r }
+  r = run(128, t128_list_slice_cow_parent_push()); if (r != 0) { return r }
+  r = run(129, t129_array_slice_assign_copy_on_write()); if (r != 0) { return r }
+  r = run(130, t130_array_rebind_leaves_copy()); if (r != 0) { return r }
+  r = run(131, t131_arena_live_table_stress()); if (r != 0) { return r }
+  r = run(132, t132_pool_acquire_exhaust()); if (r != 0) { return r }
+  r = run(133, t133_channel_try_recv_buffered_closed()); if (r != 0) { return r }
+  r = run(134, t134_sandbox_blocks_dotdot_path()); if (r != 0) { return r }
+  r = run(135, t135_list_insert_at_end_index()); if (r != 0) { return r }
+  r = run(136, t136_set_assign_copy_on_write()); if (r != 0) { return r }
+  r = run(137, t137_arena_byte_cap_exhaust()); if (r != 0) { return r }
+  r = run(138, t138_queue_dequeue_cow_independent()); if (r != 0) { return r }
+  r = run(139, t139_rc_index_assign_survives_drop()); if (r != 0) { return r }
+  r = run(140, t140_box_index_assign_survives_drop()); if (r != 0) { return r }
+  r = run(141, t141_while_and_shortcircuit_skip()); if (r != 0) { return r }
+  r = run(142, t142_codegen_binop_depth_127()); if (r != 0) { return r }
+  r = run(143, t143_for_init_runs_const_false_cond()); if (r != 0) { return r }
+  r = run(144, t144_list_insert_at_zero()); if (r != 0) { return r }
+  r = run(145, t145_row_rebind_leaves_copy()); if (r != 0) { return r }
+  r = run(146, t146_dict_remove_all_reinsert()); if (r != 0) { return r }
+  r = run(147, t147_atomic_cas_returns_previous()); if (r != 0) { return r }
+  r = run(148, t148_parallel_for_atomic_sum()); if (r != 0) { return r }
+  r = run(149, t149_for_cstyle_accumulator()); if (r != 0) { return r }
+  r = run(150, t150_dict_len_invariant_200()); if (r != 0) { return r }
+  r = run(151, t151_arr_neg_index_read_still_oob()); if (r != 0) { return r }
+  r = run(152, t152_spawn_exhaust_without_join()); if (r != 0) { return r }
+  r = run(153, t153_arr_pos_index_read_oob()); if (r != 0) { return r }
+  r = run(154, t154_list_forin_continue_skips()); if (r != 0) { return r }
+  r = run(155, t155_set_remove_all_empty()); if (r != 0) { return r }
+  r = run(156, t156_inclusive_desc_two_step()); if (r != 0) { return r }
+  r = run(157, t157_slice_var_oob_compile()); if (r != 0) { return r }
+  r = run(158, t158_slice_neg_end_len()); if (r != 0) { return r }
+  r = run(159, t159_nested_arr_index_oob_read()); if (r != 0) { return r }
+  r = run(160, t160_nested_arr_valid_inner_assign()); if (r != 0) { return r }
+  r = run(161, t161_list_push_len_oob_compile()); if (r != 0) { return r }
+  r = run(162, t162_ternary_short_circuit_false()); if (r != 0) { return r }
+  r = run(163, t163_while_break_continue_count()); if (r != 0) { return r }
+  r = run(164, t164_list_push_in_if_valid_assign()); if (r != 0) { return r }
+  r = run(165, t165_arr_index_pluseq_valid()); if (r != 0) { return r }
+  r = run(166, t166_list_push_in_for_range_valid_assign()); if (r != 0) { return r }
+  r = run(167, t167_nested_arr_grow_reassign_valid()); if (r != 0) { return r }
+  r = run(168, t168_list_push_cstyle_for_valid_assign()); if (r != 0) { return r }
+  r = run(169, t169_list_push_while_valid_assign()); if (r != 0) { return r }
+  r = run(170, t170_interp_brace_escape()); if (r != 0) { return r }
+  r = run(171, t171_dict_forin_keys_remove()); if (r != 0) { return r }
+  r = run(172, t172_list_push_cstyle_desc_for_valid_assign()); if (r != 0) { return r }
+  r = run(173, t173_list_push_while_desc_valid_assign()); if (r != 0) { return r }
+  r = run(174, t174_dict_forin_values_sum()); if (r != 0) { return r }
+  r = run(175, t175_dict_forin_values_remove()); if (r != 0) { return r }
+  r = run(176, t176_list_push_break_set()); if (r != 0) { return r }
+  r = run(177, t177_list_nested_range_inner_break()); if (r != 0) { return r }
+  r = run(178, t178_arr_range_pluseq()); if (r != 0) { return r }
+  r = run(179, t179_arr_after_while_valid_assign()); if (r != 0) { return r }
+  r = run(180, t180_set_keys_forin_sum()); if (r != 0) { return r }
+  r = run(181, t181_set_keys_forin_remove()); if (r != 0) { return r }
+  r = run(182, t182_list_cstyle_break_bracket_assign()); if (r != 0) { return r }
+  r = run(183, t183_if_assign_shortcircuit()); if (r != 0) { return r }
+  r = run(184, t184_range_break_bracket_assign()); if (r != 0) { return r }
+  r = run(185, t185_cstyle_desc_break_bracket()); if (r != 0) { return r }
+  r = run(186, t186_for_and_in_condition()); if (r != 0) { return r }
+  r = run(187, t187_list_cstyle_continue_bracket()); if (r != 0) { return r }
+  r = run(188, t188_range_continue_bracket()); if (r != 0) { return r }
+  r = run(189, t189_chained_logical_shortcircuit()); if (r != 0) { return r }
+  r = run(190, t190_list_double_continue_bracket()); if (r != 0) { return r }
+  r = run(191, t191_list_ge_break_bracket()); if (r != 0) { return r }
+  r = run(192, t192_list_gt_break_bracket()); if (r != 0) { return r }
+  r = run(193, t193_list_desc_le_break_bracket()); if (r != 0) { return r }
+  r = run(194, t194_list_ge_continue_bracket()); if (r != 0) { return r }
+  r = run(195, t195_list_gt_continue_bracket()); if (r != 0) { return r }
+  r = run(196, t196_list_desc_le_continue_bracket()); if (r != 0) { return r }
+  r = run(197, t197_list_break_before_push_bracket()); if (r != 0) { return r }
+  r = run(198, t198_while_break_array_assign()); if (r != 0) { return r }
+  r = run(199, t199_range_break_before_push_bracket()); if (r != 0) { return r }
+  r = run(200, t200_list_continue_after_push_bracket()); if (r != 0) { return r }
+  r = run(201, t201_while_float_reassign()); if (r != 0) { return r }
+  r = run(202, t202_combined_break_continue_bracket()); if (r != 0) { return r }
+  r = run(203, t203_dvec2_scalar_mul_assign()); if (r != 0) { return r }
+  r = run(204, t204_while_float_truthiness()); if (r != 0) { return r }
+  r = run(205, t205_while_nan_falsy()); if (r != 0) { return r }
+  r = run(206, t206_nested_inner_break_list_bracket()); if (r != 0) { return r }
+  r = run(207, t207_range_combined_break_continue_bracket()); if (r != 0) { return r }
+  r = run(208, t208_push_break_continue_after_bracket()); if (r != 0) { return r }
+  r = run(209, t209_inclusive_range_combined_break_continue_bracket()); if (r != 0) { return r }
+  r = run(210, t210_range_push_continue_before_break_bracket()); if (r != 0) { return r }
+  r = run(211, t211_cstyle_push_continue_before_break_bracket()); if (r != 0) { return r }
+  r = run(212, t212_nested_range_combined_bracket()); if (r != 0) { return r }
+  r = run(213, t213_desc_inclusive_combined_break_continue_bracket()); if (r != 0) { return r }
+  r = run(214, t214_double_push_continue_before_break_bracket()); if (r != 0) { return r }
+  r = run(215, t215_double_push_break_before_continue_bracket()); if (r != 0) { return r }
+  r = run(216, t216_while_break_before_push_bracket()); if (r != 0) { return r }
+  r = run(217, t217_while_push_continue_before_break_bracket()); if (r != 0) { return r }
+  r = run(218, t218_while_desc_break_before_push_bracket()); if (r != 0) { return r }
+  r = run(219, t219_while_desc_push_continue_before_break_bracket()); if (r != 0) { return r }
+  r = run(220, t220_nested_if_continue_before_push_bracket()); if (r != 0) { return r }
+  r = run(221, t221_switch_continue_break_before_push_bracket()); if (r != 0) { return r }
+  r = run(222, t222_switch_default_continue_bracket()); if (r != 0) { return r }
+  r = run(223, t223_try_continue_push_break_bracket()); if (r != 0) { return r }
+  r = run(224, t224_match_continue_push_break_bracket()); if (r != 0) { return r }
+  print(0)
+  return 0
+}

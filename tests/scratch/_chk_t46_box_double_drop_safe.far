@@ -1,0 +1,9 @@
+fun t46_box_double_drop_safe() -> i64 {
+  b = Box<i64>(42)
+  drop(b)
+  drop(b)
+  return 0
+}
+
+
+fun main() -> i64 { return t46_box_double_drop_safe() }

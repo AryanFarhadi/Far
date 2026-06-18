@@ -1,0 +1,9 @@
+fun t143_for_init_runs_const_false_cond() -> i64 {
+  log: List<i64> = List<i64>()
+  for (log.push(1); 0; log.push(2)) { }
+  if (len(log) != 1) { return 1 }
+  return eq(log.get(0), 1)
+}
+
+
+fun main() -> i64 { return t143_for_init_runs_const_false_cond() }

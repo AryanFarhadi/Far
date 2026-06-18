@@ -1,0 +1,10 @@
+fun t147_atomic_cas_returns_previous() -> i64 {
+  at = Atomic<i64>(5)
+  if (at.compare_exchange(5, 7) != 5) { return 1 }
+  if (at.load() != 7) { return 2 }
+  if (at.compare_exchange(5, 9) != 7) { return 3 }
+  return eq(at.load(), 7)
+}
+
+
+fun main() -> i64 { return t147_atomic_cas_returns_previous() }

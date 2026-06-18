@@ -1,0 +1,11 @@
+fun t105_array_assign_copy_on_write() -> i64 {
+  a = [1, 2, 3]
+  b = a
+  b[0] = 99
+  if (a[0] != 1) { return 1 }
+  if (b[0] != 99) { return 2 }
+  return 0
+}
+
+
+fun main() -> i64 { return t105_array_assign_copy_on_write() }

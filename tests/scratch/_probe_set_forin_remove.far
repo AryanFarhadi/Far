@@ -1,0 +1,11 @@
+﻿fun set_forin_remove() -> i64 {
+  s: Set<i64> = Set<i64>()
+  s.add(1); s.add(2); s.add(3)
+  sum = 0
+  for x in s {
+    sum = sum + x
+    if (x == 2) { s.remove(2) }
+  }
+  return sum
+}
+fun main() { print(set_forin_remove()); return 0 }

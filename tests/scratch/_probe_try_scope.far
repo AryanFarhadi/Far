@@ -1,0 +1,8 @@
+﻿fun main() -> i64 {
+  try {
+    s = 42
+  } catch (e) {
+    return 1
+  }
+  return s
+}

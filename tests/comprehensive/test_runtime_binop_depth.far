@@ -1,0 +1,7 @@
+﻿fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun chain(x: i64) -> i64 {
+  return x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x
+}
+fun main() -> i64 {
+  return eq(chain(1), 127)
+}

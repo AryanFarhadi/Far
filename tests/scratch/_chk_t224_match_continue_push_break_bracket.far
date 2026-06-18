@@ -1,0 +1,16 @@
+fun t224_match_continue_push_break_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for x in 0..<6 {
+    match x {
+      1 => { continue }
+      _ => { }
+    }
+    lst.push(x)
+    if (x == 3) { break }
+  }
+  lst[2] = 22
+  return eq(lst.get(2), 22)
+}
+
+
+fun main() -> i64 { return t224_match_continue_push_break_bracket() }

@@ -1,0 +1,22 @@
+import perf
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun lfq_push(q: LockFreeQueue<i64>, n: i64) -> i64 {
+  i = 0
+  while (i < n) { q.push(i); i = i + 1 }
+  return 0
+}
+fun lfq_pop_sum(q: LockFreeQueue<i64>, n: i64) -> i64 {
+  s = 0
+  i = 0
+  while (i < n) { s = s + q.pop(); i = i + 1 }
+  return s
+}
+fun t_lfq_race() -> i64 {
+  q = LockFreeQueue<i64>(16)
+  h1 = spawn lfq_push(q, 100)
+  h2 = spawn lfq_pop_sum(q, 100)
+  threads.join(h1)
+  s = threads.join(h2)
+  return eq(s, 4950)
+}
+fun main() { print(t_lfq_race()); return 0 }

@@ -1,0 +1,14 @@
+fun main() -> i64 {
+  a = Arena(256)
+  i = 0
+  while (i < 200) {
+    p = a.alloc(8)
+    if (p == 0) { return 1 }
+    unsafe { *p = i8(i % 127) }
+    i = i + 1
+  }
+  a.reset()
+  p2 = a.alloc(16)
+  if (p2 == 0) { return 2 }
+  return 0
+}

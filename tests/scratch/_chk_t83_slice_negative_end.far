@@ -1,0 +1,12 @@
+fun t83_slice_negative_end() -> i64 {
+  a = [1, 2, 3, 4, 5]
+  sl = a.slice(1, -1)
+  if (len(sl) != 3) { return 1 }
+  if (sl[0] != 2) { return 2 }
+  if (sl[2] != 4) { return 3 }
+  sl2 = a.slice(0, -1)
+  return eq(len(sl2), 4)
+}
+
+
+fun main() -> i64 { return t83_slice_negative_end() }

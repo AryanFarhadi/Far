@@ -1,0 +1,7 @@
+fun main() -> i64 {
+  a = [1, 2, 3]
+  a[99] = 42
+  if (a[0] != 1) { return 1 }
+  if (a[99] != 0) { return 2 }
+  return 0
+}

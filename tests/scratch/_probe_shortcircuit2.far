@@ -1,0 +1,8 @@
+fun side(n: i64) -> i64 { hits = hits + 1; return n }
+hits = 0
+fun main() -> i64 {
+  if (0 && side(1) != 0) { return 1 }
+  if (1 || side(0) != 0) { return 2 }
+  if (1 && 0 && side(2) != 0) { return 3 }
+  return eq(hits, 0)
+}

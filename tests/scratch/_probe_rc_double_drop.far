@@ -1,0 +1,9 @@
+﻿fun rc_double_drop() -> i64 {
+  r = Rc<i64>(9)
+  drop(r)
+  drop(r)
+  if (r.get() != 0) { return 1 }
+  if (r.clone() != 0) { return 2 }
+  return 0
+}
+fun main() -> i64 { return rc_double_drop() }

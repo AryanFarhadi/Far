@@ -1,0 +1,9 @@
+fun main() -> i64 {
+  sem = Semaphore(0)
+  if (sem.try_wait() != 0) { print(1); return 1 }
+  sem.signal()
+  if (sem.try_wait() != 1) { print(2); return 2 }
+  if (sem.try_wait() != 0) { print(3); return 3 }
+  print(0)
+  return 0
+}

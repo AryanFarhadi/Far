@@ -1,0 +1,7 @@
+fun t153_arr_pos_index_read_oob() -> i64 {
+  a = [1, 2, 3]
+  return eq(a[99], 0)
+}
+
+
+fun main() -> i64 { return t153_arr_pos_index_read_oob() }

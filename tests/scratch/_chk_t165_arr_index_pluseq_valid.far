@@ -1,0 +1,8 @@
+fun t165_arr_index_pluseq_valid() -> i64 {
+  a = [10, 20, 30]
+  a[1] += 5
+  return eq(a[1], 25)
+}
+
+
+fun main() -> i64 { return t165_arr_index_pluseq_valid() }

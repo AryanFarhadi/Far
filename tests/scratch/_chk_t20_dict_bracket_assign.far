@@ -1,0 +1,10 @@
+fun t20_dict_bracket_assign() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d[7] = 42
+  if (len(d) != 1) { return 1 }
+  d[7] = 100
+  return eq(d.get(7), 100)
+}
+
+
+fun main() -> i64 { return t20_dict_bracket_assign() }

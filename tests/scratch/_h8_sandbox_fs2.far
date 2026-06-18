@@ -1,0 +1,12 @@
+import fs
+import security
+fun main() -> i64 {
+  sandbox.open_sandbox(2)
+  sandbox.allow_path("far_sandbox_ok.txt")
+  if (fs.write_text("far_sandbox_ok.txt", "ok") != 0) { print(1); return 1 }
+  if (len(fs.read_text("far_sandbox_ok.txt")) != 2) { print(2); return 2 }
+  if (fs.write_text("far_denied.txt", "x") != -1) { print(3); return 3 }
+  sandbox.close_sandbox()
+  print(0)
+  return 0
+}

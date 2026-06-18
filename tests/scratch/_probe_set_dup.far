@@ -1,0 +1,10 @@
+fun main() -> i64 {
+  s: Set<i64> = Set<i64>()
+  s.add(5)
+  s.add(5)
+  if (len(s) != 1) { return 1 }
+  s.remove(5)
+  s.add(5)
+  if (len(s) != 1) { return 2 }
+  return 0
+}

@@ -1,0 +1,6 @@
+import math { imin }
+
+fun main() -> i64 {
+  if (imin(9, 4) != 4) { return 1 }
+  return 0
+}

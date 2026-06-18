@@ -1,0 +1,12 @@
+import fs
+import security
+
+fun main() -> i64 {
+  sandbox.open_sandbox(2)
+  sandbox.allow_path("far_harden_inner.txt")
+  fs.write_text("far_harden_inner.txt", "ok")
+  r = fs.read_text("far_harden_inner/../far_harden_inner.txt")
+  sandbox.close_sandbox()
+  fs.remove("far_harden_inner.txt")
+  return len(r)
+}

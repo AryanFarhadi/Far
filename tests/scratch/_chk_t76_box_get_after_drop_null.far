@@ -1,0 +1,10 @@
+fun t76_box_get_after_drop_null() -> i64 {
+  b = Box<i64>(8)
+  drop(b)
+  p = b.get()
+  if (p != 0) { return 1 }
+  return 0
+}
+
+
+fun main() -> i64 { return t76_box_get_after_drop_null() }

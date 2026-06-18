@@ -1,0 +1,7 @@
+fun main() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d[0] = 42
+  if (d.get(0) != 42) { return 1 }
+  if (!d.contains_key(0)) { return 2 }
+  return 0
+}

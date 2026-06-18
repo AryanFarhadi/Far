@@ -1,0 +1,8 @@
+fun t95_fdiv_zero_yields_zero() -> i64 {
+  if (1.0 / 0.0 != 0.0) { return 1 }
+  if (-1.0 / 0.0 != 0.0) { return 2 }
+  return 0
+}
+
+
+fun main() -> i64 { return t95_fdiv_zero_yields_zero() }

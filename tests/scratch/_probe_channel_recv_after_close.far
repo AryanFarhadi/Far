@@ -1,0 +1,10 @@
+fun main() -> i64 {
+  ch: Channel<i64> = Channel<i64>(2)
+  ch.send(1)
+  ch.close()
+  v1 = ch.recv()
+  v2 = ch.recv()
+  if (v1 != 1) { return 1 }
+  if (v2 != -9223372036854775808) { return 2 }
+  return 0
+}

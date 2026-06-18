@@ -1,0 +1,12 @@
+fun main() -> i64 {
+  lst: List<i64> = List<i64>()
+  j = 0
+  while (j < 2) {
+    if (1) {
+      lst.push(j)
+    }
+    j = j + 1
+  }
+  lst[2] = 9
+  return 0
+}

@@ -1,0 +1,7 @@
+private fun hidden() -> i64 {
+  return 99
+}
+
+public fun visible() -> i64 {
+  return hidden()
+}

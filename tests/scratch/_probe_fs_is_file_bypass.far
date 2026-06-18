@@ -1,0 +1,8 @@
+import fs
+
+fun main() -> i64 {
+  if (fs.is_file("CON")) { return 1 }
+  if (fs.is_dir("NUL")) { return 2 }
+  if (fs.is_file("../far.exe")) { return 3 }
+  return 0
+}

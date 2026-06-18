@@ -1,0 +1,6 @@
+fun zero_call() -> i64 { return 0 }
+
+fun main() -> i64 {
+  v = zero_call()
+  return !v
+}

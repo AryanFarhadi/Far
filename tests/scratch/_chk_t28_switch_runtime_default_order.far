@@ -1,0 +1,13 @@
+fun t28_switch_runtime_default_order() -> i64 {
+  x = 2
+  r = 99
+  switch x {
+    default: r = 0
+    case 1: r = 1
+    case 2: r = 2
+  }
+  return eq(r, 2)
+}
+
+
+fun main() -> i64 { return t28_switch_runtime_default_order() }

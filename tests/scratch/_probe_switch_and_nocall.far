@@ -1,0 +1,10 @@
+fun main() -> i64 {
+  n = 0
+  switch (0 && zero_call()) {
+    case 1: n = 1
+    default: n = 0
+  }
+  return n
+}
+
+fun zero_call() -> i64 { return 1 }

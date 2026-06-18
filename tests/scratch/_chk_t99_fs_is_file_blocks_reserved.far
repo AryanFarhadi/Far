@@ -1,0 +1,9 @@
+fun t99_fs_is_file_blocks_reserved() -> i64 {
+  if (fs.is_file("CON")) { return 1 }
+  if (fs.is_dir("NUL")) { return 2 }
+  if (fs.is_file("a/../b")) { return 3 }
+  return 0
+}
+
+
+fun main() -> i64 { return t99_fs_is_file_blocks_reserved() }

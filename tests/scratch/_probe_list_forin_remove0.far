@@ -1,0 +1,10 @@
+﻿fun main() -> i64 {
+  xs: List<i64> = List<i64>()
+  xs.push(1); xs.push(2); xs.push(3)
+  n = 0
+  for x in xs {
+    n = n + 1
+    xs.remove(0)
+  }
+  return n
+}

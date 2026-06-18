@@ -1,0 +1,1306 @@
+# Hardening pass — concurrency and cross-module edge cases
+import perf
+import fs
+import security
+import fixtures.tri_c
+import vectors
+
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(id: i64, r: i64) -> i64 { if (r != 0) { print(id); return id } return 0 }
+
+fun inc_loop(at: Atomic<i64>, n: i64) -> i64 {
+  i = 0
+  while (i < n) {
+    at.fetch_add(1)
+    i = i + 1
+  }
+  return 0
+}
+
+fun t01_atomic_fetch_add_race() -> i64 {
+  at = Atomic<i64>(0)
+  h1 = spawn inc_loop(at, 500)
+  h2 = spawn inc_loop(at, 500)
+  threads.join(h1)
+  threads.join(h2)
+  return eq(at.load(), 1000)
+}
+
+fun t02_dict_tombstone_reinsert() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  i = 0
+  while (i < 32) {
+    d.set(i, i)
+    i = i + 1
+  }
+  i = 0
+  while (i < 16) {
+    d.remove(i)
+    i = i + 1
+  }
+  d.set(99, 990)
+  return eq(d.get(99), 990)
+}
+
+fun t03_forin_shrink_no_oob() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  lst.push(2)
+  lst.push(3)
+  n = 0
+  for x in lst {
+    n = n + x
+    if (x == 2) { lst.remove(1) }
+  }
+  return eq(n, 3)
+}
+
+fun t04_forin_grow_bounded() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  lst.push(2)
+  n = 0
+  for x in lst {
+    n = n + 1
+    if (n == 2) { break }
+    lst.push(99)
+  }
+  return eq(n, 2)
+}
+
+fun ch_send_recv(ch: Channel<i64>, n: i64) -> i64 {
+  i = 0
+  while (i < n) {
+    ch.send(i)
+    i = i + 1
+  }
+  return 0
+}
+
+fun ch_recv_loop(ch: Channel<i64>, n: i64) -> i64 {
+  got = 0
+  i = 0
+  while (i < n) {
+    v = ch.recv()
+    got = got + v
+    i = i + 1
+  }
+  return got
+}
+
+fun t05_channel_send_recv_race() -> i64 {
+  ch = Channel<i64>(8)
+  h1 = spawn ch_send_recv(ch, 50)
+  h2 = spawn ch_recv_loop(ch, 50)
+  threads.join(h1)
+  s = threads.join(h2)
+  return eq(s, 1225)
+}
+
+fun t06_lfq_push_pop_race() -> i64 {
+  q = LockFreeQueue<i64>(16)
+  h1 = spawn lfq_push(q, 100)
+  h2 = spawn lfq_pop_sum(q, 100)
+  threads.join(h1)
+  s = threads.join(h2)
+  return eq(s, 4950)
+}
+
+fun t07_forin_slice_sum() -> i64 {
+  a = [1, 2, 3, 4, 5]
+  s = a.slice(1, 4)
+  n = 0
+  for x in s {
+    n = n + x
+  }
+  return eq(n, 9)
+}
+
+fun t08_set_remove_all_readd() -> i64 {
+  st: Set<i64> = Set<i64>()
+  i = 0
+  while (i < 8) {
+    st.add(i)
+    i = i + 1
+  }
+  i = 0
+  while (i < 8) {
+    st.remove(i)
+    i = i + 1
+  }
+  st.add(42)
+  return eq(st.contains(42), 1)
+}
+
+fun t09_sandbox_fs_allow_deny() -> i64 {
+  sandbox.open_sandbox(2)
+  sandbox.allow_path("far_harden_sandbox.txt")
+  if (fs.write_text("far_harden_sandbox.txt", "ok") != 0) { return 1 }
+  if (len(fs.read_text("far_harden_sandbox.txt")) != 2) { return 2 }
+  if (fs.write_text("far_harden_denied.txt", "x") != -1) { return 3 }
+  sandbox.close_sandbox()
+  fs.remove("far_harden_sandbox.txt")
+  return 0
+}
+
+fun t10_dict_duplicate_key() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d.set(1, 10)
+  d.set(1, 20)
+  if (len(d) != 1) { return 1 }
+  return eq(d.get(1), 20)
+}
+
+fun t11_semaphore_try_wait() -> i64 {
+  sem = Semaphore(0)
+  if (sem.try_wait() != 0) { return 1 }
+  sem.signal()
+  if (sem.try_wait() != 1) { return 2 }
+  if (sem.try_wait() != 0) { return 3 }
+  return 0
+}
+
+fun t12_deep_short_circuit() -> i64 {
+  n = 0
+  if (0 && (n = 1) != 0 && (n = 2) != 0) { return 1 }
+  if (n != 0) { return 2 }
+  x = 0
+  if (1 || (x = 1) != 0) { }
+  return eq(x, 0)
+}
+
+fun mutex_holder(m: Mutex, ch: Channel<i64>) -> i64 {
+  m.lock()
+  ch.send(1)
+  i = 0
+  while (i < 500000) {
+    i = i + 1
+  }
+  m.unlock()
+  return 0
+}
+
+fun t13_mutex_cross_thread_block() -> i64 {
+  m = Mutex()
+  ch = Channel<i64>(1)
+  h = spawn mutex_holder(m, ch)
+  ch.recv()
+  m.lock()
+  m.unlock()
+  threads.join(h)
+  return 0
+}
+
+fun rec_depth(n: i64) -> i64 {
+  if (n <= 0) { return 0 }
+  return rec_depth(n - 1) + 1
+}
+
+fun t14_recursion_depth_1000() -> i64 {
+  return eq(rec_depth(1000), 1000)
+}
+
+fun t15_list_insert_huge_index() -> i64 {
+  xs: List<i64> = List<i64>()
+  xs.insert(999, 42)
+  if (len(xs) != 1) { return 1 }
+  return eq(xs[0], 42)
+}
+
+fun t16_parallel_for_zero_iters() -> i64 {
+  parallel for i in 0..<0 { return 1 }
+  return 0
+}
+
+fun t17_dict_bracket_missing_key() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  return eq(d[99], 0)
+}
+
+fun with_default(x: i64, y: i64 = 99) -> i64 {
+  return x + y
+}
+
+fun t18_default_param_skipped() -> i64 {
+  if (with_default(1, 2) != 3) { return 1 }
+  return eq(with_default(5), 104)
+}
+
+fun t19_dict_extreme_keys() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d.set(-9223372036854775808, 42)
+  d.set(9223372036854775807, 99)
+  if (d.get(-9223372036854775808) != 42) { return 1 }
+  return eq(d.get(9223372036854775807), 99)
+}
+
+fun t20_dict_bracket_assign() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d[7] = 42
+  if (len(d) != 1) { return 1 }
+  d[7] = 100
+  return eq(d.get(7), 100)
+}
+
+fun t21_closure_capture_snapshot() -> i64 {
+  n = 0
+  f = |x| n + 1
+  if (f(0) != 1) { return 1 }
+  n = 10
+  return eq(f(0), 1)
+}
+
+fun t22_match_wildcard_source_order() -> i64 {
+  match 2 {
+    1 => return 1
+    _ => return 0
+    2 => return 2
+  }
+  return 99
+}
+
+fun t23_match_wildcard_before_literal() -> i64 {
+  match 2 {
+    _ => return 0
+    2 => return 2
+  }
+  return 99
+}
+
+class Counter {
+  public n: i64 = 0
+  public Counter(start: i64) { n = start }
+  public fun bump() -> i64 { n = n + 1; return n }
+}
+
+fun with_ctr_default(ctr: Counter, x: i64 = ctr.bump()) -> i64 {
+  return x
+}
+
+fun t24_default_param_side_effect() -> i64 {
+  ctr = Counter(0)
+  if (with_ctr_default(ctr) != 1) { return 1 }
+  if (with_ctr_default(ctr) != 2) { return 2 }
+  return eq(with_ctr_default(ctr, 99), 99)
+}
+
+fun sum_all(...nums) -> i64 {
+  total = 0
+  for i in 0..<len(nums) {
+    total = total + nums[i]
+  }
+  return total
+}
+
+fun t25_varargs_empty_and_multi() -> i64 {
+  if (sum_all() != 0) { return 1 }
+  return eq(sum_all(1, 2, 3), 6)
+}
+
+fun t26_match_f64_nan_wildcard() -> i64 {
+  x = 0.0 / 0.0
+  match x {
+    _ => return 0
+  }
+  return 1
+}
+
+fun t27_deep_binop_runtime() -> i64 {
+  x = 1
+  s = 0
+  i = 0
+  while (i < 40) {
+    s = s + x
+    i = i + 1
+  }
+  return eq(s, 40)
+}
+
+fun t28_switch_runtime_default_order() -> i64 {
+  x = 2
+  r = 99
+  switch x {
+    default: r = 0
+    case 1: r = 1
+    case 2: r = 2
+  }
+  return eq(r, 2)
+}
+
+fun t29_nested_break_continue() -> i64 {
+  n = 0
+  for i in 0..<3 {
+    for j in 0..<3 {
+      if (j == 1) { continue }
+      if (i == 2 && j == 2) { break }
+      n = n + 1
+    }
+  }
+  return eq(n, 5)
+}
+
+fun t30_mod_i64min() -> i64 {
+  return eq((-9223372036854775808) % 7, -1)
+}
+
+fun t31_channel_recv_closed_empty() -> i64 {
+  ch = Channel<i64>(1)
+  ch.close()
+  return eq(ch.recv(), -9223372036854775808)
+}
+
+fun t32_str_index_oob() -> i64 {
+  s = "ab"
+  return eq(int(s[99]), 0)
+}
+
+fun t33_dict_insert_count_property() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d.set(1, 10)
+  d.set(2, 20)
+  d.set(3, 30)
+  d.set(4, 40)
+  d.set(5, 50)
+  if (len(d) != 5) { return 1 }
+  d.set(3, 99)
+  if (len(d) != 5) { return 2 }
+  return eq(d.get(3), 99)
+}
+
+fun t34_set_insert_count_property() -> i64 {
+  s: Set<i64> = Set<i64>()
+  s.add(1)
+  s.add(2)
+  s.add(1)
+  s.add(3)
+  if (len(s) != 3) { return 1 }
+  s.remove(2)
+  return eq(len(s), 2)
+}
+
+fun t35_pow_right_associative() -> i64 {
+  return eq(2 ** 3 ** 2, 512)
+}
+
+fun t36_f64_nan_neq_self() -> i64 {
+  x = 0.0 / 0.0
+  if (x == x) { return 1 }
+  return 0
+}
+
+fun t37_dict_zero_value_key() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d.set(1, 0)
+  if (!d.contains_key(1)) { return 1 }
+  return eq(d.get(1), 0)
+}
+
+fun t38_arr_negative_index_oob() -> i64 {
+  a = [10, 20, 30]
+  return eq(a[-1], 0)
+}
+
+fun t39_channel_try_send_closed() -> i64 {
+  ch = Channel<i64>(1)
+  ch.close()
+  return eq(ch.try_send(1), -1)
+}
+
+fun t40_range_exclusive_empty() -> i64 {
+  n = 0
+  for i in 5..<5 { n = 1 }
+  return eq(n, 0)
+}
+
+fun t41_defer_nested_break() -> i64 {
+  n = 0
+  for i in 0..<3 {
+    defer n = n + 10
+    if (i == 1) {
+      defer n = n + 1
+      break
+    }
+  }
+  return eq(n, 21)
+}
+
+fun close_send_worker(ch: Channel<i64>) -> i64 {
+  i = 0
+  while (i < 50) {
+    if (i == 25) { ch.close() }
+    ch.try_send(99)
+    i = i + 1
+  }
+  return 0
+}
+
+fun t42_channel_close_send_race() -> i64 {
+  ch = Channel<i64>(4)
+  h = spawn close_send_worker(ch)
+  i = 0
+  while (i < 100) {
+    ch.try_send(i)
+    i = i + 1
+  }
+  threads.join(h)
+  return 0
+}
+
+fun try_finally_trace_helper(trace: List<i64>) -> i64 {
+  try {
+    trace.push(1)
+    return 99
+  } finally {
+    trace.push(2)
+  }
+  return 0
+}
+
+fun t43_try_finally_before_return() -> i64 {
+  trace: List<i64> = List<i64>()
+  r = try_finally_trace_helper(trace)
+  if (len(trace) != 2) { return 1 }
+  if (trace[0] != 1) { return 2 }
+  if (trace[1] != 2) { return 3 }
+  return eq(r, 99)
+}
+
+fun t44_dict_len_insert_remove_property() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  i = 0
+  while (i < 32) {
+    d.set(i, i * 10)
+    if (len(d) != i + 1) { return 1 }
+    i = i + 1
+  }
+  i = 0
+  while (i < 32) {
+    d.remove(i)
+    if (len(d) != 31 - i) { return 2 }
+    i = i + 1
+  }
+  return eq(len(d), 0)
+}
+
+actor StopAskCounter {
+  fun on_msg(msg: i64) -> i64 { return msg + 1 }
+}
+
+fun actor_stopper(c: StopAskCounter) -> i64 {
+  i = 0
+  while (i < 100) {
+    c.stop()
+    i = i + 1
+  }
+  return 0
+}
+
+fun actor_asker(c: StopAskCounter) -> i64 {
+  i = 0
+  while (i < 100) {
+    c.ask(1)
+    i = i + 1
+  }
+  return 0
+}
+
+fun t45_actor_stop_ask_race() -> i64 {
+  c = StopAskCounter()
+  h1 = spawn actor_stopper(c)
+  h2 = spawn actor_asker(c)
+  threads.join(h1)
+  threads.join(h2)
+  return 0
+}
+
+fun t46_box_double_drop_safe() -> i64 {
+  b = Box<i64>(42)
+  drop(b)
+  drop(b)
+  return 0
+}
+
+fun t47_denorm_float_ops() -> i64 {
+  x = 0.0000000000000000000000000000000000000001
+  y = x * 2.0
+  if (y == 0.0) { return 1 }
+  z = x + x
+  if (z == 0.0) { return 2 }
+  return 0
+}
+
+fun t48_parallel_for_atomic_add() -> i64 {
+  at = Atomic<i64>(0)
+  parallel for i in 0..<64 {
+    at.fetch_add(1)
+  }
+  return eq(at.load(), 64)
+}
+
+fun t49_dict_hash_collision_len() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  i = 0
+  while (i < 100) {
+    k = (i * 17 + 3) % 50
+    d.set(k, i)
+    i = i + 1
+  }
+  if (len(d) > 50) { return 1 }
+  i = 0
+  while (i < 50) {
+    d.remove(i)
+    if (len(d) > 50 - i - 1) { return 2 }
+    i = i + 1
+  }
+  return eq(len(d), 0)
+}
+
+fun t50_rc_double_drop_safe() -> i64 {
+  r = Rc<i64>(9)
+  drop(r)
+  drop(r)
+  if (r.get() != 0) { return 1 }
+  if (r.clone() != 0) { return 2 }
+  return 0
+}
+
+fun t51_parallel_for_capture_read_only() -> i64 {
+  mul = 3
+  acc = Atomic<i64>(0)
+  parallel for i in 0..<8 {
+    acc.fetch_add(mul)
+  }
+  return eq(acc.load(), 24)
+}
+
+fun t52_closure_atomic_shared() -> i64 {
+  acc = Atomic<i64>(0)
+  bump = fn(x) { acc.fetch_add(x); return acc.load() }
+  if (bump(3) != 3) { return 1 }
+  return eq(bump(2), 5)
+}
+
+fun t53_dict_fuzz_permutation() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  i = 0
+  while (i < 120) {
+    k = (i * 31 + 7) % 67
+    d.set(k, i)
+    i = i + 1
+  }
+  if (len(d) > 67) { return 1 }
+  i = 0
+  while (i < 67) {
+    d.remove(i)
+    if (len(d) > 67 - i - 1) { return 2 }
+    i = i + 1
+  }
+  return eq(len(d), 0)
+}
+
+fun t54_set_fuzz_permutation() -> i64 {
+  s: Set<i64> = Set<i64>()
+  i = 0
+  while (i < 100) {
+    s.add((i * 23 + 5) % 41)
+    i = i + 1
+  }
+  if (len(s) > 41) { return 1 }
+  i = 0
+  while (i < 41) {
+    s.remove(i)
+    if (len(s) > 41 - i - 1) { return 2 }
+    i = i + 1
+  }
+  return eq(len(s), 0)
+}
+
+fun t55_zero_arg_closure_call() -> i64 {
+  f = fn() { return 42 }
+  return eq(f(), 42)
+}
+
+fun t56_zero_arg_closure_capture_read() -> i64 {
+  n = 7
+  f = fn() { return n + 1 }
+  return eq(f(), 8)
+}
+
+fun t57_inclusive_range_singleton() -> i64 {
+  n = 0
+  for i in 5..5 { n = n + 1 }
+  return eq(n, 1)
+}
+
+fun t58_channel_min_capacity_send_recv() -> i64 {
+  ch = Channel<i64>(1)
+  if (ch.try_send(7) != 0) { return 1 }
+  if (ch.try_send(8) != -1) { return 2 }
+  return eq(ch.try_recv(), 7)
+}
+
+fun t60_lfqueue_min_capacity_push_pop() -> i64 {
+  q = LockFreeQueue<i64>(1)
+  if (q.push(3) != 0) { return 1 }
+  if (q.push(4) != -1) { return 2 }
+  return eq(q.pop(), 3)
+}
+
+fun channel_dyn_zero_fail(n: i64) -> i64 {
+  ch = Channel<i64>(n)
+  return ch.try_send(1)
+}
+
+fun t61_channel_runtime_zero_cap_invalid() -> i64 {
+  return eq(channel_dyn_zero_fail(0), -1)
+}
+
+fun tp_worker(x: i64) -> i64 { return x + 1 }
+
+fun threadpool_dyn_zero_fail(n: i64) -> i64 {
+  p = ThreadPool(n)
+  return p.submit(tp_worker, 41)
+}
+
+fun t62_threadpool_runtime_zero_workers_invalid() -> i64 {
+  return eq(threadpool_dyn_zero_fail(0), -1)
+}
+
+fun t63_slice_negative_start() -> i64 {
+  a = [10, 20, 30, 40]
+  sl = a.slice(-2, 4)
+  if (len(sl) != 2) { return 1 }
+  n = 0
+  for x in sl { n = n + x }
+  return eq(n, 70)
+}
+
+fun t64_dict_fuzz_seed7919() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  i = 0
+  while (i < 80) {
+    k = (i * 7919 + 13) % 97
+    d.set(k, i)
+    i = i + 1
+  }
+  if (len(d) > 97) { return 1 }
+  j = 0
+  while (j < 40) {
+    rk = (j * 7919 + 13) % 97
+    d.remove(rk)
+    j = j + 1
+  }
+  if (len(d) > 57) { return 2 }
+  return 0
+}
+
+fun t65_stack_queue_empty_peek() -> i64 {
+  st: Stack<i64> = Stack<i64>()
+  q: Queue<i64> = Queue<i64>()
+  if (st.pop() != 0) { return 1 }
+  if (st.peek() != 0) { return 2 }
+  if (q.dequeue() != 0) { return 3 }
+  if (q.peek() != 0) { return 4 }
+  return 0
+}
+
+fun t66_set_fuzz_seed9973() -> i64 {
+  s: Set<i64> = Set<i64>()
+  i = 0
+  while (i < 64) {
+    s.add((i * 9973 + 41) % 127)
+    if (len(s) > i + 1) { return 1 }
+    i = i + 1
+  }
+  j = 0
+  while (j < 32) {
+    s.remove((j * 9973 + 41) % 127)
+    j = j + 1
+  }
+  if (len(s) > 64) { return 2 }
+  return 0
+}
+
+fun t67_linkedlist_empty_pop() -> i64 {
+  ll: LinkedList<i64> = LinkedList<i64>()
+  if (ll.pop_front() != 0) { return 1 }
+  if (ll.pop_back() != 0) { return 2 }
+  return eq(len(ll), 0)
+}
+
+fun t68_nested_range_no_outer_mutate() -> i64 {
+  n = 0
+  for i in 0..<3 {
+    for j in 0..<3 {
+      n = n + 1
+    }
+  }
+  return eq(n, 9)
+}
+
+fun t69_slice_end_clamped() -> i64 {
+  a = [1, 2, 3]
+  sl = a.slice(1, 999)
+  return eq(len(sl), 2)
+}
+
+fun t70_list_remove_is_by_index() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(10)
+  lst.push(20)
+  lst.remove(0)
+  if (len(lst) != 1) { return 1 }
+  return eq(lst.get(0), 20)
+}
+
+fun t71_list_remove_value() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(10)
+  lst.push(20)
+  lst.push(30)
+  if (lst.remove_value(20) != 1) { return 1 }
+  if (len(lst) != 2) { return 2 }
+  if (lst.get(0) != 10) { return 3 }
+  if (lst.get(1) != 30) { return 4 }
+  if (lst.remove_value(99) != 0) { return 5 }
+  return 0
+}
+
+fun t72_list_remove_value_during_forin() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(10)
+  lst.push(20)
+  lst.push(30)
+  n = 0
+  for v in lst {
+    if (v == 20) { lst.remove_value(v) }
+    n = n + 1
+  }
+  return eq(n, 2)
+}
+
+fun t73_range_desc_inclusive() -> i64 {
+  n = 0
+  s = 0
+  for i in 5..1 {
+    n = n + 1
+    s = s + i
+  }
+  if (n != 5) { return 1 }
+  return eq(s, 15)
+}
+
+fun t74_range_desc_exclusive() -> i64 {
+  n = 0
+  s = 0
+  for i in 5..<1 {
+    n = n + 1
+    s = s + i
+  }
+  if (n != 4) { return 1 }
+  return eq(s, 14)
+}
+
+fun t75_list_remove_value_string() -> i64 {
+  lst: List<string> = List<string>()
+  lst.push("a")
+  lst.push("b")
+  lst.push("c")
+  if (lst.remove_value("b") != 1) { return 1 }
+  if (len(lst) != 2) { return 2 }
+  if (lst.get(0) != "a") { return 3 }
+  if (lst.get(1) != "c") { return 4 }
+  return 0
+}
+
+fun t76_box_get_after_drop_null() -> i64 {
+  b = Box<i64>(8)
+  drop(b)
+  p = b.get()
+  if (p != 0) { return 1 }
+  return 0
+}
+
+fun t77_fs_missing_read_empty() -> i64 {
+  return eq(len(fs.read_text("far_harden_missing_xyz_999.far")), 0)
+}
+
+fun t78_arena_reset_fresh_alloc() -> i64 {
+  a = Arena(64)
+  p1 = a.alloc(8)
+  unsafe { *p1 = i8(11) }
+  a.reset()
+  p2 = a.alloc(8)
+  unsafe { *p2 = i8(22) }
+  return eq(*p2, 22)
+}
+
+fun t79_arena_many_allocs() -> i64 {
+  a = Arena(8192)
+  i = 0
+  while (i < 512) {
+    p = a.alloc(8)
+    if (p == 0) { return 1 }
+    i = i + 1
+  }
+  return eq(i, 512)
+}
+
+fun t80_channel_send_closed() -> i64 {
+  ch = Channel<i64>(1)
+  ch.close()
+  return eq(ch.send(42), -1)
+}
+
+fun t81_dict_bracket_zero_key() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d[0] = 42
+  if (!d.contains_key(0)) { return 1 }
+  return eq(d.get(0), 42)
+}
+
+fun t82_list_clear_forin_empty() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  lst.push(2)
+  lst.clear()
+  n = 0
+  for x in lst { n = n + 1 }
+  return eq(n, 0)
+}
+
+fun t83_slice_negative_end() -> i64 {
+  a = [1, 2, 3, 4, 5]
+  sl = a.slice(1, -1)
+  if (len(sl) != 3) { return 1 }
+  if (sl[0] != 2) { return 2 }
+  if (sl[2] != 4) { return 3 }
+  sl2 = a.slice(0, -1)
+  return eq(len(sl2), 4)
+}
+
+fun t84_set_duplicate_add_idempotent() -> i64 {
+  s: Set<i64> = Set<i64>()
+  s.add(5)
+  s.add(5)
+  if (len(s) != 1) { return 1 }
+  s.remove(5)
+  s.add(5)
+  return eq(len(s), 1)
+}
+
+fun t85_slice_negative_start_end_combo() -> i64 {
+  a = [10, 20, 30, 40, 50]
+  sl = a.slice(-2, -1)
+  if (len(sl) != 1) { return 1 }
+  return eq(sl[0], 40)
+}
+
+fun t86_dict_overwrite_same_key() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d.set(1, 10)
+  d.set(1, 20)
+  if (len(d) != 1) { return 1 }
+  return eq(d.get(1), 20)
+}
+
+fun t87_str_slice_negative_end() -> i64 {
+  s = "hello"
+  sl = s[1:-1]
+  if (len(sl) != 3) { return 1 }
+  if (sl != "ell") { return 2 }
+  return 0
+}
+
+fun t90_str_slice_negative_start() -> i64 {
+  s = "hello"
+  sl = s[-2:5]
+  if (len(sl) != 2) { return 1 }
+  if (sl != "lo") { return 2 }
+  return 0
+}
+
+fun t91_str_slice_negative_combo() -> i64 {
+  s = "abcdef"
+  sl = s[-4:-1]
+  if (len(sl) != 3) { return 1 }
+  if (sl != "cde") { return 2 }
+  return 0
+}
+
+fun t88_slice_extreme_negative_indices() -> i64 {
+  a = [1, 2, 3]
+  sl = a.slice(-100, 100)
+  if (len(sl) != 3) { return 1 }
+  return eq(sl[0] + sl[1] + sl[2], 6)
+}
+
+fun t89_channel_try_recv_empty() -> i64 {
+  ch = Channel<i64>(1)
+  return eq(ch.try_recv(), -9223372036854775808)
+}
+
+fun t92_int_truthiness() -> i64 {
+  if (0) { return 1 }
+  if (42) { }
+  else { return 2 }
+  if (-1) { }
+  else { return 3 }
+  return 0
+}
+
+fun t93_string_truthiness() -> i64 {
+  if ("") { return 1 }
+  if ("0") { }
+  else { return 2 }
+  if ("x") { }
+  else { return 3 }
+  return 0
+}
+
+fun t94_nan_falsy() -> i64 {
+  x = 0.0 / 0.0
+  if (x) { return 1 }
+  return 0
+}
+
+fun t95_fdiv_zero_yields_zero() -> i64 {
+  if (1.0 / 0.0 != 0.0) { return 1 }
+  if (-1.0 / 0.0 != 0.0) { return 2 }
+  return 0
+}
+
+fun t96_dict_len_growth_invariant() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  i = 0
+  while (i < 200) {
+    d.set(i, i)
+    if (len(d) != i + 1) { return 1 }
+    i = i + 1
+  }
+  return 0
+}
+
+fun t97_queue_fifo_order() -> i64 {
+  q: Queue<i64> = Queue<i64>()
+  q.enqueue(1)
+  q.enqueue(2)
+  q.enqueue(3)
+  if (q.dequeue() != 1) { return 1 }
+  if (q.dequeue() != 2) { return 2 }
+  if (q.peek() != 3) { return 3 }
+  if (q.dequeue() != 3) { return 4 }
+  return eq(len(q), 0)
+}
+
+fun t98_parser_depth_62() -> i64 {
+  v = ((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((1))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+  return eq(v, 1)
+}
+
+fun t99_fs_is_file_blocks_reserved() -> i64 {
+  if (fs.is_file("CON")) { return 1 }
+  if (fs.is_dir("NUL")) { return 2 }
+  if (fs.is_file("a/../b")) { return 3 }
+  return 0
+}
+
+fun t100_fs_is_file_sandbox_denied() -> i64 {
+  if (fs.write_text("far_harden_outside.txt", "x") != 0) { return 1 }
+  sandbox.open_sandbox(2)
+  sandbox.allow_path("far_harden_inside.txt")
+  if (fs.is_file("far_harden_outside.txt")) { return 2 }
+  if (fs.is_dir("far_harden_outside.txt")) { return 3 }
+  sandbox.close_sandbox()
+  fs.remove("far_harden_outside.txt")
+  return 0
+}
+
+fun t101_dict_string_keys_bracket() -> i64 {
+  d: Dict<string, i64> = Dict<string, i64>()
+  d.set("alpha", 10)
+  d["beta"] = 20
+  if (d.get("alpha") != 10) { return 1 }
+  if (d["beta"] != 20) { return 2 }
+  d.remove("alpha")
+  return eq(len(d), 1)
+}
+
+fun t102_str_index_negative() -> i64 {
+  s = "abc"
+  if (int(s[-1]) != int('c')) { return 1 }
+  if (int(s[-3]) != int('a')) { return 2 }
+  if (int(s[-99]) != 0) { return 3 }
+  if (int(s[99]) != 0) { return 4 }
+  return 0
+}
+
+fun t103_set_fuzz_seed31337() -> i64 {
+  s: Set<i64> = Set<i64>()
+  i = 0
+  while (i < 80) {
+    s.add((i * 31337 + 17) % 101)
+    if (len(s) > i + 1) { return 1 }
+    i = i + 1
+  }
+  j = 0
+  while (j < 40) {
+    s.remove((j * 31337 + 17) % 101)
+    j = j + 1
+  }
+  if (len(s) > 80) { return 2 }
+  return 0
+}
+
+fun t104_tri_circular_import_val_c() -> i64 {
+  return eq(val_c(), 7)
+}
+
+fun t105_array_assign_copy_on_write() -> i64 {
+  a = [1, 2, 3]
+  b = a
+  b[0] = 99
+  if (a[0] != 1) { return 1 }
+  if (b[0] != 99) { return 2 }
+  return 0
+}
+
+fun t106_list_assign_copy_on_write() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  lst.push(2)
+  lst2 = lst
+  lst2.push(99)
+  if (len(lst) != 2) { return 1 }
+  if (len(lst2) != 3) { return 2 }
+  if (lst.get(0) != 1) { return 3 }
+  if (lst2.get(2) != 99) { return 4 }
+  return 0
+}
+
+fun t107_nested_row_index_assign_copy() -> i64 {
+  a = [[1, 2], [3, 4]]
+  b = a[0]
+  b[0] = 99
+  if (a[0][0] != 1) { return 1 }
+  if (b[0] != 99) { return 2 }
+  b = a[1]
+  if (a[0][0] != 1) { return 3 }
+  if (a[0][1] != 2) { return 4 }
+  if (b[0] != 3) { return 5 }
+  return 0
+}
+
+fun t108_dict_fuzz_seed65537() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  i = 0
+  while (i < 64) {
+    d.set((i * 65537 + 11) % 127, i)
+    if (len(d) > i + 1) { return 1 }
+    i = i + 1
+  }
+  j = 0
+  while (j < 32) {
+    d.remove((j * 65537 + 11) % 127)
+    j = j + 1
+  }
+  return eq(len(d), 32)
+}
+
+fun t109_queue_assign_copy_on_write() -> i64 {
+  q: Queue<i64> = Queue<i64>()
+  q.enqueue(1)
+  q2 = q
+  q2.enqueue(2)
+  if (len(q) != 1) { return 1 }
+  if (len(q2) != 2) { return 2 }
+  return eq(q.dequeue(), 1)
+}
+
+fun t110_stack_assign_copy_on_write() -> i64 {
+  st: Stack<i64> = Stack<i64>()
+  st.push(1)
+  st2 = st
+  st2.push(2)
+  if (len(st) != 1) { return 1 }
+  if (len(st2) != 2) { return 2 }
+  return eq(st.pop(), 1)
+}
+
+fun t111_dict_assign_copy_on_write() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d.set(1, 10)
+  d2 = d
+  d2.set(2, 20)
+  if (len(d) != 1) { return 1 }
+  if (len(d2) != 2) { return 2 }
+  return eq(d.get(1), 10)
+}
+
+fun t112_rc_assign_clone_refcount() -> i64 {
+  r = Rc<i64>(8)
+  unsafe { *r.get() = 42 }
+  r2 = r
+  drop(r)
+  p = r2.get()
+  if (p == 0) { return 1 }
+  v = 0
+  unsafe { v = *p }
+  return eq(v, 42)
+}
+
+fun t113_linkedlist_assign_copy_on_write() -> i64 {
+  ll: LinkedList<i64> = LinkedList<i64>()
+  ll.push_back(1)
+  ll2 = ll
+  ll2.push_back(2)
+  if (len(ll) != 1) { return 1 }
+  if (len(ll2) != 2) { return 2 }
+  return 0
+}
+
+fun t114_set_fuzz_seed48271() -> i64 {
+  s: Set<i64> = Set<i64>()
+  i = 0
+  while (i < 96) {
+    s.add((i * 48271 + 29) % 149)
+    if (len(s) > i + 1) { return 1 }
+    i = i + 1
+  }
+  j = 0
+  while (j < 48) {
+    s.remove((j * 48271 + 29) % 149)
+    j = j + 1
+  }
+  return eq(len(s), 48)
+}
+
+fun t115_array_slice_independent_mutate() -> i64 {
+  a = [1, 2, 3]
+  sl = a.slice(1, 3)
+  sl[0] = 99
+  if (a[1] != 2) { return 1 }
+  if (sl[0] != 99) { return 2 }
+  return 0
+}
+
+fun t116_nested_row_direct_mutate() -> i64 {
+  a = [[1, 2], [3, 4]]
+  a[0][0] = 99
+  if (a[0][0] != 99) { return 1 }
+  if (a[1][0] != 3) { return 2 }
+  return 0
+}
+
+fun t117_box_assign_move_invalidates_source() -> i64 {
+  b = Box<i64>(1)
+  unsafe { *b.get() = 42 }
+  b2 = b
+  if (b.get() != 0) { return 1 }
+  p = b2.get()
+  if (p == 0) { return 2 }
+  v = 0
+  unsafe { v = *p }
+  drop(b)
+  return eq(v, 42)
+}
+
+fun t118_closure_list_capture_typed() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  bump = fn() { lst.push(2); return len(lst) }
+  if (bump() != 2) { return 1 }
+  return eq(len(lst), 1)
+}
+
+fun t119_closure_list_capture_cow_independent() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  bump = fn() { lst.push(99); return len(lst) }
+  lst2 = lst
+  if (bump() != 2) { return 1 }
+  if (len(lst) != 1) { return 2 }
+  if (len(lst2) != 1) { return 3 }
+  return 0
+}
+
+fun zero_call() -> i64 { return 0 }
+
+fun t120_if_and_shortcircuit_call() -> i64 {
+  n = 0
+  if (1 && zero_call()) { n = 1 }
+  return n
+}
+
+fun lfq_push(q: LockFreeQueue<i64>, n: i64) -> i64 {
+  i = 0
+  while (i < n) {
+    if (q.push(i) == 0) {
+      i = i + 1
+    }
+  }
+  return 0
+}
+
+fun lfq_pop_sum(q: LockFreeQueue<i64>, n: i64) -> i64 {
+  s = 0
+  got = 0
+  while (got < n) {
+    v = q.pop()
+    if (v >= 0) {
+      s = s + v
+      got = got + 1
+    }
+  }
+  return s
+}
+
+fun inc_loop(at: Atomic<i64>, n: i64) -> i64 {
+  i = 0
+  while (i < n) {
+    at.fetch_add(1)
+    i = i + 1
+  }
+  return 0
+}
+
+fun ch_send_recv(ch: Channel<i64>, n: i64) -> i64 {
+  i = 0
+  while (i < n) {
+    ch.send(i)
+    i = i + 1
+  }
+  return 0
+}
+
+fun ch_recv_loop(ch: Channel<i64>, n: i64) -> i64 {
+  got = 0
+  i = 0
+  while (i < n) {
+    v = ch.recv()
+    got = got + v
+    i = i + 1
+  }
+  return got
+}
+
+fun mutex_holder(m: Mutex, ch: Channel<i64>) -> i64 {
+  m.lock()
+  ch.send(1)
+  i = 0
+  while (i < 500000) {
+    i = i + 1
+  }
+  m.unlock()
+  return 0
+}
+
+fun rec_depth(n: i64) -> i64 {
+  if (n <= 0) { return 0 }
+  return rec_depth(n - 1) + 1
+}
+
+fun chain127(x: i64) -> i64 { return x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x + x }
+
+
+fun main() { return 0 }

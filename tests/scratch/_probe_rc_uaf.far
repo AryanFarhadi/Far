@@ -1,0 +1,7 @@
+fun main() -> i64 {
+  r = Rc<i64>(8)
+  p = r.get()
+  unsafe { *p = 42 }
+  drop(r)
+  unsafe { return *p }
+}

@@ -1,0 +1,13 @@
+import security
+
+fun main() -> i64 {
+  sandbox.open_sandbox(2)
+  sandbox.allow_path("inner.txt")
+  fs.write_text("inner.txt", "secret")
+  if (fs.read_text("inner.txt") != "secret") { return 1 }
+  if (fs.read_text("inner/../inner.txt") != "") { return 2 }
+  if (fs.read_text("../inner.txt") != "") { return 3 }
+  sandbox.close_sandbox()
+  fs.remove("inner.txt")
+  return 0
+}

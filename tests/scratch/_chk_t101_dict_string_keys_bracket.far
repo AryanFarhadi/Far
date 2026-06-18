@@ -1,0 +1,12 @@
+fun t101_dict_string_keys_bracket() -> i64 {
+  d: Dict<string, i64> = Dict<string, i64>()
+  d.set("alpha", 10)
+  d["beta"] = 20
+  if (d.get("alpha") != 10) { return 1 }
+  if (d["beta"] != 20) { return 2 }
+  d.remove("alpha")
+  return eq(len(d), 1)
+}
+
+
+fun main() -> i64 { return t101_dict_string_keys_bracket() }

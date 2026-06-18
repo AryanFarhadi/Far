@@ -1,0 +1,8 @@
+fun main() -> i64 {
+  log: List<i64> = List<i64>()
+  for (log.push(1); 0; log.push(2)) { }
+  if (len(log) != 1) { return 1 }
+  return eq(log.get(0), 1)
+}
+
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }

@@ -1,0 +1,6 @@
+import fs
+fun main() {
+  data = fs.read_text("..\\..\\Windows\\System32\\drivers\\etc\\hosts")
+  print(len(data))
+  return 0
+}

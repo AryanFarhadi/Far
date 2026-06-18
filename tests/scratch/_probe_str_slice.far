@@ -1,0 +1,6 @@
+fun main() -> i64 {
+  s = "hello"
+  if (len(s.slice(1, 4)) != 3) { return 1 }
+  if (s.slice(1, 4) != "ell") { return 2 }
+  return 0
+}

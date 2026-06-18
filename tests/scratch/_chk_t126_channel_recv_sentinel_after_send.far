@@ -1,0 +1,10 @@
+fun t126_channel_recv_sentinel_after_send() -> i64 {
+  ch: Channel<i64> = Channel<i64>(2)
+  ch.send(7)
+  ch.close()
+  if (ch.recv() != 7) { return 1 }
+  return eq(ch.recv(), -9223372036854775808)
+}
+
+
+fun main() -> i64 { return t126_channel_recv_sentinel_after_send() }

@@ -1,0 +1,24 @@
+import perf
+
+fun holder(m: Mutex, ch: Channel<i64>) -> i64 {
+  m.lock()
+  ch.send(1)
+  i = 0
+  while (i < 20000000) {
+    i = i + 1
+  }
+  m.unlock()
+  return 0
+}
+
+fun main() -> i64 {
+  m = Mutex()
+  ch = Channel<i64>(1)
+  h = spawn holder(m, ch)
+  ch.recv()
+  m.lock()
+  m.unlock()
+  threads.join(h)
+  print(0)
+  return 0
+}

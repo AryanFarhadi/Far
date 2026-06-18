@@ -1,0 +1,7 @@
+fun t18_default_param_skipped() -> i64 {
+  if (with_default(1, 2) != 3) { return 1 }
+  return eq(with_default(5), 104)
+}
+
+
+fun main() -> i64 { return t18_default_param_skipped() }

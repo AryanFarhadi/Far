@@ -1,0 +1,5 @@
+fun main() -> i64 {
+  ch = Channel<i64>(1)
+  ch.close()
+  return ch.send(42)
+}

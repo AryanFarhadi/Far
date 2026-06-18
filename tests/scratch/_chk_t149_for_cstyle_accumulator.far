@@ -1,0 +1,12 @@
+fun t149_for_cstyle_accumulator() -> i64 {
+  a = [1, 2, 3]
+  i = 0
+  s = 0
+  for (i = 0; i < 3; i = i + 1) {
+    s = s + a[i]
+  }
+  return eq(s, 6)
+}
+
+
+fun main() -> i64 { return t149_for_cstyle_accumulator() }

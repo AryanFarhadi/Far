@@ -1,0 +1,12 @@
+fun t179_arr_after_while_valid_assign() -> i64 {
+  a = [1, 2, 3]
+  i = 0
+  while (i < 2) {
+    i = i + 1
+  }
+  a[i] = 99
+  return eq(a[i], 99)
+}
+
+
+fun main() -> i64 { return t179_arr_after_while_valid_assign() }

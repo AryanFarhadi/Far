@@ -1,0 +1,8 @@
+﻿fun main() -> i64 {
+  n = 3
+  if (n) { return 1 }
+  x = 0
+  while (x) { x = x + 1 }
+  if (x != 0) { return 2 }
+  return 0
+}

@@ -1,0 +1,10 @@
+fun main() -> i64 {
+  lst: List<i64> = List<i64>()
+  for x in 0..<6 {
+    lst.push(x)
+    if (x == 1) { continue }
+    if (x == 3) { break }
+  }
+  lst[3] = 33
+  return lst.get(3)
+}

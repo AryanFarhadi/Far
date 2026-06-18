@@ -1,0 +1,7 @@
+fun side() -> i64 { return 1 }
+
+fun main() -> i64 {
+  n = 0
+  while (0 && side()) { n = 1 }
+  return n
+}

@@ -1,0 +1,7 @@
+fun bump(n: i64) -> i64 { return n + 1 }
+fun main() -> i64 {
+  n = 0
+  if (1 || (n = bump(n)) == 99) { }
+  if (0 && (n = bump(n)) == 99) { }
+  return eq(n, 0)
+}

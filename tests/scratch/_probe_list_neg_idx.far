@@ -1,0 +1,5 @@
+fun main() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(10)
+  return lst.get(-1)
+}

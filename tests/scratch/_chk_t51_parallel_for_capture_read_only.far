@@ -1,0 +1,11 @@
+fun t51_parallel_for_capture_read_only() -> i64 {
+  mul = 3
+  acc = Atomic<i64>(0)
+  parallel for i in 0..<8 {
+    acc.fetch_add(mul)
+  }
+  return eq(acc.load(), 24)
+}
+
+
+fun main() -> i64 { return t51_parallel_for_capture_read_only() }

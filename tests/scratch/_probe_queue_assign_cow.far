@@ -1,0 +1,9 @@
+fun main() -> i64 {
+  q: Queue<i64> = Queue<i64>()
+  q.enqueue(1)
+  q2 = q
+  q2.enqueue(2)
+  if (len(q) != 1) { return 1 }
+  if (len(q2) != 2) { return 2 }
+  return 0
+}

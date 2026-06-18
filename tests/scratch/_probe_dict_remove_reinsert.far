@@ -1,0 +1,14 @@
+fun main() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  i = 0
+  while (i < 64) {
+    d.set(i, i * 10)
+    i = i + 1
+  }
+  d.remove(32)
+  d.set(99, 990)
+  if (len(d) != 64) { return 1 }
+  if (d.get(99) != 990) { return 2 }
+  if (d.get(32) != 0) { return 3 }
+  return 0
+}

@@ -185,6 +185,14 @@ std::string emitCollectionMethod(CollCodegenCtx ctx, const MethodCall& call, con
         throw FarError("unsupported collection method: " + call.method);
       return obj;
     }
+    case CollMethodId::RemoveValue: {
+      if (obj_ty.form != TypeForm::List)
+        throw FarError("unsupported collection method: " + call.method);
+      std::string arg = ctx.emit_expr(*call.args[0]);
+      ctx.out << "  %" << tmp << " = call i64 @far_list_remove_value(i64 " << obj << ", i64 " << arg
+              << ")\n";
+      break;
+    }
     case CollMethodId::Insert: {
       std::string idx = ctx.emit_expr(*call.args[0]);
       std::string val = ctx.emit_expr(*call.args[1]);
@@ -201,7 +209,10 @@ std::string emitCollectionMethod(CollCodegenCtx ctx, const MethodCall& call, con
         throw FarError("unsupported collection method: " + call.method);
       return obj;
     case CollMethodId::Keys:
-      ctx.out << "  %" << tmp << " = call i64 @far_dict_keys(i64 " << obj << ")\n";
+      if (obj_ty.form == TypeForm::Set)
+        ctx.out << "  %" << tmp << " = call i64 @far_set_keys(i64 " << obj << ")\n";
+      else
+        ctx.out << "  %" << tmp << " = call i64 @far_dict_keys(i64 " << obj << ")\n";
       break;
     case CollMethodId::Values:
       ctx.out << "  %" << tmp << " = call i64 @far_dict_values(i64 " << obj << ")\n";

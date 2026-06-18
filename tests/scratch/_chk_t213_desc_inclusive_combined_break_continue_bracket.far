@@ -1,0 +1,13 @@
+fun t213_desc_inclusive_combined_break_continue_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for x in 7..1 {
+    if (x == 4) { continue }
+    if (x == 2) { break }
+    lst.push(x)
+  }
+  lst[3] = 33
+  return eq(lst.get(3), 33)
+}
+
+
+fun main() -> i64 { return t213_desc_inclusive_combined_break_continue_bracket() }

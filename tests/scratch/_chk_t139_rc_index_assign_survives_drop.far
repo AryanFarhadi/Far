@@ -1,0 +1,13 @@
+fun t139_rc_index_assign_survives_drop() -> i64 {
+  boxes = [Rc<i64>(10), Rc<i64>(20)]
+  r2 = boxes[1]
+  drop(boxes[1])
+  p = r2.get()
+  if (p == 0) { return 1 }
+  v = 0
+  unsafe { v = *p }
+  return eq(v, 20)
+}
+
+
+fun main() -> i64 { return t139_rc_index_assign_survives_drop() }

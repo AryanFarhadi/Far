@@ -1,0 +1,8 @@
+fun main() -> i64 {
+  s = "hello"
+  c = s[-1]
+  if (c != 0) { return 1 }
+  c2 = s[99]
+  if (c2 != 0) { return 2 }
+  return 0
+}

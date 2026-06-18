@@ -1,0 +1,5 @@
+fun main() -> i64 {
+  inf = 1.0 / 0.0
+  if (inf) { return 0 }
+  return 1
+}

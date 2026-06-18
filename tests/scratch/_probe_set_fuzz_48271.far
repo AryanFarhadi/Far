@@ -1,0 +1,16 @@
+fun main() -> i64 {
+  s: Set<i64> = Set<i64>()
+  i = 0
+  while (i < 96) {
+    s.add((i * 48271 + 29) % 149)
+    if (len(s) > i + 1) { return 1 }
+    i = i + 1
+  }
+  j = 0
+  while (j < 48) {
+    s.remove((j * 48271 + 29) % 149)
+    j = j + 1
+  }
+  if (len(s) > 96) { return 2 }
+  return 0
+}

@@ -1,0 +1,6 @@
+fun t30_mod_i64min() -> i64 {
+  return eq((-9223372036854775808) % 7, -1)
+}
+
+
+fun main() -> i64 { return t30_mod_i64min() }

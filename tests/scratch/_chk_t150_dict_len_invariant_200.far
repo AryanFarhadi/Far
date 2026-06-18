@@ -1,0 +1,18 @@
+fun t150_dict_len_invariant_200() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  i = 0
+  while (i < 200) {
+    d.set(i, i * 3)
+    i = i + 1
+  }
+  j = 0
+  c = 0
+  while (j < 200) {
+    if (d.contains_key(j)) { c = c + 1 }
+    j = j + 1
+  }
+  return eq(c, 200)
+}
+
+
+fun main() -> i64 { return t150_dict_len_invariant_200() }

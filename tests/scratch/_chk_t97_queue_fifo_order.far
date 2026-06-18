@@ -1,0 +1,14 @@
+fun t97_queue_fifo_order() -> i64 {
+  q: Queue<i64> = Queue<i64>()
+  q.enqueue(1)
+  q.enqueue(2)
+  q.enqueue(3)
+  if (q.dequeue() != 1) { return 1 }
+  if (q.dequeue() != 2) { return 2 }
+  if (q.peek() != 3) { return 3 }
+  if (q.dequeue() != 3) { return 4 }
+  return eq(len(q), 0)
+}
+
+
+fun main() -> i64 { return t97_queue_fifo_order() }

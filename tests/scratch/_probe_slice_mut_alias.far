@@ -1,0 +1,9 @@
+fun main() -> i64 {
+  a = [1, 2, 3, 4, 5]
+  sl = a.slice(1, 4)
+  sl[0] = 99
+  if (a[1] != 99) { return 1 }
+  if (sl[0] != 99) { return 2 }
+  if (len(sl) != 3) { return 3 }
+  return 0
+}

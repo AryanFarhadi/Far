@@ -1,0 +1,15 @@
+fun t106_list_assign_copy_on_write() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  lst.push(2)
+  lst2 = lst
+  lst2.push(99)
+  if (len(lst) != 2) { return 1 }
+  if (len(lst2) != 3) { return 2 }
+  if (lst.get(0) != 1) { return 3 }
+  if (lst2.get(2) != 99) { return 4 }
+  return 0
+}
+
+
+fun main() -> i64 { return t106_list_assign_copy_on_write() }

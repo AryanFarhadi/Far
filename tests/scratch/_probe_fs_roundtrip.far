@@ -1,0 +1,9 @@
+import fs
+
+fun main() -> i64 {
+  path = "far_harden_write_test_tmp.txt"
+  if (fs.write_text(path, "ok") != 0) { return 1 }
+  if (len(fs.read_text(path)) != 2) { return 2 }
+  fs.remove(path)
+  return 0
+}

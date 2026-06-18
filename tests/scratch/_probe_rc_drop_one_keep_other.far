@@ -1,0 +1,17 @@
+fun main() -> i64 {
+  boxes = [Rc<i64>(10), Rc<i64>(20)]
+  r = boxes[0]
+  r2 = boxes[1]
+  drop(boxes[0])
+  p = r.get()
+  if (p == 0) { return 1 }
+  v = 0
+  unsafe { v = *p }
+  if (v != 10) { return 2 }
+  drop(r)
+  p2 = r2.get()
+  if (p2 == 0) { return 3 }
+  unsafe { v = *p2 }
+  if (v != 20) { return 4 }
+  return 0
+}

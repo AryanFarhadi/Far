@@ -1,0 +1,9 @@
+fun t15_list_insert_huge_index() -> i64 {
+  xs: List<i64> = List<i64>()
+  xs.insert(999, 42)
+  if (len(xs) != 1) { return 1 }
+  return eq(xs[0], 42)
+}
+
+
+fun main() -> i64 { return t15_list_insert_huge_index() }

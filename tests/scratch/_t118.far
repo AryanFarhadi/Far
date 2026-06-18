@@ -1,0 +1,27 @@
+# Hardening pass — concurrency and cross-module edge cases
+import perf
+import fs
+import security
+import fixtures.tri_c
+import vectors
+
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(id: i64, r: i64) -> i64 { if (r != 0) { print(id); return id } return 0 }
+
+fun inc_loop(at: Atomic<i64>, n: i64) -> i64 {
+  i = 0
+  while (i < n) {
+    at.fetch_add(1)
+    i = i + 1
+  }
+  return 0
+}
+
+fun t118_closure_list_capture_typed() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  bump = fn() { lst.push(2); return len(lst) }
+  if (bump() != 2) { return 1 }
+  return eq(len(lst), 1)
+}
+fun main() { return t118_closure_list_capture_typed() }

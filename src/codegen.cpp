@@ -288,6 +288,7 @@ public:
     out_ << "declare void @far_print_i64(i64)\n";
 
     out_ << "declare void @far_print_str(i8*)\n";
+    out_ << "declare void @far_print_char(i16)\n";
 
     out_ << "declare i64 @far_str_len(i8*)\n";
     out_ << "declare i64 @far_str_equal(i8*, i8*)\n";
@@ -305,6 +306,10 @@ public:
 
     out_ << "declare i64 @far_thread_count()\n";
 
+    out_ << "declare void @far_call_enter()\n";
+    out_ << "declare void @far_call_leave()\n";
+    out_ << "declare void @far_call_reset()\n";
+
     out_ << "declare i64 @far_spawn(i8*, i64, i64, i64, i64, i64)\n";
 
     out_ << "declare i64 @far_join(i64)\n";
@@ -317,6 +322,7 @@ public:
     out_ << "declare i64 @far_owned_dup(i64, i64)\n";
     out_ << "declare i8* @far_str_copy(i8*)\n";
     out_ << "declare i64 @far_closure_call(i64, i64)\n";
+    out_ << "declare i64 @far_closure_call0(i64)\n";
     out_ << "declare i64 @far_tarray_contains(i64, i64)\n";
 
     out_ << "declare void @far_print_f32(float)\n";
@@ -1089,6 +1095,52 @@ private:
       return ty.form;
     }
 
+    static bool ownedValueNeedsDup(const Expr& e, const TypeDesc& ty) {
+      if (!isOwnedHeapCollectionDesc(ty))
+        return false;
+      return e.kind == Expr::Variable || e.kind == Expr::IndexExpr;
+    }
+
+    std::string dupOwnedIfNeeded(const TypeDesc& ty, const Expr& src, const std::string& val) {
+      if (!ownedValueNeedsDup(src, ty))
+        return val;
+      int64_t form = static_cast<int64_t>(autodropFormFor(ty));
+      std::string dup = gen_->fresh("odup");
+      gen_->out_ << "  %" << dup << " = call i64 @far_owned_dup(i64 " << form << ", i64 " << val
+                 << ")\n";
+      return "%" + dup;
+    }
+
+    void invalidateBoxMoveSource(Expr& src) {
+      if (src.kind == Expr::Variable) {
+        removeAutoDrop(src.var.name);
+        storeSlotValueNoDrop(src.var.name, "0");
+        return;
+      }
+      if (src.kind == Expr::IndexExpr) {
+        AssignTargetLoc loc = resolveAssignTarget(src);
+        if (isPrimTy(loc.arr_ty, FarTypeId::String) || isPrimTy(loc.arr_ty, FarTypeId::RawString))
+          return;
+        if (isCollectionDesc(loc.arr_ty) || isPrimTy(loc.arr_ty, FarTypeId::Arr))
+          emitCollectionStore(collCtx(), loc.arr_ty, loc.arr, loc.idx, "0");
+        else
+          gen_->out_ << "  call void @far_array_set(i64 " << loc.arr << ", i64 " << loc.idx << ", i64 0)\n";
+      }
+    }
+
+    std::string prepareOwnedAssignValue(const TypeDesc& ty, Expr& src, const std::string& val) {
+      if (isBoxDesc(ty) && (src.kind == Expr::Variable || src.kind == Expr::IndexExpr)) {
+        invalidateBoxMoveSource(src);
+        return val;
+      }
+      if (isRcDesc(ty) && (src.kind == Expr::Variable || src.kind == Expr::IndexExpr)) {
+        std::string dup = gen_->fresh("rcl");
+        gen_->out_ << "  %" << dup << " = call i64 @far_rc_clone(i64 " << val << ")\n";
+        return "%" + dup;
+      }
+      return dupOwnedIfNeeded(ty, src, val);
+    }
+
     void emitOwnedCollectionDrop(TypeForm form, const std::string& val) {
       AutoDrop ad;
       ad.form = form;
@@ -1577,6 +1629,8 @@ private:
       if (let.value)
         value = coerceToType(*let.value, ty, value);
       value = narrowIntToDesc(ty, value);
+      if (let.value)
+        value = prepareOwnedAssignValue(ty, *let.value, value);
       storeVar(let.name, value, ty);
       if (let.explicit_type)
         explicit_typed_.insert(let.name);
@@ -1908,9 +1962,7 @@ private:
       } else if (isPrimTy(ty, FarTypeId::Char)) {
         std::string ch = gen_->fresh("ch");
         gen_->out_ << "  %" << ch << " = trunc " << I64 << " " << value << " to i16\n";
-        std::string str = gen_->fresh("str");
-        gen_->out_ << "  %" << str << " = call i8* @far_char_to_str(i16 %" << ch << ")\n";
-        gen_->out_ << "  call void @far_print_str(i8* %" << str << ")\n";
+        gen_->out_ << "  call void @far_print_char(i16 %" << ch << ")\n";
       } else if (ty.form == TypeForm::Array || ty.form == TypeForm::List || ty.form == TypeForm::Slice ||
                  isPrimTy(ty, FarTypeId::Arr)) {
         emitCollectionPrint(collCtx(), ty, value);
@@ -2157,7 +2209,7 @@ private:
         if (l == ConstBool::True) {
           ConstBool r = constBoolFromExpr(*e.bin_op.right);
           if (r == ConstBool::Unknown)
-            return ConstBool::True;
+            return ConstBool::Unknown;
           return r;
         }
         return ConstBool::Unknown;
@@ -2169,7 +2221,7 @@ private:
         if (l == ConstBool::False) {
           ConstBool r = constBoolFromExpr(*e.bin_op.right);
           if (r == ConstBool::Unknown)
-            return ConstBool::False;
+            return ConstBool::Unknown;
           return r;
         }
         return ConstBool::Unknown;
@@ -2289,14 +2341,9 @@ private:
 
     static std::vector<size_t> matchArmOrder(const MatchStmt& m) {
       std::vector<size_t> order;
-      for (size_t i = 0; i < m.arms.size(); ++i) {
-        if (m.arms[i].pat && !isMatchWildcardPattern(*m.arms[i].pat))
-          order.push_back(i);
-      }
-      for (size_t i = 0; i < m.arms.size(); ++i) {
-        if (m.arms[i].pat && isMatchWildcardPattern(*m.arms[i].pat))
-          order.push_back(i);
-      }
+      order.reserve(m.arms.size());
+      for (size_t i = 0; i < m.arms.size(); ++i)
+        order.push_back(i);
       return order;
     }
 
@@ -2331,6 +2378,63 @@ private:
       gen_->out_ << "  unreachable\n";
     }
 
+    void emitSwitchFromArm(const MatchStmt& m, const std::string& scrut, const TypeDesc& sty,
+                          const std::unordered_map<std::string, VarInfo>& pre, const std::string& done_label,
+                          const std::string& fail_label) {
+      std::vector<size_t> case_arms;
+      std::optional<size_t> default_arm;
+      for (size_t i = 0; i < m.arms.size(); ++i) {
+        if (!m.arms[i].pat)
+          continue;
+        if (isMatchWildcardPattern(*m.arms[i].pat))
+          default_arm = i;
+        else
+          case_arms.push_back(i);
+      }
+      std::string after_cases = default_arm ? gen_->fresh("swdefault") : fail_label;
+      for (size_t ci = 0; ci < case_arms.size(); ++ci) {
+        const size_t i = case_arms[ci];
+        const auto& arm = m.arms[i];
+        std::string body_label = gen_->fresh("swbody");
+        std::string next_label = (ci + 1 < case_arms.size()) ? gen_->fresh("swnext") : after_cases;
+        PatTestResult tr = emitPatternTest(patCtx(), *arm.pat, scrut, sty);
+        if (!tr.always)
+          gen_->out_ << "  br i1 " << tr.cond << ", label %" << body_label << ", label %" << next_label << "\n";
+        else
+          gen_->out_ << "  br label %" << body_label << "\n";
+        gen_->out_ << body_label << ":\n";
+        Ctx body_ctx = fork();
+        body_ctx.env_ = pre;
+        for (const auto& b : tr.binds)
+          body_ctx.storeVar(b.name, b.value, b.type);
+        for (const auto& s : arm.body)
+          body_ctx.emitStmt(*s);
+        mergeChild(body_ctx, &pre);
+        if (!body_ctx.terminated)
+          gen_->out_ << "  br label %" << done_label << "\n";
+        if (next_label != after_cases)
+          gen_->out_ << next_label << ":\n";
+      }
+      if (default_arm) {
+        gen_->out_ << after_cases << ":\n";
+        const auto& arm = m.arms[*default_arm];
+        PatTestResult tr = emitPatternTest(patCtx(), *arm.pat, scrut, sty);
+        Ctx body_ctx = fork();
+        body_ctx.env_ = pre;
+        for (const auto& b : tr.binds)
+          body_ctx.storeVar(b.name, b.value, b.type);
+        for (const auto& s : arm.body)
+          body_ctx.emitStmt(*s);
+        mergeChild(body_ctx, &pre);
+        if (!body_ctx.terminated)
+          gen_->out_ << "  br label %" << done_label << "\n";
+      } else {
+        gen_->out_ << fail_label << ":\n";
+        gen_->out_ << "  call void @far_panic(i64 0)\n";
+        gen_->out_ << "  unreachable\n";
+      }
+    }
+
     void emitMatch(const MatchStmt& m) {
       std::optional<int64_t> const_scrut = constIntFromExpr(*m.scrutinee);
       std::optional<double> const_scrut_f = const_scrut ? std::nullopt : constFloatFromExpr(*m.scrutinee);
@@ -2358,37 +2462,9 @@ private:
       } switch_guard(this, m.is_switch, done_label);
       auto pre = env_;
 
-      if (const_scrut_f) {
-        for (size_t i = 0; i < m.arms.size(); ++i) {
+      if (m.is_switch) {
+        auto emitConstArm = [&](size_t i) {
           const auto& arm = m.arms[i];
-          if (arm.pat && isMatchWildcardPattern(*arm.pat))
-            continue;
-          if (arm.pat && patternCertainlyFailsConstFloat(*arm.pat, *const_scrut_f))
-            continue;
-          if (arm.pat && patternMatchesConstFloat(*arm.pat, *const_scrut_f)) {
-            PatTestResult tr = emitPatternTest(patCtx(), *arm.pat, scrut, sty);
-            Ctx body_ctx = fork();
-            body_ctx.env_ = pre;
-            for (const auto& b : tr.binds)
-              body_ctx.storeVar(b.name, b.value, b.type);
-            for (const auto& s : arm.body)
-              body_ctx.emitStmt(*s);
-            mergeChild(body_ctx, &pre);
-            if (body_ctx.terminated && !body_ctx.switch_break_arm_)
-              terminated = true;
-            if (!body_ctx.terminated) {
-              gen_->out_ << "  br label %" << done_label << "\n";
-              gen_->out_ << done_label << ":\n";
-            } else if (body_ctx.switch_break_arm_) {
-              gen_->out_ << done_label << ":\n";
-            }
-            return;
-          }
-        }
-        for (size_t i = 0; i < m.arms.size(); ++i) {
-          const auto& arm = m.arms[i];
-          if (!arm.pat || !isMatchWildcardPattern(*arm.pat))
-            continue;
           PatTestResult tr = emitPatternTest(patCtx(), *arm.pat, scrut, sty);
           Ctx body_ctx = fork();
           body_ctx.env_ = pre;
@@ -2405,7 +2481,81 @@ private:
           } else if (body_ctx.switch_break_arm_) {
             gen_->out_ << done_label << ":\n";
           }
+        };
+        auto emitSwitchConst = [&](auto certainly_fails, auto matches) {
+          for (size_t i = 0; i < m.arms.size(); ++i) {
+            const auto& arm = m.arms[i];
+            if (!arm.pat || isMatchWildcardPattern(*arm.pat))
+              continue;
+            if (certainly_fails(*arm.pat))
+              continue;
+            if (matches(*arm.pat)) {
+              emitConstArm(i);
+              return;
+            }
+          }
+          for (size_t i = 0; i < m.arms.size(); ++i) {
+            const auto& arm = m.arms[i];
+            if (arm.pat && isMatchWildcardPattern(*arm.pat)) {
+              emitConstArm(i);
+              return;
+            }
+          }
+          gen_->out_ << "  call void @far_panic(i64 0)\n";
+          gen_->out_ << "  unreachable\n";
+          gen_->out_ << done_label << ":\n";
+        };
+        if (const_scrut_f) {
+          emitSwitchConst(
+              [&](const Pattern& pat) { return patternCertainlyFailsConstFloat(pat, *const_scrut_f); },
+              [&](const Pattern& pat) { return patternMatchesConstFloat(pat, *const_scrut_f); });
           return;
+        }
+        if (const_scrut) {
+          emitSwitchConst(
+              [&](const Pattern& pat) { return patternCertainlyFailsConstInt(pat, *const_scrut); },
+              [&](const Pattern& pat) { return patternMatchesConstInt(pat, *const_scrut); });
+          return;
+        }
+        emitSwitchFromArm(m, scrut, sty, pre, done_label, fail_label);
+        gen_->out_ << done_label << ":\n";
+        return;
+      }
+
+      if (const_scrut_f) {
+        auto emitConstArm = [&](size_t i) {
+          const auto& arm = m.arms[i];
+          PatTestResult tr = emitPatternTest(patCtx(), *arm.pat, scrut, sty);
+          Ctx body_ctx = fork();
+          body_ctx.env_ = pre;
+          for (const auto& b : tr.binds)
+            body_ctx.storeVar(b.name, b.value, b.type);
+          for (const auto& s : arm.body)
+            body_ctx.emitStmt(*s);
+          mergeChild(body_ctx, &pre);
+          if (body_ctx.terminated && !body_ctx.switch_break_arm_)
+            terminated = true;
+          if (!body_ctx.terminated) {
+            gen_->out_ << "  br label %" << done_label << "\n";
+            gen_->out_ << done_label << ":\n";
+          } else if (body_ctx.switch_break_arm_) {
+            gen_->out_ << done_label << ":\n";
+          }
+        };
+        for (size_t i = 0; i < m.arms.size(); ++i) {
+          const auto& arm = m.arms[i];
+          if (!arm.pat)
+            continue;
+          if (isMatchWildcardPattern(*arm.pat)) {
+            emitConstArm(i);
+            return;
+          }
+          if (patternCertainlyFailsConstFloat(*arm.pat, *const_scrut_f))
+            continue;
+          if (patternMatchesConstFloat(*arm.pat, *const_scrut_f)) {
+            emitConstArm(i);
+            return;
+          }
         }
         gen_->out_ << "  call void @far_panic(i64 0)\n";
         gen_->out_ << "  unreachable\n";
@@ -2414,36 +2564,8 @@ private:
       }
 
       if (const_scrut) {
-        for (size_t i = 0; i < m.arms.size(); ++i) {
+        auto emitConstArm = [&](size_t i) {
           const auto& arm = m.arms[i];
-          if (arm.pat && isMatchWildcardPattern(*arm.pat))
-            continue;
-          if (arm.pat && patternCertainlyFailsConstInt(*arm.pat, *const_scrut))
-            continue;
-          if (arm.pat && patternMatchesConstInt(*arm.pat, *const_scrut)) {
-            PatTestResult tr = emitPatternTest(patCtx(), *arm.pat, scrut, sty);
-            Ctx body_ctx = fork();
-            body_ctx.env_ = pre;
-            for (const auto& b : tr.binds)
-              body_ctx.storeVar(b.name, b.value, b.type);
-            for (const auto& s : arm.body)
-              body_ctx.emitStmt(*s);
-            mergeChild(body_ctx, &pre);
-            if (body_ctx.terminated && !body_ctx.switch_break_arm_)
-              terminated = true;
-            if (!body_ctx.terminated) {
-              gen_->out_ << "  br label %" << done_label << "\n";
-              gen_->out_ << done_label << ":\n";
-            } else if (body_ctx.switch_break_arm_) {
-              gen_->out_ << done_label << ":\n";
-            }
-            return;
-          }
-        }
-        for (size_t i = 0; i < m.arms.size(); ++i) {
-          const auto& arm = m.arms[i];
-          if (!arm.pat || !isMatchWildcardPattern(*arm.pat))
-            continue;
           PatTestResult tr = emitPatternTest(patCtx(), *arm.pat, scrut, sty);
           Ctx body_ctx = fork();
           body_ctx.env_ = pre;
@@ -2460,7 +2582,21 @@ private:
           } else if (body_ctx.switch_break_arm_) {
             gen_->out_ << done_label << ":\n";
           }
-          return;
+        };
+        for (size_t i = 0; i < m.arms.size(); ++i) {
+          const auto& arm = m.arms[i];
+          if (!arm.pat)
+            continue;
+          if (isMatchWildcardPattern(*arm.pat)) {
+            emitConstArm(i);
+            return;
+          }
+          if (patternCertainlyFailsConstInt(*arm.pat, *const_scrut))
+            continue;
+          if (patternMatchesConstInt(*arm.pat, *const_scrut)) {
+            emitConstArm(i);
+            return;
+          }
         }
         gen_->out_ << "  call void @far_panic(i64 0)\n";
         gen_->out_ << "  unreachable\n";
@@ -2474,7 +2610,9 @@ private:
     }
 
     static bool rangeForConstEmpty(int64_t start, int64_t end, bool exclusive) {
-      return exclusive ? (start >= end) : (start > end);
+      if (start != end)
+        return false;
+      return exclusive;
     }
 
     bool exprConstNonNullish(const Expr& e) const {
@@ -2748,16 +2886,29 @@ private:
           std::optional<int64_t> const_scrut = constIntFromExpr(*stmt.match_stmt.scrutinee);
           if (!const_scrut)
             return false;
-          for (const auto& arm : stmt.match_stmt.arms) {
-            if (arm.pat && isMatchWildcardPattern(*arm.pat))
-              continue;
-            if (arm.pat && patternCertainlyFailsConstInt(*arm.pat, *const_scrut))
-              continue;
-            if (arm.pat && patternMatchesConstInt(*arm.pat, *const_scrut))
-              return stmtBlockAlwaysReturns(arm.body);
+          if (stmt.match_stmt.is_switch) {
+            for (const auto& arm : stmt.match_stmt.arms) {
+              if (arm.pat && isMatchWildcardPattern(*arm.pat))
+                continue;
+              if (arm.pat && patternCertainlyFailsConstInt(*arm.pat, *const_scrut))
+                continue;
+              if (arm.pat && patternMatchesConstInt(*arm.pat, *const_scrut))
+                return stmtBlockAlwaysReturns(arm.body);
+            }
+            for (const auto& arm : stmt.match_stmt.arms) {
+              if (arm.pat && isMatchWildcardPattern(*arm.pat))
+                return stmtBlockAlwaysReturns(arm.body);
+            }
+            return false;
           }
           for (const auto& arm : stmt.match_stmt.arms) {
-            if (arm.pat && isMatchWildcardPattern(*arm.pat))
+            if (!arm.pat)
+              continue;
+            if (isMatchWildcardPattern(*arm.pat))
+              return stmtBlockAlwaysReturns(arm.body);
+            if (patternCertainlyFailsConstInt(*arm.pat, *const_scrut))
+              continue;
+            if (patternMatchesConstInt(*arm.pat, *const_scrut))
               return stmtBlockAlwaysReturns(arm.body);
           }
           return false;
@@ -2795,6 +2946,15 @@ private:
           return true;
         if (stmt.if_stmt.else_body.empty())
           return false;
+        for (const auto& c : stmt.if_stmt.clauses) {
+          ConstBool cb = constBoolFromExpr(*c.condition);
+          if (cb == ConstBool::False)
+            continue;
+          if (cb == ConstBool::Unknown)
+            return false;
+          if (!stmtBlockAlwaysReturns(c.body))
+            return false;
+        }
         return stmtBlockAlwaysReturns(stmt.if_stmt.else_body);
       }
       if (stmt.kind == Stmt::TryStmtK)
@@ -2802,16 +2962,29 @@ private:
       if (stmt.kind == Stmt::MatchStmtK) {
         std::optional<double> const_scrut_f = constFloatFromExpr(*stmt.match_stmt.scrutinee);
         if (const_scrut_f) {
-          for (const auto& arm : stmt.match_stmt.arms) {
-            if (arm.pat && isMatchWildcardPattern(*arm.pat))
-              continue;
-            if (arm.pat && patternCertainlyFailsConstFloat(*arm.pat, *const_scrut_f))
-              continue;
-            if (arm.pat && patternMatchesConstFloat(*arm.pat, *const_scrut_f))
-              return stmtBlockAlwaysReturns(arm.body);
+          if (stmt.match_stmt.is_switch) {
+            for (const auto& arm : stmt.match_stmt.arms) {
+              if (arm.pat && isMatchWildcardPattern(*arm.pat))
+                continue;
+              if (arm.pat && patternCertainlyFailsConstFloat(*arm.pat, *const_scrut_f))
+                continue;
+              if (arm.pat && patternMatchesConstFloat(*arm.pat, *const_scrut_f))
+                return stmtBlockAlwaysReturns(arm.body);
+            }
+            for (const auto& arm : stmt.match_stmt.arms) {
+              if (arm.pat && isMatchWildcardPattern(*arm.pat))
+                return stmtBlockAlwaysReturns(arm.body);
+            }
+            return false;
           }
           for (const auto& arm : stmt.match_stmt.arms) {
-            if (arm.pat && isMatchWildcardPattern(*arm.pat))
+            if (!arm.pat)
+              continue;
+            if (isMatchWildcardPattern(*arm.pat))
+              return stmtBlockAlwaysReturns(arm.body);
+            if (patternCertainlyFailsConstFloat(*arm.pat, *const_scrut_f))
+              continue;
+            if (arm.pat && patternMatchesConstFloat(*arm.pat, *const_scrut_f))
               return stmtBlockAlwaysReturns(arm.body);
           }
           return false;
@@ -2819,16 +2992,29 @@ private:
         std::optional<int64_t> const_scrut = constIntFromExpr(*stmt.match_stmt.scrutinee);
         if (!const_scrut)
           return false;
-        for (const auto& arm : stmt.match_stmt.arms) {
-          if (arm.pat && isMatchWildcardPattern(*arm.pat))
-            continue;
-          if (arm.pat && patternCertainlyFailsConstInt(*arm.pat, *const_scrut))
-            continue;
-          if (arm.pat && patternMatchesConstInt(*arm.pat, *const_scrut))
-            return stmtBlockAlwaysReturns(arm.body);
+        if (stmt.match_stmt.is_switch) {
+          for (const auto& arm : stmt.match_stmt.arms) {
+            if (arm.pat && isMatchWildcardPattern(*arm.pat))
+              continue;
+            if (arm.pat && patternCertainlyFailsConstInt(*arm.pat, *const_scrut))
+              continue;
+            if (arm.pat && patternMatchesConstInt(*arm.pat, *const_scrut))
+              return stmtBlockAlwaysReturns(arm.body);
+          }
+          for (const auto& arm : stmt.match_stmt.arms) {
+            if (arm.pat && isMatchWildcardPattern(*arm.pat))
+              return stmtBlockAlwaysReturns(arm.body);
+          }
+          return false;
         }
         for (const auto& arm : stmt.match_stmt.arms) {
-          if (arm.pat && isMatchWildcardPattern(*arm.pat))
+          if (!arm.pat)
+            continue;
+          if (isMatchWildcardPattern(*arm.pat))
+            return stmtBlockAlwaysReturns(arm.body);
+          if (patternCertainlyFailsConstInt(*arm.pat, *const_scrut))
+            continue;
+          if (patternMatchesConstInt(*arm.pat, *const_scrut))
             return stmtBlockAlwaysReturns(arm.body);
         }
       }
@@ -3064,11 +3250,19 @@ private:
       TypeDesc coll_ty = exprType(*fo.foreach_iter);
       TypeDesc elem_ty = elemTypeOf(coll_ty);
       std::string coll = emitExpr(*fo.foreach_iter);
-      std::string len = emitCollectionLen(collCtx(), coll_ty, coll);
 
       std::string idx_slot = gen_->fresh("fidx");
       gen_->out_ << "  %" << idx_slot << " = alloca " << I64 << "\n";
       gen_->out_ << "  store " << I64 << " 0, " << I64 << "* %" << idx_slot << "\n";
+
+      // Snapshot length so shrink stops early but grow during the body cannot extend iteration unboundedly.
+      std::string bound_slot = gen_->fresh("fbound");
+      gen_->out_ << "  %" << bound_slot << " = alloca " << I64 << "\n";
+      {
+        std::string init_len = emitCollectionLen(collCtx(), coll_ty, coll);
+        gen_->out_ << "  store " << I64 << " " << init_len << ", " << I64 << "* %" << bound_slot
+                  << "\n";
+      }
 
       std::string cond_label = gen_->fresh("for.cond");
       std::string body_label = gen_->fresh("for.body");
@@ -3081,10 +3275,19 @@ private:
       gen_->out_ << "  br label %" << cond_label << "\n";
 
       gen_->out_ << cond_label << ":\n";
+      // Re-read length each iteration so shrink stops cleanly; cap at snapshot so grow cannot loop forever.
+      std::string len = emitCollectionLen(collCtx(), coll_ty, coll);
+      std::string bound = gen_->fresh("fbound");
+      gen_->out_ << "  %" << bound << " = load " << I64 << ", " << I64 << "* %" << bound_slot << "\n";
+      std::string len_gt = gen_->fresh("flgt");
+      gen_->out_ << "  %" << len_gt << " = icmp sgt " << I64 << " " << len << ", %" << bound << "\n";
+      std::string eff_len = gen_->fresh("flen");
+      gen_->out_ << "  %" << eff_len << " = select i1 %" << len_gt << ", " << I64 << " %" << bound
+                << ", " << I64 << " " << len << "\n";
       std::string idx = gen_->fresh("fi");
       gen_->out_ << "  %" << idx << " = load " << I64 << ", " << I64 << "* %" << idx_slot << "\n";
       std::string cmp = gen_->fresh("fcmp");
-      gen_->out_ << "  %" << cmp << " = icmp slt " << I64 << " %" << idx << ", " << len << "\n";
+      gen_->out_ << "  %" << cmp << " = icmp slt " << I64 << " %" << idx << ", %" << eff_len << "\n";
       gen_->out_ << "  br i1 %" << cmp << ", label %" << body_label << ", label %" << end_label << "\n";
 
       gen_->out_ << body_label << ":\n";
@@ -3658,10 +3861,16 @@ private:
         return emitExpr(*a.target);
       };
       auto storeTarget = [&](const std::string& val) {
+        TypeDesc store_ty = target_ty;
+        if (!complex && a.target->kind == Expr::Variable) {
+          auto it = env_.find(a.target->var.name);
+          if (it != env_.end())
+            store_ty = it->second.type;
+        }
         if (complex)
           storeAssignTarget(*loc, val);
         else
-          emitStoreTarget(*a.target, val, target_ty);
+          emitStoreTarget(*a.target, val, store_ty);
       };
       if (a.op == "\?\?=") {
         std::string cur = loadTarget();
@@ -3820,9 +4029,17 @@ private:
             rhs = gen_->emitCastValueDesc(TypeDesc::prim(FarTypeId::F64), target_ty, rhs);
         }
       }
+      TypeDesc store_ty = target_ty;
+      if (!complex && a.target->kind == Expr::Variable) {
+        auto it = env_.find(a.target->var.name);
+        if (it != env_.end())
+          store_ty = it->second.type;
+      }
       if (a.op == "=")
-        rhs = coerceToType(*a.value, target_ty, rhs);
-      rhs = narrowIntToDesc(target_ty, rhs);
+        rhs = coerceToType(*a.value, store_ty, rhs);
+      rhs = narrowIntToDesc(store_ty, rhs);
+      if (a.op == "=")
+        rhs = prepareOwnedAssignValue(store_ty, *a.value, rhs);
       storeTarget(rhs);
       if (a.target->kind == Expr::Variable) {
         if (a.op == "=")
@@ -3950,8 +4167,29 @@ private:
       throw FarError("unknown postfix operator '" + p.op + "'");
     }
 
+    // Scalar float promotion only: dvec2 * 2.0 must keep aggregate type from expr.type.
+    TypeDesc inferArithmeticValueType(const Expr& expr) const {
+      if (expr.kind != Expr::Binary)
+        return exprType(expr);
+      const std::string& op = expr.bin_op.op;
+      if (op != "+" && op != "-" && op != "*" && op != "/" && op != "%")
+        return exprType(expr);
+      TypeDesc lt = exprType(*expr.bin_op.left);
+      TypeDesc rt = exprType(*expr.bin_op.right);
+      if (isAggregateDesc(lt) || isAggregateDesc(rt) || isUserDesc(lt) || isUserDesc(rt) ||
+          isCollectionDesc(lt) || isCollectionDesc(rt))
+        return exprType(expr);
+      if ((isPrimitiveDesc(lt) && isFloatType(lt.primitive)) ||
+          (isPrimitiveDesc(rt) && isFloatType(rt.primitive))) {
+        if (isPrimTy(lt, FarTypeId::F32) && isPrimTy(rt, FarTypeId::F32))
+          return TypeDesc::prim(FarTypeId::F32);
+        return TypeDesc::prim(FarTypeId::F64);
+      }
+      return exprType(expr);
+    }
+
     std::string coerceToType(const Expr& expr, const TypeDesc& target, const std::string& val) {
-      TypeDesc from = exprType(expr);
+      TypeDesc from = inferArithmeticValueType(expr);
       if (typeDescEquals(from, target))
         return val;
       if (canAssignTypes(from, target))
@@ -4072,7 +4310,8 @@ private:
     }
 
     std::string emitExpr(const Expr& expr) {
-      if (++emit_depth_ > 512)
+      // Fail before native stack overflow on left-associative binary trees (~300 frames).
+      if (++emit_depth_ > 128)
         throw FarError("codegen expression depth exceeded");
       struct EmitDepthGuard {
         Ctx* self;
@@ -4552,19 +4791,21 @@ private:
 
 
       if (op.op == "!") {
-
         std::string val = emitExpr(*op.right);
-
+        TypeDesc rty = exprType(*op.right);
+        if (isPrimitiveDesc(rty) && isFloatType(rty.primitive)) {
+          std::string truthy = emitTruthyCond(rty, val);
+          std::string inv = gen_->fresh();
+          gen_->out_ << "  %" << inv << " = xor i1 " << truthy << ", true\n";
+          std::string z = gen_->fresh();
+          gen_->out_ << "  %" << z << " = zext i1 %" << inv << " to " << I64 << "\n";
+          return "%" + z;
+        }
         std::string cmp = gen_->fresh();
-
         gen_->out_ << "  %" << cmp << " = icmp eq " << I64 << " " << val << ", 0\n";
-
         std::string z = gen_->fresh();
-
         gen_->out_ << "  %" << z << " = zext i1 %" << cmp << " to " << I64 << "\n";
-
         return "%" + z;
-
       }
 
       if (op.op == "~" && op.left->kind == Expr::Int && op.left->int_lit.value == 0) {
@@ -5288,12 +5529,16 @@ private:
 
       if (call.is_hof_call) {
         std::string fp = loadVar(call.name);
-        if (call.bound_exprs.size() != 1)
-          throw FarError("higher-order call expects one argument");
-        std::string arg = emitExpr(*call.bound_exprs[0]);
+        if (call.bound_exprs.size() > 1)
+          throw FarError("higher-order call supports at most one argument");
         std::string tmp = gen_->fresh("hof");
-        gen_->out_ << "  %" << tmp << " = call " << I64 << " @far_closure_call(" << I64 << " " << fp << ", "
-                   << I64 << " " << arg << ")\n";
+        if (call.bound_exprs.empty()) {
+          gen_->out_ << "  %" << tmp << " = call " << I64 << " @far_closure_call0(" << I64 << " " << fp << ")\n";
+        } else {
+          std::string arg = emitExpr(*call.bound_exprs[0]);
+          gen_->out_ << "  %" << tmp << " = call " << I64 << " @far_closure_call(" << I64 << " " << fp << ", "
+                     << I64 << " " << arg << ")\n";
+        }
         return "%" + tmp;
       }
 
@@ -5345,9 +5590,11 @@ private:
           gen_->out_ << "  %" << tmp << " = ptrtoint i8* " << fn_ptr << " to " << I64 << "\n";
           return "%" + tmp;
         }
+        gen_->out_ << "  call void @far_call_enter()\n";
         std::string tmp = gen_->fresh();
         gen_->out_ << "  %" << tmp << " = call " << ret_ty << " @" << call.resolved_llvm_name << "("
                    << args.str() << ")\n";
+        gen_->out_ << "  call void @far_call_leave()\n";
         if (isAggregateDesc(fn->return_type))
           return "%" + tmp;
         return gen_->abiParamToInternalDesc(fn->return_type, "%" + tmp);

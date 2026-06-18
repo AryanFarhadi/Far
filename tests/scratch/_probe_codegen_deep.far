@@ -1,0 +1,12 @@
+codegen fun deep() -> i64 {
+  return nest(50)
+}
+
+fun nest(n: i64) -> i64 {
+  if (n <= 0) { return 0 }
+  return nest(n - 1) + 1
+}
+
+fun main() -> i64 {
+  return deep()
+}

@@ -1,0 +1,12 @@
+﻿fun noop() -> i64 { return 0 }
+fun main() -> i64 {
+  i = 0
+  while (i < 100) {
+    h = spawn noop()
+    if (h < 0) { return 1 }
+    r = threads.join(h)
+    if (r != 0) { return 2 }
+    i = i + 1
+  }
+  return 0
+}

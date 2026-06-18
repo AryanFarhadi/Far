@@ -1,0 +1,15 @@
+fun t72_list_remove_value_during_forin() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(10)
+  lst.push(20)
+  lst.push(30)
+  n = 0
+  for v in lst {
+    if (v == 20) { lst.remove_value(v) }
+    n = n + 1
+  }
+  return eq(n, 2)
+}
+
+
+fun main() -> i64 { return t72_list_remove_value_during_forin() }

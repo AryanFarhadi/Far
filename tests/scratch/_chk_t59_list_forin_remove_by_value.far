@@ -1,0 +1,15 @@
+fun t59_list_forin_remove_by_value() -> i64 {
+  lst: List<i64> = List<i64>()
+  i = 0
+  while (i < 32) {
+    lst.push(i)
+    i = i + 1
+  }
+  for x in lst {
+    lst.remove(x)
+  }
+  return eq(len(lst), 20)
+}
+
+
+fun main() -> i64 { return t59_list_forin_remove_by_value() }

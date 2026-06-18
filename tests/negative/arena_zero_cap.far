@@ -1,0 +1,4 @@
+fun main() -> i64 {
+  a = Arena(0)
+  return 0
+}

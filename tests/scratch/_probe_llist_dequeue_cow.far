@@ -1,0 +1,11 @@
+fun main() -> i64 {
+  ll: LinkedList<i64> = LinkedList<i64>()
+  ll.push_back(1)
+  ll2 = ll
+  ll2.push_back(2)
+  if (ll.pop_back() != 1) { return 1 }
+  if (len(ll) != 0) { return 2 }
+  if (ll2.pop_front() != 1) { return 3 }
+  if (ll2.pop_back() != 2) { return 4 }
+  return 0
+}

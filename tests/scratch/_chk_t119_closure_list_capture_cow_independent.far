@@ -1,0 +1,13 @@
+fun t119_closure_list_capture_cow_independent() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  bump = fn() { lst.push(99); return len(lst) }
+  lst2 = lst
+  if (bump() != 2) { return 1 }
+  if (len(lst) != 1) { return 2 }
+  if (len(lst2) != 1) { return 3 }
+  return 0
+}
+
+
+fun main() -> i64 { return t119_closure_list_capture_cow_independent() }

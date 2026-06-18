@@ -1,0 +1,10 @@
+fun t161_list_push_len_oob_compile() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  lst.push(2)
+  lst[1] = 77
+  return eq(lst.get(1), 77)
+}
+
+
+fun main() -> i64 { return t161_list_push_len_oob_compile() }

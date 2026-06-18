@@ -1,0 +1,10 @@
+import fs
+
+fun main() -> i64 {
+  p = "C:\\Windows\\System32\\cmd.exe"
+  e = fs.exists(p)
+  f = fs.is_file(p)
+  if (e != 0) { return 1 }
+  if (f != 0) { return 2 }
+  return 0
+}

@@ -1,0 +1,20 @@
+fun t49_dict_hash_collision_len() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  i = 0
+  while (i < 100) {
+    k = (i * 17 + 3) % 50
+    d.set(k, i)
+    i = i + 1
+  }
+  if (len(d) > 50) { return 1 }
+  i = 0
+  while (i < 50) {
+    d.remove(i)
+    if (len(d) > 50 - i - 1) { return 2 }
+    i = i + 1
+  }
+  return eq(len(d), 0)
+}
+
+
+fun main() -> i64 { return t49_dict_hash_collision_len() }

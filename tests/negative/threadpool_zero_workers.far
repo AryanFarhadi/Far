@@ -1,0 +1,4 @@
+fun main() -> i64 {
+  p = ThreadPool(0)
+  return 0
+}

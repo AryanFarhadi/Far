@@ -1,0 +1,10 @@
+fun main() -> i64 {
+  x = 1.0 / 0.0
+  n = 0
+  while (x) {
+    n = n + 1
+    if (n > 4) { break }
+  }
+  if (n != 1) { return n }
+  return 0
+}

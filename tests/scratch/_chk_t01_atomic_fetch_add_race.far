@@ -1,0 +1,11 @@
+fun t01_atomic_fetch_add_race() -> i64 {
+  at = Atomic<i64>(0)
+  h1 = spawn inc_loop(at, 500)
+  h2 = spawn inc_loop(at, 500)
+  threads.join(h1)
+  threads.join(h2)
+  return eq(at.load(), 1000)
+}
+
+
+fun main() -> i64 { return t01_atomic_fetch_add_race() }

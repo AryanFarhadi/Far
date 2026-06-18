@@ -1,0 +1,7 @@
+import perf
+fun add_one(x: i64) -> i64 { return x + 1 }
+fun main() {
+  h = spawn add_one(41)
+  print(threads.join(h))
+  return 0
+}

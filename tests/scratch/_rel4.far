@@ -1,0 +1,1632 @@
+# Production regression — guards fixed compiler/runtime bugs
+import compress
+import json
+import math
+import network
+import regex
+import security
+import yaml
+import xml
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun run(id: i64, r: i64) -> i64 { if (r != 0) { print(id); return id } return 0 }
+fun feq(a: f64, b: f64) -> i64 { if (a != b) { return 1 } return 0 }
+
+fun t01_dict_get_string() -> i64 {
+  d: Dict<i64, string> = Dict<i64, string>()
+  d.set(1, "one")
+  if (d.get(1) != "one") { return 1 }
+  return 0
+}
+
+fun t02_channel_after_if_return() -> i64 {
+  ch = Channel<i64>(4)
+  ch.send(10)
+  ch.send(20)
+  if (ch.recv() != 10) { return 1 }
+  return eq(ch.recv(), 20)
+}
+
+fun t03_float_ternary() -> i64 {
+  return feq(1 ? 1.5 : 2.5, 1.5)
+}
+
+fun t04_f64_postinc() -> i64 {
+  y: f64 = 0.0
+  y++
+  return feq(y, 1.0)
+}
+
+fun t05_handle_in_if_branch() -> i64 {
+  if (1) {
+    ch = Channel<i64>(2)
+    ch.send(7)
+    if (ch.recv() != 7) { return 1 }
+  }
+  return 0
+}
+
+fun t06_prefix_inc_stmt() -> i64 {
+  x = 9
+  ++x
+  return eq(x, 10)
+}
+
+fun t07_ternary_paren_float() -> i64 {
+  return feq((1 ? 0.5 : 1.5), 0.5)
+}
+
+fun t07b_int_float_ternary() -> i64 {
+  return feq(1 ? 1 : 2.5, 1.0)
+}
+
+fun t08_prefix_f64_stmt() -> i64 {
+  z: f64 = 1.5
+  ++z
+  return feq(z, 2.5)
+}
+
+fun t09_dict_keys_values() -> i64 {
+  d: Dict<i64, string> = Dict<i64, string>()
+  d.set(1, "a")
+  d.set(2, "b")
+  ks = d.keys()
+  if (len(ks) != 2) { return 1 }
+  vs = d.values()
+  if (len(vs) != 2) { return 2 }
+  return 0
+}
+
+fun t10_set_in_op() -> i64 {
+  s: Set<i64> = Set<i64>()
+  s.add(42)
+  if (!(42 in s)) { return 1 }
+  if (99 in s) { return 2 }
+  return 0
+}
+
+fun t11_channel_autodrop() -> i64 {
+  ch = Channel<i64>(1)
+  ch.send(1)
+  return 0
+}
+
+fun t12_null_coalesce_float() -> i64 {
+  return feq(0 ?? 2.5, 2.5)
+}
+
+fun t13_f64_plus_eq() -> i64 {
+  f: f64 = 1.0
+  f += 2.5
+  return feq(f, 3.5)
+}
+
+fun t14_f64_null_coalesce() -> i64 {
+  x: f64 = 0.0
+  return feq(x ?? 3.5, 3.5)
+}
+
+fun t15_f64_null_coalesce_assign() -> i64 {
+  z: f64 = 0.0
+  z ??= 2.5
+  return feq(z, 2.5)
+}
+
+fun t16_u64_gt_negative() -> i64 {
+  x = 9223372036854775808
+  if (x > -1) { return 1 }
+  return 0
+}
+
+fun t17_u64_gt_small_negative() -> i64 {
+  x: u64 = 5
+  if (x > -1) { return 0 }
+  return 1
+}
+
+fun t18_range_len_step() -> i64 {
+  return eq(len(Range(5, 10, 2)), 3)
+}
+
+fun t19_range_len_empty() -> i64 {
+  return eq(len(Range(5, 5, 1)), 0)
+}
+
+fun t20_range_len_max() -> i64 {
+  return eq(len(Range(0, 9223372036854775807, 1)), 9223372036854775807)
+}
+
+fun t21_atomic_fetch_add() -> i64 {
+  at = Atomic<i64>(10)
+  if (at.fetch_add(5) != 10) { return 1 }
+  if (at.load() != 15) { return 2 }
+  return 0
+}
+
+fun t22_llist_fifo() -> i64 {
+  ll: LinkedList<i64> = LinkedList<i64>()
+  ll.push_back(1)
+  ll.push_front(2)
+  if (ll.pop_front() != 2) { return 1 }
+  return eq(ll.pop_front(), 1)
+}
+
+fun t23_stack_pop_nonempty() -> i64 {
+  st: Stack<i64> = Stack<i64>()
+  st.push(42)
+  return eq(st.pop(), 42)
+}
+
+fun t24_dict_zero_value() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d.set(1, 0)
+  if (!d.contains_key(1)) { return 1 }
+  return eq(d.get(1), 0)
+}
+
+fun t25_llist_pop_nonempty() -> i64 {
+  ll: LinkedList<i64> = LinkedList<i64>()
+  ll.push_back(99)
+  return eq(ll.pop_front(), 99)
+}
+
+fun t26_channel_drain_after_close() -> i64 {
+  ch = Channel<i64>(2)
+  ch.send(10)
+  ch.send(20)
+  ch.close()
+  if (ch.recv() != 10) { return 1 }
+  return eq(ch.recv(), 20)
+}
+
+fun t27_channel_negative_value() -> i64 {
+  ch = Channel<i64>(1)
+  ch.send(-1)
+  return eq(ch.recv(), -1)
+}
+
+fun t28_mutex_lock_unlock() -> i64 {
+  mu = Mutex()
+  mu.lock()
+  mu.unlock()
+  return 0
+}
+
+fun t29_lfqueue_push_pop() -> i64 {
+  q = LockFreeQueue<i64>(4)
+  q.push(42)
+  return eq(q.pop(), 42)
+}
+
+fun t30_arr_min_nonempty() -> i64 {
+  return eq(math.arr_min([1, 3, 2]), 1)
+}
+
+fun t31_threadpool_shutdown() -> i64 {
+  p = ThreadPool(2)
+  p.shutdown()
+  return 0
+}
+
+fun t32_arr_sum_empty() -> i64 {
+  return eq(math.arr_sum([]), 0)
+}
+
+actor RelCounter {
+  fun on_msg(msg: i64) -> i64 {
+    return msg + 1
+  }
+}
+
+fun t33_actor_ask() -> i64 {
+  c = RelCounter()
+  return eq(c.ask(41), 42)
+}
+
+fun t34_pool_roundtrip() -> i64 {
+  pool = Pool<i64>(2)
+  o = pool.acquire()
+  pool.release(o)
+  o2 = pool.acquire()
+  if (o2 != o) { return 1 }
+  return 0
+}
+
+fun t35_arena_alloc() -> i64 {
+  a = Arena(64)
+  p = a.alloc(16)
+  if (p == 0) { return 1 }
+  return 0
+}
+
+fun t36_box_get_alive() -> i64 {
+  b = Box<i64>(8)
+  p = b.get()
+  if (p == 0) { return 1 }
+  return 0
+}
+
+fun t37_rc_get_alive() -> i64 {
+  r = Rc<i64>(8)
+  p = r.get()
+  if (p == 0) { return 1 }
+  return 0
+}
+
+fun t38_semaphore_roundtrip() -> i64 {
+  sem = Semaphore(1)
+  sem.wait()
+  sem.signal()
+  return 0
+}
+
+fun t39_set_len_nonempty() -> i64 {
+  s: Set<i64> = Set<i64>()
+  s.add(1)
+  s.add(2)
+  return eq(len(s), 2)
+}
+
+fun t40_queue_len_nonempty() -> i64 {
+  q: Queue<i64> = Queue<i64>()
+  q.enqueue(1)
+  return eq(len(q), 1)
+}
+
+fun t41_mod_pos_negative() -> i64 {
+  return eq(math.mod_pos(-7, 5), 3)
+}
+
+fun t42_factorial_small() -> i64 {
+  return eq(math.factorial(5), 120)
+}
+
+fun t43_sum_range_small() -> i64 {
+  return eq(math.sum_range(1, 4), 6)
+}
+
+fun t44_isqrt_perfect() -> i64 {
+  return eq(math.isqrt(9), 3)
+}
+
+fun t45_ipow_small() -> i64 {
+  return eq(math.ipow(2, 10), 1024)
+}
+
+fun t46_gcd_basic() -> i64 {
+  return eq(math.gcd(12, 18), 6)
+}
+
+fun t47_lcm_basic() -> i64 {
+  return eq(math.lcm(4, 6), 12)
+}
+
+fun t48_binomial_basic() -> i64 {
+  return eq(math.binomial(5, 2), 10)
+}
+
+fun t49_arr_count_basic() -> i64 {
+  return eq(math.arr_count([1, 2, 2], 2), 2)
+}
+
+fun t50_arr_sum_basic() -> i64 {
+  return eq(math.arr_sum([1, 2, 3]), 6)
+}
+
+fun t51_arr_index_of_basic() -> i64 {
+  return eq(math.arr_index_of([4, 5, 6], 5), 1)
+}
+
+fun t52_regex_glob_question_empty() -> i64 {
+  return eq(regex.glob_match("?", ""), 0)
+}
+
+fun t53_serialize_roundtrip() -> i64 {
+  js = serialize.to_json("hello")
+  v = serialize.from_json(js, "data")
+  if (len(v) != 5) { return 1 }
+  if (v != "hello") { return 2 }
+  return 0
+}
+
+fun t54_tcp_listen_invalid_port() -> i64 {
+  s = tcp.listen_on(70000)
+  if (s >= 0) {
+    tcp.close_conn(s)
+    return 1
+  }
+  return 0
+}
+
+fun t55_rle_roundtrip() -> i64 {
+  raw = "aaabbc"
+  enc = compress.rle_encode(raw)
+  dec = compress.rle_decode(enc)
+  if (len(dec) != len(raw)) { return 1 }
+  if (dec != raw) { return 2 }
+  return 0
+}
+
+fun t56_tcp_listen_zero_port() -> i64 {
+  s = tcp.listen_on(0)
+  if (s >= 0) {
+    tcp.close_conn(s)
+    return 1
+  }
+  return 0
+}
+
+fun t57_udp_bind_invalid_port_high() -> i64 {
+  s = udp.bind_port(70000)
+  if (s >= 0) {
+    udp.close_sock(s)
+    return 1
+  }
+  return 0
+}
+
+fun t58_udp_bind_invalid_port_negative() -> i64 {
+  s = udp.bind_port(-1)
+  if (s >= 0) {
+    udp.close_sock(s)
+    return 1
+  }
+  return 0
+}
+
+fun t59_str_concat_basic() -> i64 {
+  s = "a" + "b"
+  if (len(s) != 2) { return 1 }
+  if (s != "ab") { return 2 }
+  return 0
+}
+
+fun t60_bounds_slice_overflow() -> i64 {
+  if (boundscheck.slice_ok(0, 9223372036854775807, 10) != 0) { return 1 }
+  return 0
+}
+
+fun t61_xor_crypt_roundtrip() -> i64 {
+  enc = crypto.encrypt("data", "key")
+  dec = crypto.encrypt(enc, "key")
+  if (len(dec) != 4) { return 1 }
+  if (dec != "data") { return 2 }
+  return 0
+}
+
+fun t62_rpc_invalid_port() -> i64 {
+  r = rpc.call("127.0.0.1", 70000, "ping", "{}")
+  if (len(r) != 0) { return 1 }
+  return 0
+}
+
+fun t63_xml_tag_basic() -> i64 {
+  x = xml.tag("k", "v")
+  if (len(x) != 8) { return 1 }
+  if (x != "<k>v</k>") { return 2 }
+  return 0
+}
+
+fun t64_grpc_invalid_port() -> i64 {
+  r = grpc.call("127.0.0.1", -1, "ping", "payload")
+  if (len(r) != 0) { return 1 }
+  return 0
+}
+
+fun t65_channel_recv_closed_empty() -> i64 {
+  ch = Channel<i64>(1)
+  ch.close()
+  return eq(ch.recv(), -9223372036854775808)
+}
+
+fun t66_channel_send_closed() -> i64 {
+  ch = Channel<i64>(1)
+  ch.close()
+  return eq(ch.send(42), -1)
+}
+
+fun t67_rpc_malicious_params() -> i64 {
+  r = rpc.call("127.0.0.1", 9, "ping", "}{\"evil\":1}")
+  if (len(r) != 0) { return 1 }
+  return 0
+}
+
+fun t68_grpc_method_newline() -> i64 {
+  r = grpc.call("127.0.0.1", 9, "ping\nevil", "payload")
+  if (len(r) != 0) { return 1 }
+  return 0
+}
+
+fun t69_url_oversized_path() -> i64 {
+  s = "http://127.0.0.1/"
+  i = 0
+  while (i < 520) {
+    s = s + "a"
+    i = i + 1
+  }
+  r = rest.get(s)
+  if (len(r) != 0) { return 1 }
+  return 0
+}
+
+fun t70_rpc_method_newline() -> i64 {
+  r = rpc.call("127.0.0.1", 9, "ping\nevil", "{}")
+  if (len(r) != 0) { return 1 }
+  return 0
+}
+
+fun t71_serialize_pack_newline() -> i64 {
+  p = serialize.pack("svc", "m\nevil", "body")
+  if (len(p) != 0) { return 1 }
+  return 0
+}
+
+fun t72_lfqueue_push_full() -> i64 {
+  q = LockFreeQueue<i64>(1)
+  q.push(1)
+  return eq(q.push(2), -1)
+}
+
+fun t73_pool_acquire_exhausted() -> i64 {
+  pool = Pool<i64>(1)
+  pool.acquire()
+  o2 = pool.acquire()
+  if (o2 != 0) { return 1 }
+  return 0
+}
+
+fun t74_actor_ask_stopped() -> i64 {
+  c = RelCounter()
+  c.stop()
+  return eq(c.ask(1), -9223372036854775808)
+}
+
+fun t75_arena_alloc_overflow() -> i64 {
+  a = Arena(16)
+  p = a.alloc(32)
+  if (p != 0) { return 1 }
+  return 0
+}
+
+fun t76_actor_tell_stopped() -> i64 {
+  c = RelCounter()
+  c.stop()
+  c.tell(1)
+  return 0
+}
+
+fun t77_unpack_wrong_field_order() -> i64 {
+  bad = "FARPKT\nmethod:evil\nservice:s\nmethod:real\nbody:b\n"
+  m = serialize.unpack_method(bad)
+  if (len(m) != 0) { return 1 }
+  return 0
+}
+
+fun t78_serialize_pack_roundtrip() -> i64 {
+  p = serialize.pack("svc", "meth", "bod")
+  if (serialize.unpack_method(p) != "meth") { return 1 }
+  if (serialize.unpack_body(p) != "bod") { return 2 }
+  return 0
+}
+
+fun t79_deserialize_unclosed_string() -> i64 {
+  js = "{\"data\":\"hello"
+  v = serialize.from_json(js, "data")
+  if (len(v) != 0) { return 1 }
+  return 0
+}
+
+fun t80_json_get_str_unclosed() -> i64 {
+  v = json.get_str("{\"k\":\"hi", "k")
+  if (len(v) != 0) { return 1 }
+  return 0
+}
+
+fun t81_json_key_newline() -> i64 {
+  v = json.get_str("{\"a\":1}", "k\ne")
+  if (len(v) != 0) { return 1 }
+  return 0
+}
+
+fun t82_deserialize_unicode_escape() -> i64 {
+  js = "{\"data\":\"\\u0061\"}"
+  v = serialize.from_json(js, "data")
+  if (len(v) != 1) { return 1 }
+  if (v != "a") { return 2 }
+  return 0
+}
+
+fun t83_rc_clone_dropped() -> i64 {
+  r = Rc<i64>(8)
+  drop(r)
+  c = r.clone()
+  if (c != 0) { return 1 }
+  return 0
+}
+
+fun t84_json_invalid_unicode_escape() -> i64 {
+  v = json.get_str("{\"k\":\"\\uZZZZ\"}", "k")
+  if (len(v) != 0) { return 1 }
+  return 0
+}
+
+fun t85_deserialize_non_string_value() -> i64 {
+  v = serialize.from_json("{\"data\":123}", "data")
+  if (len(v) != 0) { return 1 }
+  return 0
+}
+
+fun t86_deserialize_invalid_unicode() -> i64 {
+  v = serialize.from_json("{\"data\":\"\\uZZZZ\"}", "data")
+  if (len(v) != 0) { return 1 }
+  return 0
+}
+
+fun t87_json_i64_overflow() -> i64 {
+  v = json.get_i64("{\"k\":999999999999999999999999999999999999999999}", "k")
+  if (v != 0) { return 1 }
+  return 0
+}
+
+fun t88_json_invalid_escape() -> i64 {
+  v = json.get_str("{\"k\":\"\\z\"}", "k")
+  if (len(v) != 0) { return 1 }
+  return 0
+}
+
+fun t89_deserialize_invalid_escape() -> i64 {
+  v = serialize.from_json("{\"data\":\"\\z\"}", "data")
+  if (len(v) != 0) { return 1 }
+  return 0
+}
+
+fun t90_yaml_key_newline() -> i64 {
+  v = yaml.yaml_get_value("k: v\n", "k\nx")
+  if (len(v) != 0) { return 1 }
+  return 0
+}
+
+fun t91_xml_tag_name_newline() -> i64 {
+  v = xml.tag("a\nb", "x")
+  if (len(v) != 0) { return 1 }
+  return 0
+}
+
+fun t92_json_surrogate_escape() -> i64 {
+  v = json.get_str("{\"k\":\"\\uD800\"}", "k")
+  if (len(v) != 0) { return 1 }
+  return 0
+}
+
+fun t93_deserialize_surrogate() -> i64 {
+  v = serialize.from_json("{\"data\":\"\\uD800\"}", "data")
+  if (len(v) != 0) { return 1 }
+  return 0
+}
+
+fun t94_url_host_space() -> i64 {
+  r = rest.get("http://evil .com/")
+  if (len(r) != 0) { return 1 }
+  return 0
+}
+
+fun t95_xml_attr_name_newline() -> i64 {
+  v = xml.get_attr("<x a=\"v\">", "a\nb")
+  if (len(v) != 0) { return 1 }
+  return 0
+}
+
+fun t96_url_userinfo_at() -> i64 {
+  r = rest.get("http://evil@127.0.0.1/")
+  if (len(r) != 0) { return 1 }
+  return 0
+}
+
+fun t97_xml_empty_tag_name() -> i64 {
+  v = xml.tag("", "x")
+  if (len(v) != 0) { return 1 }
+  return 0
+}
+
+fun t98_xml_tag_name_space() -> i64 {
+  v = xml.tag("a b", "x")
+  if (len(v) != 0) { return 1 }
+  return 0
+}
+
+fun t99_json_lone_backslash() -> i64 {
+  v = json.get_str("{\"k\":\"" + "\\", "k")
+  if (len(v) != 0) { return 1 }
+  return 0
+}
+
+fun t100_grpc_host_userinfo() -> i64 {
+  r = grpc.call("evil@127.0.0.1", 9, "ping", "payload")
+  if (len(r) != 0) { return 1 }
+  return 0
+}
+
+fun t101_xml_attr_empty_name() -> i64 {
+  v = xml.get_attr("<x a=\"v\">", "")
+  if (len(v) != 0) { return 1 }
+  return 0
+}
+
+fun t102_yaml_empty_key() -> i64 {
+  v = yaml.yaml_get_value(": secret\n", "")
+  if (len(v) != 0) { return 1 }
+  return 0
+}
+
+fun t103_semaphore_negative_initial() -> i64 {
+  sem = Semaphore(-1)
+  sem.signal()
+  return 0
+}
+
+fun t104_rpc_host_userinfo() -> i64 {
+  r = rpc.call("evil@127.0.0.1", 9, "ping", "{}")
+  if (len(r) != 0) { return 1 }
+  return 0
+}
+
+fun t105_json_empty_key() -> i64 {
+  v = json.get_str("{\"\": \"x\"}", "")
+  if (len(v) != 0) { return 1 }
+  return 0
+}
+
+fun t106_deserialize_empty_key() -> i64 {
+  v = serialize.from_json("{\"\": \"x\"}", "")
+  if (len(v) != 0) { return 1 }
+  return 0
+}
+
+fun t107_factorial_negative() -> i64 {
+  return eq(math.factorial(-1), 0)
+}
+
+fun t108_isqrt_negative() -> i64 {
+  return eq(math.isqrt(-1), 0)
+}
+
+fun t109_ipow_overflow() -> i64 {
+  return eq(math.ipow(10, 19), 0)
+}
+
+fun t110_channel_huge_cap() -> i64 {
+  ch = Channel<i64>(9223372036854775807)
+  return eq(ch.send(1), -1)
+}
+
+fun t111_factorial_overflow() -> i64 {
+  return eq(math.factorial(25), 0)
+}
+
+fun t112_product_range_overflow() -> i64 {
+  return eq(math.product_range(1, 25), 0)
+}
+
+fun t113_lfqueue_huge_cap() -> i64 {
+  q = LockFreeQueue<i64>(9223372036854775807)
+  return eq(q.push(1), -1)
+}
+
+fun t114_arena_negative_cap() -> i64 {
+  a = Arena(-1)
+  p = a.alloc(8)
+  if (p != 0) { return 1 }
+  return 0
+}
+
+fun t115_binomial_overflow() -> i64 {
+  return eq(math.binomial(100, 50), 0)
+}
+
+fun t116_lcm_overflow() -> i64 {
+  return eq(math.lcm(4611686018427387904, 4611686018427387905), 0)
+}
+
+fun t117_pool_negative_cap() -> i64 {
+  pool = Pool<i64>(-1)
+  o = pool.acquire()
+  if (o != 0) { return 1 }
+  return 0
+}
+
+fun t118_atomic_fetch_add_overflow() -> i64 {
+  at = Atomic<i64>(9223372036854775807)
+  if (at.fetch_add(1) != 9223372036854775807) { return 1 }
+  if (at.load() != 9223372036854775807) { return 2 }
+  return 0
+}
+
+fun t119_str_contains_empty() -> i64 {
+  if ("hello".contains("")) { return 1 }
+  return 0
+}
+
+fun t120_box_get_after_drop() -> i64 {
+  b = Box<i64>(8)
+  drop(b)
+  if (b.get() != 0) { return 1 }
+  return 0
+}
+
+fun t121_fib_overflow() -> i64 {
+  return eq(math.fib(100), 0)
+}
+
+fun t122_sum_range_overflow() -> i64 {
+  return eq(math.sum_range(9223372036854775800, 9223372036854775807), 0)
+}
+
+fun t123_rc_get_after_drop() -> i64 {
+  r = Rc<i64>(8)
+  drop(r)
+  if (r.get() != 0) { return 1 }
+  return 0
+}
+
+fun t124_dict_get_missing() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  if (d.contains_key(99)) { return 1 }
+  return eq(d.get(99), 0)
+}
+
+fun t125_dict_bracket_missing() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  return eq(d[99], 0)
+}
+
+fun t126_arr_min_empty() -> i64 {
+  return eq(math.arr_min([]), 0)
+}
+
+fun t127_arr_max_empty() -> i64 {
+  return eq(math.arr_max([]), 0)
+}
+
+fun t128_arr_mean_empty() -> i64 {
+  return eq(math.arr_mean([]), 0)
+}
+
+fun t129_llist_pop_front_empty() -> i64 {
+  ll: LinkedList<i64> = LinkedList<i64>()
+  ll.push_back(1)
+  ll.pop_front()
+  return eq(ll.pop_front(), 0)
+}
+
+fun t130_llist_pop_back_empty() -> i64 {
+  ll: LinkedList<i64> = LinkedList<i64>()
+  ll.push_back(1)
+  ll.pop_front()
+  return eq(ll.pop_back(), 0)
+}
+
+fun t131_lfqueue_pop_empty() -> i64 {
+  q = LockFreeQueue<i64>(4)
+  return eq(q.pop(), -1)
+}
+
+fun t132_str_index_oob() -> i64 {
+  s = "ab"
+  return eq(int(s[99]), 0)
+}
+
+fun t133_str_index_empty_string() -> i64 {
+  s = ""
+  return eq(int(s[0]), 0)
+}
+
+fun t134_rc_clone_after_drop() -> i64 {
+  r = Rc<i64>(8)
+  drop(r)
+  c = r.clone()
+  if (c.get() != 0) { return 1 }
+  return 0
+}
+
+fun t135_queue_peek_empty() -> i64 {
+  q: Queue<i64> = Queue<i64>()
+  return eq(q.peek(), 0)
+}
+
+fun t136_stack_peek_empty() -> i64 {
+  st: Stack<i64> = Stack<i64>()
+  return eq(st.peek(), 0)
+}
+
+fun t137_array_index_oob() -> i64 {
+  a = [1, 2, 3]
+  return eq(a[99], 0)
+}
+
+fun t138_parse_int_erange() -> i64 {
+  return eq(int("999999999999999999999999999999999999999999999"), 0)
+}
+
+fun t139_malloc_zero_size() -> i64 {
+  p = alloc(0)
+  if (p != 0) { return 1 }
+  return 0
+}
+
+fun t140_list_pop_empty() -> i64 {
+  a: List<i64> = List<i64>()
+  a.push(1)
+  a.pop()
+  return eq(a.pop(), 0)
+}
+
+fun t141_queue_dequeue_empty() -> i64 {
+  q: Queue<i64> = Queue<i64>()
+  q.enqueue(1)
+  q.dequeue()
+  return eq(q.dequeue(), 0)
+}
+
+fun t142_stack_pop_empty() -> i64 {
+  st: Stack<i64> = Stack<i64>()
+  st.push(1)
+  st.pop()
+  return eq(st.pop(), 0)
+}
+
+fun t143_sum_range_huge_span() -> i64 {
+  return eq(math.sum_range(0, 16777217), 0)
+}
+
+fun t144_pool_double_release() -> i64 {
+  pool = Pool<i64>(1)
+  o = pool.acquire()
+  pool.release(o)
+  pool.release(o)
+  return 0
+}
+
+fun t145_product_range_huge_span() -> i64 {
+  return eq(math.product_range(0, 16777217), 0)
+}
+
+fun t146_some_negative() -> i64 {
+  s = Some(-1)
+  if (!s.is_some()) { return 1 }
+  return eq(s.unwrap(), -1)
+}
+
+fun t147_ok_negative() -> i64 {
+  return eq(Ok(-5).unwrap(), -5)
+}
+
+fun t148_arena_alloc_overflow() -> i64 {
+  a = Arena(16)
+  p = a.alloc(32)
+  if (p != 0) { return 1 }
+  return 0
+}
+
+fun t149_err_negative_val() -> i64 {
+  r: Result<i64, i64> = Err(-2)
+  return eq(r.err(), -2)
+}
+
+fun t150_arr_sum_overflow() -> i64 {
+  return eq(math.arr_sum([9223372036854775800, 9223372036854775800]), 0)
+}
+
+fun t151_channel_try_recv_empty() -> i64 {
+  ch = Channel<i64>(1)
+  return eq(ch.try_recv(), -9223372036854775808)
+}
+
+fun t152_semaphore_try_wait_empty() -> i64 {
+  sem = Semaphore(0)
+  return eq(sem.try_wait(), 0)
+}
+
+fun t153_channel_try_send_full() -> i64 {
+  ch = Channel<i64>(1)
+  ch.send(1)
+  return eq(ch.try_send(2), -1)
+}
+
+fun t154_channel_try_send_recv() -> i64 {
+  ch = Channel<i64>(1)
+  if (ch.try_send(99) != 0) { return 1 }
+  return eq(ch.try_recv(), 99)
+}
+
+fun t155_channel_try_send_closed() -> i64 {
+  ch = Channel<i64>(1)
+  ch.close()
+  return eq(ch.try_send(42), -1)
+}
+
+fun t156_semaphore_huge_initial() -> i64 {
+  sem = Semaphore(2147483648)
+  sem.signal()
+  return 0
+}
+
+fun t157_channel_try_recv_buffered_after_close() -> i64 {
+  ch = Channel<i64>(2)
+  ch.send(10)
+  ch.close()
+  return eq(ch.try_recv(), 10)
+}
+
+fun t158_threadpool_huge_workers() -> i64 {
+  p = ThreadPool(2147483648)
+  p.shutdown()
+  return 0
+}
+
+fun t159_channel_try_recv_closed_empty() -> i64 {
+  ch = Channel<i64>(1)
+  ch.close()
+  return eq(ch.try_recv(), -9223372036854775808)
+}
+
+fun t160_regex_glob_question_one_char() -> i64 {
+  if (regex.glob_match("?", "a") == 0) { return 1 }
+  if (regex.glob_match("?", "ab") != 0) { return 2 }
+  return 0
+}
+
+fun t161_gcd_i64_min() -> i64 {
+  return eq(math.gcd(-9223372036854775808, 0), 9223372036854775807)
+}
+
+fun t162_malloc_huge_size() -> i64 {
+  p = alloc(9223372036854775807)
+  if (p != 0) { return 1 }
+  return 0
+}
+
+fun t163_isqrt_i64_max() -> i64 {
+  return eq(math.isqrt(9223372036854775807), 3037000499)
+}
+
+fun t164_dict_set_after_many_removes() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  i = 0
+  while (i < 16) {
+    d.set(i, i * 10)
+    i = i + 1
+  }
+  i = 0
+  while (i < 8) {
+    d.remove(i)
+    i = i + 1
+  }
+  d.set(99, 990)
+  return eq(d.get(99), 990)
+}
+
+fun t165_list_insert_middle() -> i64 {
+  a: List<i64> = List<i64>()
+  a.push(1)
+  a.push(3)
+  a.insert(1, 2)
+  if (a.get(0) != 1) { return 1 }
+  if (a.get(1) != 2) { return 2 }
+  if (a.get(2) != 3) { return 3 }
+  return 0
+}
+
+fun t166_glob_backtrack_step_limit() -> i64 {
+  pat = ""
+  i = 0
+  while (i < 64) {
+    pat = pat + "*"
+    i = i + 1
+  }
+  pat = pat + "z"
+  if (regex.glob_match(pat, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") != 0) { return 1 }
+  return 0
+}
+
+fun t167_set_reinsert_after_remove() -> i64 {
+  s: Set<string> = Set<string>()
+  s.add("alpha")
+  s.remove("alpha")
+  s.add("alpha")
+  return eq(s.contains("alpha"), 1)
+}
+
+fun t168_str_split_basic() -> i64 {
+  parts = "a,b,c".split(",")
+  if (len(parts) != 3) { return 1 }
+  if (parts.get(0) != "a") { return 2 }
+  if (parts.get(1) != "b") { return 3 }
+  if (parts.get(2) != "c") { return 4 }
+  return 0
+}
+
+fun t169_str_split_trailing_sep() -> i64 {
+  parts = "a,b,".split(",")
+  if (len(parts) != 3) { return 1 }
+  if (parts.get(2) != "") { return 2 }
+  return 0
+}
+
+fun t170_ipow_i64_overflow() -> i64 {
+  return eq(math.ipow(2, 63), 0)
+}
+
+fun t171_range_negative_step_contains() -> i64 {
+  rng = Range(10, 0, -2)
+  if (len(rng) != 5) { return 1 }
+  if (!rng.contains(8)) { return 2 }
+  if (rng.contains(9)) { return 3 }
+  if (!rng.contains(2)) { return 4 }
+  if (rng.contains(0)) { return 5 }
+  return 0
+}
+
+fun t172_glob_pattern_len_cap() -> i64 {
+  pat = ""
+  i = 0
+  while (i < 70000) {
+    pat = pat + "*"
+    i = i + 1
+  }
+  if (regex.glob_match(pat, "x") != 0) { return 1 }
+  return 0
+}
+
+fun t173_dict_string_keys_values() -> i64 {
+  d: Dict<string, string> = Dict<string, string>()
+  d.set("foo", "bar")
+  d.set("baz", "qux")
+  ks = d.keys()
+  if (len(ks) != 2) { return 1 }
+  vs = d.values()
+  if (len(vs) != 2) { return 2 }
+  found = 0
+  i = 0
+  while (i < 2) {
+    if (ks.get(i) == "foo" && vs.get(i) == "bar") { found = found + 1 }
+    if (ks.get(i) == "baz" && vs.get(i) == "qux") { found = found + 1 }
+    i = i + 1
+  }
+  return eq(found, 2)
+}
+
+fun t174_isqrt_zero() -> i64 {
+  return eq(math.isqrt(0), 0)
+}
+
+fun t175_product_range_empty() -> i64 {
+  return eq(math.product_range(5, 5), 1)
+}
+
+fun t176_list_slice_basic() -> i64 {
+  a: List<i64> = List<i64>()
+  a.push(10)
+  a.push(20)
+  a.push(30)
+  sl = a.slice(1, 3)
+  if (len(sl) != 2) { return 1 }
+  if (sl[0] != 20) { return 2 }
+  if (sl[1] != 30) { return 3 }
+  return 0
+}
+
+fun t177_gcd_zero_zero() -> i64 {
+  return eq(math.gcd(0, 0), 0)
+}
+
+fun t178_binomial_k_gt_n() -> i64 {
+  return eq(math.binomial(10, 11), 0)
+}
+
+fun t179_binomial_zero_zero() -> i64 {
+  return eq(math.binomial(0, 0), 1)
+}
+
+fun t180_sum_range_empty() -> i64 {
+  return eq(math.sum_range(5, 5), 0)
+}
+
+fun t181_gcd_zero_a() -> i64 {
+  return eq(math.gcd(0, 15), 15)
+}
+
+fun t182_lcm_zero() -> i64 {
+  return eq(math.lcm(0, 5), 0)
+}
+
+fun t183_factorial_zero() -> i64 {
+  return eq(math.factorial(0), 1)
+}
+
+fun t184_ipow_zero_exp() -> i64 {
+  return eq(math.ipow(99, 0), 1)
+}
+
+fun t185_product_range_inverted() -> i64 {
+  return eq(math.product_range(10, 3), 1)
+}
+
+fun t186_range_zero_step() -> i64 {
+  return eq(len(Range(0, 10, 0)), 10)
+}
+
+fun t187_arena_huge_cap() -> i64 {
+  a = Arena(1073741824)
+  p = a.alloc(8)
+  if (p != 0) { return 1 }
+  return 0
+}
+
+fun t188_channel_over_max_cap() -> i64 {
+  ch = Channel<i64>(2097152)
+  return eq(ch.send(1), -1)
+}
+
+fun t189_isign_zero() -> i64 {
+  return eq(math.isign(0), 0)
+}
+
+fun t190_clamp_i_below() -> i64 {
+  return eq(math.clamp_i(0, 1, 10), 1)
+}
+
+fun t191_product_range_single() -> i64 {
+  return eq(math.product_range(3, 4), 3)
+}
+
+fun t192_pool_huge_cap() -> i64 {
+  pool = Pool<i64>(2147483647)
+  o = pool.acquire()
+  if (o != 0) { return 1 }
+  return 0
+}
+
+fun t193_iabs_negative() -> i64 {
+  return eq(math.iabs(-7), 7)
+}
+
+fun t194_is_even_odd() -> i64 {
+  if (!math.is_even(4)) { return 1 }
+  if (!math.is_odd(3)) { return 2 }
+  return 0
+}
+
+fun t195_fib_zero() -> i64 {
+  return eq(math.fib(0), 0)
+}
+
+fun t196_sum_range_single() -> i64 {
+  return eq(math.sum_range(3, 4), 3)
+}
+
+fun t197_option_result_i64_edges() -> i64 {
+  if (Some(9223372036854775807).unwrap() != 9223372036854775807) { return 1 }
+  if (Some(-9223372036854775808).unwrap() != -9223372036854775808) { return 2 }
+  if (Some(-1).unwrap() != -1) { return 3 }
+  e: Result<i64, i64> = Err(-9223372036854775808)
+  if (e.is_err() == 0) { return 4 }
+  if (e.err() != -9223372036854775808) { return 5 }
+  return 0
+}
+
+fun t198_clamp_i_inverted_bounds() -> i64 {
+  return eq(math.clamp_i(5, 10, 1), 5)
+}
+
+fun t199_clamp_d_inverted_bounds() -> i64 {
+  return eq(math.clamp(5.0, 10.0, 1.0), 5.0)
+}
+
+fun t200_imin3() -> i64 {
+  return eq(math.imin3(3, 1, 2), 1)
+}
+
+fun t201_imax3() -> i64 {
+  return eq(math.imax3(3, 1, 2), 3)
+}
+
+fun t202_mod_pos_zero_mod() -> i64 {
+  return eq(math.mod_pos(7, 0), 0)
+}
+
+fun t203_isign_min() -> i64 {
+  return eq(math.isign(-9223372036854775808), -1)
+}
+
+fun t204_inv_lerp_equal_edges() -> i64 {
+  return feq(math.inv_lerp(5.0, 5.0, 3.0), 0.0)
+}
+
+fun t205_smoothstep_equal_edges() -> i64 {
+  if (math.smoothstep(1.0, 1.0, 1.0) != 1.0) { return 1 }
+  if (math.smoothstep(1.0, 1.0, 0.0) != 0.0) { return 2 }
+  return 0
+}
+
+fun t206_iabs_min() -> i64 {
+  return eq(math.iabs(-9223372036854775808), 9223372036854775807)
+}
+
+fun t207_log_n_degenerate_base() -> i64 {
+  return feq(math.log_n(8.0, 1.0), 0.0)
+}
+
+fun t208_sum_range_inclusive_inverted() -> i64 {
+  return eq(math.sum_range_inclusive(10, 3), 52)
+}
+
+fun t209_remap_equal_input_range() -> i64 {
+  return feq(math.remap(5.0, 10.0, 10.0, 2.0, 8.0), 2.0)
+}
+
+fun t210_is_even_min() -> i64 {
+  if (math.is_even(-9223372036854775808) == 0) { return 1 }
+  return 0
+}
+
+fun t211_is_odd_min() -> i64 {
+  if (math.is_odd(-9223372036854775808) != 0) { return 1 }
+  return 0
+}
+
+fun t212_range_for_i64max_single() -> i64 {
+  n = 0
+  for i in 9223372036854775807..9223372036854775807 {
+    n = n + 1
+  }
+  return eq(n, 1)
+}
+
+fun t213_range_for_i64min_single() -> i64 {
+  n = 0
+  for i in -9223372036854775808..-9223372036854775808 {
+    n = n + 1
+  }
+  return eq(n, 1)
+}
+
+fun t214_log_n_negative_base() -> i64 {
+  return feq(math.log_n(8.0, -2.0), 0.0)
+}
+
+fun t215_saturate_clamp() -> i64 {
+  if (math.saturate(2.0) != 1.0) { return 1 }
+  if (math.saturate(-1.0) != 0.0) { return 2 }
+  return 0
+}
+
+fun t216_mean2_basic() -> i64 {
+  return feq(math.mean2(2.0, 4.0), 3.0)
+}
+
+fun t217_log_n_nonpositive_x() -> i64 {
+  return feq(math.log_n(-8.0, 2.0), 0.0)
+}
+
+fun t218_sign_d_edges() -> i64 {
+  if (math.sign_d(0.0) != 0.0) { return 1 }
+  if (math.sign_d(-3.0) != -1.0) { return 2 }
+  return 0
+}
+
+fun t219_dist2_basic() -> i64 {
+  return feq(math.dist2(0.0, 0.0, 3.0, 4.0), 25.0)
+}
+
+fun t220_floor_i_huge() -> i64 {
+  return eq(math.floor_i(math.pow(10.0, 30.0)), 9223372036854775807)
+}
+
+fun t221_ceil_i_huge_neg() -> i64 {
+  return eq(math.ceil_i(-math.pow(10.0, 30.0)), -9223372036854775808)
+}
+
+fun t222_round_i_nan() -> i64 {
+  return eq(math.round_i(0.0 / 0.0), 0)
+}
+
+fun t223_log_n_nan_x() -> i64 {
+  r = math.log_n(0.0 / 0.0, 2.0)
+  if (r == 0.0) { return 0 }
+  return 1
+}
+
+fun t224_log_n_nan_base() -> i64 {
+  r = math.log_n(8.0, 0.0 / 0.0)
+  if (r == 0.0) { return 0 }
+  return 1
+}
+
+fun t225_inv_lerp_nan() -> i64 {
+  return feq(math.inv_lerp(0.0 / 0.0, 1.0, 2.0), 0.0)
+}
+
+fun t226_smoothstep_nan() -> i64 {
+  return feq(math.smoothstep(0.0, 1.0, 0.0 / 0.0), 0.0)
+}
+
+fun t227_channel_is_closed() -> i64 {
+  ch = Channel<i64>(1)
+  if (ch.is_closed() != 0) { return 1 }
+  ch.close()
+  if (ch.is_closed() == 0) { return 2 }
+  return 0
+}
+
+fun t228_channel_pending() -> i64 {
+  ch = Channel<i64>(2)
+  ch.send(7)
+  if (ch.pending() != 1) { return 1 }
+  if (ch.try_recv() != 7) { return 2 }
+  if (ch.pending() != 0) { return 3 }
+  return 0
+}
+
+fun t229_channel_try_recv_empty_not_closed() -> i64 {
+  ch = Channel<i64>(1)
+  if (ch.try_recv() != -9223372036854775808) { return 1 }
+  if (ch.is_closed() != 0) { return 2 }
+  ch.close()
+  if (ch.try_recv() != -9223372036854775808) { return 3 }
+  if (ch.is_closed() == 0) { return 4 }
+  return 0
+}
+
+fun t230_fmod_zero() -> i64 {
+  return feq(math.fmod(10.0, 0.0), 0.0)
+}
+
+fun t231_lerp_nan() -> i64 {
+  return feq(math.lerp(0.0 / 0.0, 1.0, 0.5), 0.0)
+}
+
+fun t232_saturate_nan() -> i64 {
+  return feq(math.saturate(0.0 / 0.0), 0.0)
+}
+
+fun t233_clamp_d_nan() -> i64 {
+  return feq(math.clamp(0.0 / 0.0, 0.0, 1.0), 0.0)
+}
+
+fun t234_sign_d_nan() -> i64 {
+  return feq(math.sign_d(0.0 / 0.0), 0.0)
+}
+
+fun t235_f64_rem_zero_op() -> i64 {
+  return feq(10.0 % 0.0, 0.0)
+}
+
+fun t236_log_nonpositive() -> i64 {
+  return feq(math.log(-4.0), 0.0)
+}
+
+fun t237_log10_zero() -> i64 {
+  return feq(math.log10(0.0), 0.0)
+}
+
+fun t238_sqrt_negative() -> i64 {
+  return feq(math.sqrt(-9.0), 0.0)
+}
+
+fun t239_log1p_invalid() -> i64 {
+  return feq(math.log1p(-2.0), 0.0)
+}
+
+fun t240_asin_out_of_domain() -> i64 {
+  return feq(math.asin(2.0), 0.0)
+}
+
+fun t241_acos_out_of_domain() -> i64 {
+  return feq(math.acos(2.0), 0.0)
+}
+
+fun t242_acosh_below_domain() -> i64 {
+  return feq(math.acosh(0.5), 0.0)
+}
+
+fun t243_atanh_out_of_domain() -> i64 {
+  return feq(math.atanh(1.5), 0.0)
+}
+
+fun t244_pow_invalid() -> i64 {
+  return feq(math.pow(-1.0, 0.5), 0.0)
+}
+
+fun t245_sec_singularity() -> i64 {
+  return feq(math.sec(math.pi() / 2.0), 0.0)
+}
+
+fun t246_csc_singularity() -> i64 {
+  return feq(math.csc(0.0), 0.0)
+}
+
+fun t247_cot_singularity() -> i64 {
+  return feq(math.cot(math.pi()), 0.0)
+}
+
+fun t248_f64_div_zero() -> i64 {
+  return feq(10.0 / 0.0, 0.0)
+}
+
+fun t249_tan_singularity() -> i64 {
+  return feq(math.tan(math.pi() / 2.0), 0.0)
+}
+
+fun t250_gcd_i64min_pair() -> i64 {
+  return eq(math.gcd(-9223372036854775808, -9223372036854775808), 9223372036854775807)
+}
+
+fun t251_for_exclusive_empty() -> i64 {
+  for i in 5..<5 { return 1 }
+  return 0
+}
+
+fun t252_and_short_circuit_side() -> i64 {
+  x = 0
+  if (0 && (x = 1)) { }
+  return x
+}
+
+fun t253_or_short_circuit_side() -> i64 {
+  x = 0
+  if (1 || (x = 1)) { }
+  return x
+}
+
+fun t254_channel_i64min_value() -> i64 {
+  ch = Channel<i64>(2)
+  ch.send(-9223372036854775808)
+  if (ch.pending() != 1) { return 1 }
+  if (ch.try_recv() != -9223372036854775808) { return 2 }
+  if (ch.pending() != 0) { return 3 }
+  return 0
+}
+
+fun t255_list_insert_negative_noop() -> i64 {
+  a: List<i64> = List<i64>()
+  a.push(10)
+  a.insert(-1, 99)
+  if (len(a) != 1) { return 1 }
+  return eq(a.get(0), 10)
+}
+
+fun t256_for_inclusive_descending() -> i64 {
+  n = 0
+  for i in 10..0 { n = n + 1 }
+  return eq(n, 11)
+}
+
+fun t257_for_exclusive_descending() -> i64 {
+  n = 0
+  for i in 5..<3 { n = n + 1 }
+  return eq(n, 2)
+}
+
+fun t258_list_remove_while_iter() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  lst.push(2)
+  lst.push(3)
+  sum = 0
+  i = 0
+  while (i < len(lst)) {
+    v = lst.get(i)
+    sum = sum + v
+    if (v == 2) { lst.remove(i) } else { i = i + 1 }
+  }
+  return eq(sum, 6)
+}
+
+fun t259_dict_keys_remove_iter() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d.set(1, 10)
+  d.set(2, 20)
+  d.set(3, 30)
+  ks = d.keys()
+  i = 0
+  sum = 0
+  while (i < len(ks)) {
+    k = ks.get(i)
+    sum = sum + k
+    if (k == 2) { d.remove(2) }
+    i = i + 1
+  }
+  return eq(sum, 6)
+}
+
+fun t260_set_remove_readd() -> i64 {
+  s: Set<i64> = Set<i64>()
+  s.add(1)
+  s.add(2)
+  s.remove(1)
+  s.add(1)
+  return eq(len(s), 2)
+}
+
+fun t261_nested_array_index() -> i64 {
+  a = [[1, 2], [3, 4]]
+  return eq(a[1][0], 3)
+}
+
+fun t262_forin_list_shrink() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  lst.push(2)
+  lst.push(3)
+  n = 0
+  for x in lst {
+    n = n + x
+    if (x == 2) { lst.remove(1) }
+  }
+  return eq(n, 3)
+}
+
+fun t263_char_concat_nonnull() -> i64 {
+  s = "a" + char(98)
+  if (len(s) != 2) { return 1 }
+  if (int(s[0]) != 97) { return 2 }
+  if (int(s[1]) != 98) { return 3 }
+  return 0
+}
+
+fun t264_forin_fixed_array() -> i64 {
+  a = [10, 20, 30]
+  s = 0
+  for x in a {
+    s = s + x
+  }
+  return eq(s, 60)
+}
+
+fun t265_forin_nested_array() -> i64 {
+  m = [[1, 2], [3, 4]]
+  s = 0
+  for row in m {
+    for x in row {
+      s = s + x
+    }
+  }
+  return eq(s, 10)
+}
+
+fun t266_mutex_double_unlock_noop() -> i64 {
+  mu = Mutex()
+  mu.lock()
+  mu.unlock()
+  mu.unlock()
+  return 0
+}
+
+fun t267_i64min_div_negone() -> i64 {
+  return eq((-9223372036854775808) / -1, -9223372036854775808)
+}
+
+fun t268_i64min_mod_negone() -> i64 {
+  return eq((-9223372036854775808) % -1, 0)
+}
+
+fun t269_comptime_i64min_div_fold() -> i64 {
+  x = (-9223372036854775808) / -1
+  return eq(x, -9223372036854775808)
+}
+
+fun t270_while_zero_iterations() -> i64 {
+  n = 0
+  while (0) {
+    n = n + 1
+  }
+  return eq(n, 0)
+}
+
+fun t270_while_zero_iterations() -> i64 {
+  n = 0
+  while (0) {
+    n = n + 1
+  }
+  return eq(n, 0)
+}
+fun main() { return 0 }

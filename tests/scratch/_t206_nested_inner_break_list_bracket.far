@@ -1,0 +1,16 @@
+fun t206_nested_inner_break_list_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (i = 0; i < 3; i = i + 1) {
+    for (j = 0; j < 5; j = j + 1) {
+      if (j == 2) {
+        break
+      }
+      lst.push(i * 10 + j)
+    }
+  }
+  lst[5] = 55
+  return eq(lst.get(5), 55)
+}
+
+
+fun main()->i64{return t206_nested_inner_break_list_bracket()}

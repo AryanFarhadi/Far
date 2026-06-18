@@ -1,0 +1,6 @@
+import fixtures.circ_a
+import fixtures.circ_b
+
+fun main() -> i64 {
+  return circ_b.val_b()
+}

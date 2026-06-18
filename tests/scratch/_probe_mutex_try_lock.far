@@ -1,0 +1,9 @@
+fun main() -> i64 {
+  m = Mutex()
+  if (m.try_lock() != 1) { return 1 }
+  if (m.try_lock() != 0) { return 2 }
+  m.unlock()
+  if (m.try_lock() != 1) { return 3 }
+  m.unlock()
+  return 0
+}

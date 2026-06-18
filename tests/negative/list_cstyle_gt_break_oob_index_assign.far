@@ -1,0 +1,11 @@
+fun main() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (i = 0; i < 10; i = i + 1) {
+    lst.push(i)
+    if (i > 2) {
+      break
+    }
+  }
+  lst[4] = 9
+  return 0
+}

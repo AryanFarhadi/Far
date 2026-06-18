@@ -1,0 +1,7 @@
+fun t159_nested_arr_index_oob_read() -> i64 {
+  a = [[1, 2], [3, 4]]
+  return eq(a[0][99], 0)
+}
+
+
+fun main() -> i64 { return t159_nested_arr_index_oob_read() }

@@ -1,0 +1,11 @@
+fun t12_deep_short_circuit() -> i64 {
+  n = 0
+  if (0 && (n = 1) != 0 && (n = 2) != 0) { return 1 }
+  if (n != 0) { return 2 }
+  x = 0
+  if (1 || (x = 1) != 0) { }
+  return eq(x, 0)
+}
+
+
+fun main() -> i64 { return t12_deep_short_circuit() }

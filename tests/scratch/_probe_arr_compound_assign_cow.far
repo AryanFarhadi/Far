@@ -1,0 +1,11 @@
+fun main() -> i64 {
+  a = [1, 2]
+  b = a
+  a[0] = a[0] + 1
+  if (b[0] != 1) { return 1 }
+  if (a[0] != 2) { return 2 }
+  b[0] = b[0] + 1
+  if (a[0] != 2) { return 3 }
+  if (b[0] != 2) { return 4 }
+  return 0
+}

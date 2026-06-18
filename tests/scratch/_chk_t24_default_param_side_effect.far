@@ -1,0 +1,9 @@
+fun t24_default_param_side_effect() -> i64 {
+  ctr = Counter(0)
+  if (with_ctr_default(ctr) != 1) { return 1 }
+  if (with_ctr_default(ctr) != 2) { return 2 }
+  return eq(with_ctr_default(ctr, 99), 99)
+}
+
+
+fun main() -> i64 { return t24_default_param_side_effect() }

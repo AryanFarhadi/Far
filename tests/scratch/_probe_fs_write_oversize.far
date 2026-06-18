@@ -1,0 +1,11 @@
+import fs
+
+fun main() -> i64 {
+  data = fs.read_text("far_fs_max_read_test.bin")
+  print(len(data))
+  big = data + "x"
+  print(len(big))
+  r = fs.write_text("far_fs_oversize_write_test.bin", big)
+  print(r)
+  return 0
+}

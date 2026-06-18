@@ -1,0 +1,8 @@
+fun rec(n: i64) -> i64 {
+  if (n <= 0) { return 0 }
+  return rec(n - 1) + 1
+}
+fun main() -> i64 {
+  return eq(rec(50), 50)
+}
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }

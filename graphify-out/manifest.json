@@ -1,0 +1,777 @@
+{
+  "E:\\Users\\Codex\\Projects\\Far\\build.sh": {
+    "mtime": 1781382875.5939448,
+    "ast_hash": "94831e523100b86538e39d2a8dcb36ef",
+    "semantic_hash": "94831e523100b86538e39d2a8dcb36ef"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\.vscode\\extensions.json": {
+    "mtime": 1781334794.1274257,
+    "ast_hash": "cf3c750c143b9fdafac0012555c3080e",
+    "semantic_hash": "cf3c750c143b9fdafac0012555c3080e"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\.vscode\\launch.json": {
+    "mtime": 1781334794.2219484,
+    "ast_hash": "33fdb7b3991cd0715ec167e30fc8e8f0",
+    "semantic_hash": "33fdb7b3991cd0715ec167e30fc8e8f0"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\.vscode\\settings.json": {
+    "mtime": 1781449734.1137497,
+    "ast_hash": "75e95b7ac262822772725f169d470383",
+    "semantic_hash": "75e95b7ac262822772725f169d470383"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\benchmark\\bench_util.h": {
+    "mtime": 1781674178.1749344,
+    "ast_hash": "c1e53fdc52455237aa47969dace078b0",
+    "semantic_hash": "c1e53fdc52455237aa47969dace078b0"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\benchmark\\collatz_sum.py": {
+    "mtime": 1781674188.6902487,
+    "ast_hash": "102f390892ce34148edd81979c743845",
+    "semantic_hash": "102f390892ce34148edd81979c743845"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\benchmark\\fib_iter.py": {
+    "mtime": 1781674659.8328226,
+    "ast_hash": "12c8dbd1f9998cf0dd2fbf932218c284",
+    "semantic_hash": "12c8dbd1f9998cf0dd2fbf932218c284"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\benchmark\\nested_loop.py": {
+    "mtime": 1781674202.7142956,
+    "ast_hash": "d821dd0a926d17cca724064791e1949a",
+    "semantic_hash": "d821dd0a926d17cca724064791e1949a"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\benchmark\\run_benchmark.sh": {
+    "mtime": 1781674823.013227,
+    "ast_hash": "50d227f9e67fcbded45a9a20f5e31ecf",
+    "semantic_hash": "50d227f9e67fcbded45a9a20f5e31ecf"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\benchmark\\sum_squares.py": {
+    "mtime": 1781674198.185058,
+    "ast_hash": "edc7c85b9ca248990cee783a552e567b",
+    "semantic_hash": "edc7c85b9ca248990cee783a552e567b"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\install\\windows\\install-far.ps1": {
+    "mtime": 1781449734.0777876,
+    "ast_hash": "61d024bd77d8305b26c781b3304505d6",
+    "semantic_hash": "61d024bd77d8305b26c781b3304505d6"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\install\\windows\\sync-far-install.ps1": {
+    "mtime": 1781449734.066241,
+    "ast_hash": "a3809022fb39df6512942c4be9a3b70b",
+    "semantic_hash": "a3809022fb39df6512942c4be9a3b70b"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\install\\windows\\uninstall-far.ps1": {
+    "mtime": 1781334794.2229471,
+    "ast_hash": "0ee35c20271fb435f464beaa2287d05b",
+    "semantic_hash": "0ee35c20271fb435f464beaa2287d05b"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\runtime\\far_pthread_win32.h": {
+    "mtime": 1781449734.0873663,
+    "ast_hash": "6280d1a2bbaf849a07b99b77f5f1b1c2",
+    "semantic_hash": "6280d1a2bbaf849a07b99b77f5f1b1c2"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\aggregate.cpp": {
+    "mtime": 1781556082.419195,
+    "ast_hash": "623bd3dc7211fa6d37ad24a87b500349",
+    "semantic_hash": "623bd3dc7211fa6d37ad24a87b500349"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\aggregate.h": {
+    "mtime": 1781248315.2034304,
+    "ast_hash": "7f3d9d2cf805c5f61cdb5c1ca36e82d3",
+    "semantic_hash": "7f3d9d2cf805c5f61cdb5c1ca36e82d3"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\aggregate_codegen.cpp": {
+    "mtime": 1781556082.4267328,
+    "ast_hash": "39e41f9d21f71028b011f497944039d9",
+    "semantic_hash": "39e41f9d21f71028b011f497944039d9"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\aggregate_codegen.h": {
+    "mtime": 1781376909.5649767,
+    "ast_hash": "864f170e42630210d8460914fd788f9e",
+    "semantic_hash": "864f170e42630210d8460914fd788f9e"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\ast.h": {
+    "mtime": 1781556082.4385061,
+    "ast_hash": "8b3203dc1d6ba5012be14bc97e1b72bf",
+    "semantic_hash": "8b3203dc1d6ba5012be14bc97e1b72bf"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\builtins.cpp": {
+    "mtime": 1781486287.843842,
+    "ast_hash": "0a9600a8087bc4c80d2436b26c309153",
+    "semantic_hash": "0a9600a8087bc4c80d2436b26c309153"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\builtins.h": {
+    "mtime": 1781248315.2034304,
+    "ast_hash": "5929decbc1c795225ed14b70507f2bd0",
+    "semantic_hash": "5929decbc1c795225ed14b70507f2bd0"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\codegen.cpp": {
+    "mtime": 1781750216.148895,
+    "ast_hash": "681a68fdac7fc942c73c23a7a93b3c90",
+    "semantic_hash": "681a68fdac7fc942c73c23a7a93b3c90"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\codegen.h": {
+    "mtime": 1781334794.0889044,
+    "ast_hash": "4b0187c22ae18a33fa833b971cdf4299",
+    "semantic_hash": "4b0187c22ae18a33fa833b971cdf4299"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\collections.cpp": {
+    "mtime": 1781767299.773521,
+    "ast_hash": "d8439e478db098c5e9ae18037e6e5a49",
+    "semantic_hash": "d8439e478db098c5e9ae18037e6e5a49"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\collections.h": {
+    "mtime": 1781743500.567906,
+    "ast_hash": "f3eed13734ae7c3b17226dc710febf49",
+    "semantic_hash": "f3eed13734ae7c3b17226dc710febf49"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\collection_codegen.cpp": {
+    "mtime": 1781767302.7887955,
+    "ast_hash": "b300535dabc9042e3ede61e17b8a9ade",
+    "semantic_hash": "b300535dabc9042e3ede61e17b8a9ade"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\collection_codegen.h": {
+    "mtime": 1781449734.094165,
+    "ast_hash": "ba46ebd920437024cc6b0ed28e057c31",
+    "semantic_hash": "ba46ebd920437024cc6b0ed28e057c31"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\comptime.cpp": {
+    "mtime": 1781731373.0999708,
+    "ast_hash": "a1d68070992843eaa11b38a786aadb37",
+    "semantic_hash": "a1d68070992843eaa11b38a786aadb37"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\comptime.h": {
+    "mtime": 1781676629.1488216,
+    "ast_hash": "eb4f29228615df71c08e03427b0ddeef",
+    "semantic_hash": "eb4f29228615df71c08e03427b0ddeef"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\concurrency.cpp": {
+    "mtime": 1781714036.4801795,
+    "ast_hash": "edf212b27ee00a18b4820e2f0e46c82e",
+    "semantic_hash": "edf212b27ee00a18b4820e2f0e46c82e"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\concurrency.h": {
+    "mtime": 1781714033.7030492,
+    "ast_hash": "9dec7c8daa299a94b91f3c653eb637d4",
+    "semantic_hash": "9dec7c8daa299a94b91f3c653eb637d4"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\concurrency_codegen.cpp": {
+    "mtime": 1781714036.7808392,
+    "ast_hash": "27bd5bc0c903dca1be23cff7d01dccf4",
+    "semantic_hash": "27bd5bc0c903dca1be23cff7d01dccf4"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\concurrency_codegen.h": {
+    "mtime": 1781471815.2129786,
+    "ast_hash": "d49a9ae72bc87de8cb0bafddbb49a3b4",
+    "semantic_hash": "d49a9ae72bc87de8cb0bafddbb49a3b4"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\error.cpp": {
+    "mtime": 1781711972.6824129,
+    "ast_hash": "8a1122f0c3269bb29b639ef20c7c8bbd",
+    "semantic_hash": "8a1122f0c3269bb29b639ef20c7c8bbd"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\error.h": {
+    "mtime": 1781491178.4019248,
+    "ast_hash": "96a31be90f6787baf673cab0ca744ce1",
+    "semantic_hash": "96a31be90f6787baf673cab0ca744ce1"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\errors.cpp": {
+    "mtime": 1781556082.4279602,
+    "ast_hash": "f234fe3fef9a46ae9a9709415293d7f5",
+    "semantic_hash": "f234fe3fef9a46ae9a9709415293d7f5"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\errors.h": {
+    "mtime": 1781334794.193427,
+    "ast_hash": "b7fdfe8f2c61c017a999cb308a433c2f",
+    "semantic_hash": "b7fdfe8f2c61c017a999cb308a433c2f"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\errors_codegen.cpp": {
+    "mtime": 1781556082.4252236,
+    "ast_hash": "a3a468650d577eb041daccce77d8a332",
+    "semantic_hash": "a3a468650d577eb041daccce77d8a332"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\errors_codegen.h": {
+    "mtime": 1781556082.4279602,
+    "ast_hash": "e588eb215f375ee0f446612ea8c5d93c",
+    "semantic_hash": "e588eb215f375ee0f446612ea8c5d93c"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\far_io.cpp": {
+    "mtime": 1781449734.0591948,
+    "ast_hash": "d0d7995a9a642c0f9eac3224676e3813",
+    "semantic_hash": "d0d7995a9a642c0f9eac3224676e3813"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\far_io.h": {
+    "mtime": 1781449734.0752506,
+    "ast_hash": "b9fd4e384051d761a279a0ce33a02b71",
+    "semantic_hash": "b9fd4e384051d761a279a0ce33a02b71"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\far_modern.cpp": {
+    "mtime": 1781384290.397348,
+    "ast_hash": "04b7546d6187248f72622b44bb8d7a73",
+    "semantic_hash": "04b7546d6187248f72622b44bb8d7a73"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\far_modern.h": {
+    "mtime": 1781334794.2219484,
+    "ast_hash": "fe9905062c4977d2da0b32c51cca8f6c",
+    "semantic_hash": "fe9905062c4977d2da0b32c51cca8f6c"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\far_net.cpp": {
+    "mtime": 1781449734.0896244,
+    "ast_hash": "853fcc944c873ea5578a657be132b3cd",
+    "semantic_hash": "853fcc944c873ea5578a657be132b3cd"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\far_net.h": {
+    "mtime": 1781334794.2219484,
+    "ast_hash": "648afdb2ea86774e064cdd4dbf96035e",
+    "semantic_hash": "648afdb2ea86774e064cdd4dbf96035e"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\far_perf.cpp": {
+    "mtime": 1781334794.2229471,
+    "ast_hash": "761ab10921ea49b3c433fcc262e83a24",
+    "semantic_hash": "761ab10921ea49b3c433fcc262e83a24"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\far_perf.h": {
+    "mtime": 1781334794.0909047,
+    "ast_hash": "0e88943054ce17d63e1416bb05841fb9",
+    "semantic_hash": "0e88943054ce17d63e1416bb05841fb9"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\far_science.cpp": {
+    "mtime": 1781334794.1314244,
+    "ast_hash": "f66c00492aea8000756b12eb315ba2fa",
+    "semantic_hash": "f66c00492aea8000756b12eb315ba2fa"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\far_science.h": {
+    "mtime": 1781334794.223946,
+    "ast_hash": "793568cc41de334657f0f5d63e6c51f6",
+    "semantic_hash": "793568cc41de334657f0f5d63e6c51f6"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\far_security.cpp": {
+    "mtime": 1781334794.2229471,
+    "ast_hash": "c16fe2b9562221eb9aa52d2f2ececcbb",
+    "semantic_hash": "c16fe2b9562221eb9aa52d2f2ececcbb"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\far_security.h": {
+    "mtime": 1781334794.2229471,
+    "ast_hash": "52e54c6c873131d3bdfca29c76bd8b1e",
+    "semantic_hash": "52e54c6c873131d3bdfca29c76bd8b1e"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\far_stdlib.cpp": {
+    "mtime": 1781334794.2004342,
+    "ast_hash": "68fda2390416b7109b90114588d4fa53",
+    "semantic_hash": "68fda2390416b7109b90114588d4fa53"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\far_stdlib.h": {
+    "mtime": 1781377171.5166998,
+    "ast_hash": "a8ee6fc474cf3622def3ae06500a46f8",
+    "semantic_hash": "a8ee6fc474cf3622def3ae06500a46f8"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\far_stdlib_modules.cpp": {
+    "mtime": 1781486287.9366372,
+    "ast_hash": "3dd9551d977b7dbddb21bedb46c88784",
+    "semantic_hash": "3dd9551d977b7dbddb21bedb46c88784"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\functions.cpp": {
+    "mtime": 1781495542.7982671,
+    "ast_hash": "feebf7433fbdeebe4093677077aa0186",
+    "semantic_hash": "feebf7433fbdeebe4093677077aa0186"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\functions.h": {
+    "mtime": 1781449734.1137497,
+    "ast_hash": "3ede956c405e5ee98f6d04c7a66ff6b7",
+    "semantic_hash": "3ede956c405e5ee98f6d04c7a66ff6b7"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\generics.cpp": {
+    "mtime": 1781469388.0226636,
+    "ast_hash": "bce5d6679f5dc3eeb7e9a38481416698",
+    "semantic_hash": "bce5d6679f5dc3eeb7e9a38481416698"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\generics.h": {
+    "mtime": 1781334794.2014344,
+    "ast_hash": "06c36e2623f0abc07112706859b3bd37",
+    "semantic_hash": "06c36e2623f0abc07112706859b3bd37"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\geom_class.cpp": {
+    "mtime": 1781379853.1379335,
+    "ast_hash": "abfad4c4e21b78da62e04b6e0dd91c97",
+    "semantic_hash": "abfad4c4e21b78da62e04b6e0dd91c97"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\geom_class.h": {
+    "mtime": 1781379655.3577135,
+    "ast_hash": "96f9ee63e12ea257e06aee840a5c2364",
+    "semantic_hash": "96f9ee63e12ea257e06aee840a5c2364"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\lexer.cpp": {
+    "mtime": 1781764464.5098207,
+    "ast_hash": "79f6719229be9573065e8b7966a71611",
+    "semantic_hash": "79f6719229be9573065e8b7966a71611"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\lexer.h": {
+    "mtime": 1781724122.1713512,
+    "ast_hash": "7e5128d56f11ec4f0604ff172d16c24f",
+    "semantic_hash": "7e5128d56f11ec4f0604ff172d16c24f"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\macros.cpp": {
+    "mtime": 1781730885.911238,
+    "ast_hash": "46a094ad8d7f07c6f98d176fa083fb12",
+    "semantic_hash": "46a094ad8d7f07c6f98d176fa083fb12"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\macros.h": {
+    "mtime": 1781334794.125424,
+    "ast_hash": "92864608453b8acd38fcc39c942ae6d9",
+    "semantic_hash": "92864608453b8acd38fcc39c942ae6d9"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\main.cpp": {
+    "mtime": 1781719089.269833,
+    "ast_hash": "29b5efb6a4f824c9869391ced83e53dd",
+    "semantic_hash": "29b5efb6a4f824c9869391ced83e53dd"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\memory.cpp": {
+    "mtime": 1781744576.593039,
+    "ast_hash": "621884b9ea64e650e6445661cf011f43",
+    "semantic_hash": "621884b9ea64e650e6445661cf011f43"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\memory.h": {
+    "mtime": 1781334794.2229471,
+    "ast_hash": "a4766ced73a31969c527175e1d8dfb06",
+    "semantic_hash": "a4766ced73a31969c527175e1d8dfb06"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\memory_codegen.cpp": {
+    "mtime": 1781744574.693792,
+    "ast_hash": "d0304af3c87bedc0856bbb1bed727be4",
+    "semantic_hash": "d0304af3c87bedc0856bbb1bed727be4"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\memory_codegen.h": {
+    "mtime": 1781334794.0909047,
+    "ast_hash": "34925968cd4b5ffae2995609a5b5b399",
+    "semantic_hash": "34925968cd4b5ffae2995609a5b5b399"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\modules.cpp": {
+    "mtime": 1781753712.0694218,
+    "ast_hash": "9985095c8213cb5be61c0fbc0b4d8603",
+    "semantic_hash": "9985095c8213cb5be61c0fbc0b4d8603"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\modules.h": {
+    "mtime": 1781334794.125424,
+    "ast_hash": "9e8c17148780a8356b6220d7ba8ce003",
+    "semantic_hash": "9e8c17148780a8356b6220d7ba8ce003"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\object_codegen.cpp": {
+    "mtime": 1781485032.5767288,
+    "ast_hash": "0170dbb3ec9f9029203cfe40b845feb1",
+    "semantic_hash": "0170dbb3ec9f9029203cfe40b845feb1"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\object_codegen.h": {
+    "mtime": 1781334794.0899038,
+    "ast_hash": "3801f0d731ef83d8889944cf1274d2a1",
+    "semantic_hash": "3801f0d731ef83d8889944cf1274d2a1"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\object_model.cpp": {
+    "mtime": 1781449734.066241,
+    "ast_hash": "8e126ceb590010956e340fb2a40cf330",
+    "semantic_hash": "8e126ceb590010956e340fb2a40cf330"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\object_model.h": {
+    "mtime": 1781334794.2229471,
+    "ast_hash": "44be2de6518d9a539849dae1e617cffc",
+    "semantic_hash": "44be2de6518d9a539849dae1e617cffc"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\parser.cpp": {
+    "mtime": 1781709706.9397354,
+    "ast_hash": "29e4cd2538a9a03da8c17597ef70a356",
+    "semantic_hash": "29e4cd2538a9a03da8c17597ef70a356"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\parser.h": {
+    "mtime": 1781673257.6301296,
+    "ast_hash": "d1ddb35084695a1f629e96cd7bf6ba60",
+    "semantic_hash": "d1ddb35084695a1f629e96cd7bf6ba60"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\pattern.cpp": {
+    "mtime": 1781467449.9752414,
+    "ast_hash": "69f04299a3ea644732591414e91edf56",
+    "semantic_hash": "69f04299a3ea644732591414e91edf56"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\pattern.h": {
+    "mtime": 1781334794.2229471,
+    "ast_hash": "670f7ad5e6f10aae65e1d2151527f2b6",
+    "semantic_hash": "670f7ad5e6f10aae65e1d2151527f2b6"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\pattern_codegen.cpp": {
+    "mtime": 1781556082.4591644,
+    "ast_hash": "d3a16055d04cecffb716704e9f61ad9e",
+    "semantic_hash": "d3a16055d04cecffb716704e9f61ad9e"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\pattern_codegen.h": {
+    "mtime": 1781334794.125424,
+    "ast_hash": "3afe0b38b5005521c29c1da39e5bb5f1",
+    "semantic_hash": "3afe0b38b5005521c29c1da39e5bb5f1"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\string_codegen.cpp": {
+    "mtime": 1781383176.6887746,
+    "ast_hash": "9ca1870961c0ea7d5d427a8af7f67bfb",
+    "semantic_hash": "9ca1870961c0ea7d5d427a8af7f67bfb"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\string_codegen.h": {
+    "mtime": 1781382937.2194717,
+    "ast_hash": "e673bf132b181ad9af96938458b24951",
+    "semantic_hash": "e673bf132b181ad9af96938458b24951"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\string_methods.cpp": {
+    "mtime": 1781383168.874923,
+    "ast_hash": "770d696b95ace412692c00a389e916ba",
+    "semantic_hash": "770d696b95ace412692c00a389e916ba"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\string_methods.h": {
+    "mtime": 1781383167.628775,
+    "ast_hash": "67b1d83a67a2ae863e9657e5921c2fb8",
+    "semantic_hash": "67b1d83a67a2ae863e9657e5921c2fb8"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\target.cpp": {
+    "mtime": 1781449734.0627034,
+    "ast_hash": "ebd35e7084ccf7e81916013fd1759fce",
+    "semantic_hash": "ebd35e7084ccf7e81916013fd1759fce"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\target.h": {
+    "mtime": 1781334794.0899038,
+    "ast_hash": "c33e88289b8edcf243403f26938ce2ca",
+    "semantic_hash": "c33e88289b8edcf243403f26938ce2ca"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\typecheck.cpp": {
+    "mtime": 1781766998.3585835,
+    "ast_hash": "1407c3a7a5cc68706026bba21ae428ba",
+    "semantic_hash": "1407c3a7a5cc68706026bba21ae428ba"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\typecheck.h": {
+    "mtime": 1781248315.2129498,
+    "ast_hash": "f3a18644d58a627823eb605c8a0ab0d3",
+    "semantic_hash": "f3a18644d58a627823eb605c8a0ab0d3"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\types.cpp": {
+    "mtime": 1781492289.9275515,
+    "ast_hash": "e97675ebfb827f94ce09f6c870081953",
+    "semantic_hash": "e97675ebfb827f94ce09f6c870081953"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\types.h": {
+    "mtime": 1781492278.7998886,
+    "ast_hash": "1a3eae1276b647140fef42a5ee3584b4",
+    "semantic_hash": "1a3eae1276b647140fef42a5ee3584b4"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\type_desc.cpp": {
+    "mtime": 1781556082.4385061,
+    "ast_hash": "b31dc0c4977492efffcd35e142a3aa9e",
+    "semantic_hash": "b31dc0c4977492efffcd35e142a3aa9e"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\src\\type_desc.h": {
+    "mtime": 1781556082.4181812,
+    "ast_hash": "fbea390b4640fa5ba5c2f804144192d8",
+    "semantic_hash": "fbea390b4640fa5ba5c2f804144192d8"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\tests\\scratch\\_audit_probe.ps1": {
+    "mtime": 1781673257.66561,
+    "ast_hash": "09d19ef5007d74ea7b3b213bfc012fdf",
+    "semantic_hash": "09d19ef5007d74ea7b3b213bfc012fdf"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\tests\\scratch\\_audit_probe2.ps1": {
+    "mtime": 1781673257.6556084,
+    "ast_hash": "e479dc119af6f60c80946beadbee846b",
+    "semantic_hash": "e479dc119af6f60c80946beadbee846b"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\tools\\convert-stdlib-to-classes.mjs": {
+    "mtime": 1781376909.1688077,
+    "ast_hash": "d9660f6272f5a5c8fd0edadee6508322",
+    "semantic_hash": "d9660f6272f5a5c8fd0edadee6508322"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\tools\\debug-run-all-tests.mjs": {
+    "mtime": 1781673679.2664943,
+    "ast_hash": "ab38b6280ceaeca9d7e6542fdff88498",
+    "semantic_hash": "ab38b6280ceaeca9d7e6542fdff88498"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\tools\\debug-run-max-tests.mjs": {
+    "mtime": 1781449734.0627034,
+    "ast_hash": "35dacfe1253f37b7893587f11fc98561",
+    "semantic_hash": "35dacfe1253f37b7893587f11fc98561"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\tools\\ensure_fs_max_read_fixture.ps1": {
+    "mtime": 1781728664.4399288,
+    "ast_hash": "d8d0b66ac06786b5f02aa5b73dea3a1f",
+    "semantic_hash": "d8d0b66ac06786b5f02aa5b73dea3a1f"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\tools\\ensure_oversize_fs_fixture.ps1": {
+    "mtime": 1781727116.9859316,
+    "ast_hash": "f8f9194a923fd5fda4bb6b7e1e08650f",
+    "semantic_hash": "f8f9194a923fd5fda4bb6b7e1e08650f"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\tools\\ensure_oversize_import.ps1": {
+    "mtime": 1781711568.4803593,
+    "ast_hash": "87645434880411c61038d9fbdb6edd82",
+    "semantic_hash": "87645434880411c61038d9fbdb6edd82"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\tools\\fix-flatten-legacy.mjs": {
+    "mtime": 1781376908.8442726,
+    "ast_hash": "b8f513fd8002789554ad35d81aab9ba6",
+    "semantic_hash": "b8f513fd8002789554ad35d81aab9ba6"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\tools\\fix-stdlib-bodies.mjs": {
+    "mtime": 1781376909.2569604,
+    "ast_hash": "a6883d2128d27e4cb8014c0d0f845cf1",
+    "semantic_hash": "a6883d2128d27e4cb8014c0d0f845cf1"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\tools\\flatten-stdlib-namespaces.mjs": {
+    "mtime": 1781376908.81769,
+    "ast_hash": "fd4cffe902f8d1244c74e15ac93bbd9a",
+    "semantic_hash": "fd4cffe902f8d1244c74e15ac93bbd9a"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\tools\\generate-core-api.mjs": {
+    "mtime": 1781449734.118794,
+    "ast_hash": "85bedd0461f8802d95f95726f150cc79",
+    "semantic_hash": "85bedd0461f8802d95f95726f150cc79"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\tools\\generate-geom-classes.mjs": {
+    "mtime": 1781380173.6886642,
+    "ast_hash": "7ea650df2b9ad627ee070cf61e442a4b",
+    "semantic_hash": "7ea650df2b9ad627ee070cf61e442a4b"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\tools\\generate-math-module.mjs": {
+    "mtime": 1781377207.7744744,
+    "ast_hash": "8ab897dd12a2052555b3735e29997d6d",
+    "semantic_hash": "8ab897dd12a2052555b3735e29997d6d"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\tools\\generate-stdlib-modules.mjs": {
+    "mtime": 1781376908.907627,
+    "ast_hash": "8d1ca79f35660de96e1277021ce5c75b",
+    "semantic_hash": "8d1ca79f35660de96e1277021ce5c75b"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\tools\\generate-stdlib-namespaces.mjs": {
+    "mtime": 1781378318.6710687,
+    "ast_hash": "e764fb648f3c985a0a3dfb01f102c193",
+    "semantic_hash": "e764fb648f3c985a0a3dfb01f102c193"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\tools\\generate-suite-max.mjs": {
+    "mtime": 1781673674.0027595,
+    "ast_hash": "1b35cf83f1ac0cb376aed20c4bb80f09",
+    "semantic_hash": "1b35cf83f1ac0cb376aed20c4bb80f09"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\tools\\generate_suite_10000.mjs": {
+    "mtime": 1781673671.648918,
+    "ast_hash": "984c6f7e3e6fdb7e720dde961135f634",
+    "semantic_hash": "984c6f7e3e6fdb7e720dde961135f634"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\tools\\migrate-flat-imports.mjs": {
+    "mtime": 1781378221.6204038,
+    "ast_hash": "3fa884081fa30cadc1453a28e87d6801",
+    "semantic_hash": "3fa884081fa30cadc1453a28e87d6801"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\tools\\migrate-geom-namespace.mjs": {
+    "mtime": 1781379705.868438,
+    "ast_hash": "78ef73e2324c731811e60646f44e8044",
+    "semantic_hash": "78ef73e2324c731811e60646f44e8044"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\tools\\migrate-geom-syntax.mjs": {
+    "mtime": 1781376909.6753812,
+    "ast_hash": "78635a723f3c9bf0be37bef9718d13c6",
+    "semantic_hash": "78635a723f3c9bf0be37bef9718d13c6"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\tools\\migrate-oop-pass2.mjs": {
+    "mtime": 1781376909.287537,
+    "ast_hash": "7f3ce4a65487f0474ead21f9d679eb51",
+    "semantic_hash": "7f3ce4a65487f0474ead21f9d679eb51"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\tools\\migrate-oop-syntax.mjs": {
+    "mtime": 1781376909.1828554,
+    "ast_hash": "642920b1b4e339b402428a444c806c1c",
+    "semantic_hash": "642920b1b4e339b402428a444c806c1c"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\tools\\migrate-python-imports.mjs": {
+    "mtime": 1781378311.8115525,
+    "ast_hash": "199f4bcf732d4404e024a3127a6690b4",
+    "semantic_hash": "199f4bcf732d4404e024a3127a6690b4"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\tools\\run_fs_write_oversize_rt_test.ps1": {
+    "mtime": 1781739450.2534146,
+    "ast_hash": "ec96523e70deee78c5162261f30a0db5",
+    "semantic_hash": "ec96523e70deee78c5162261f30a0db5"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\tools\\run_tests.ps1": {
+    "mtime": 1781728993.6325202,
+    "ast_hash": "b1568bb5bc559d8b4ad75e13a59cf898",
+    "semantic_hash": "b1568bb5bc559d8b4ad75e13a59cf898"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\tools\\run_with_timeout.ps1": {
+    "mtime": 1781712361.9830277,
+    "ast_hash": "f79472a47349496ff8f9bfb62804ec57",
+    "semantic_hash": "f79472a47349496ff8f9bfb62804ec57"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\tools\\update-stdlib-imports.mjs": {
+    "mtime": 1781376908.8613284,
+    "ast_hash": "d108a954a083027c25960c61fc57dad3",
+    "semantic_hash": "d108a954a083027c25960c61fc57dad3"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\vscode\\extension.js": {
+    "mtime": 1781449734.0997932,
+    "ast_hash": "b98429b00cb535db7eb5f5fc9d01ff8f",
+    "semantic_hash": "b98429b00cb535db7eb5f5fc9d01ff8f"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\vscode\\far-syntax-colors.js": {
+    "mtime": 1781449734.084326,
+    "ast_hash": "f2290df9598a1a6fe2f43839c6f4fd54",
+    "semantic_hash": "f2290df9598a1a6fe2f43839c6f4fd54"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\vscode\\intellisense.js": {
+    "mtime": 1781449734.0726357,
+    "ast_hash": "a2c0ed19585a0cabbf3a018b7d2f067e",
+    "semantic_hash": "a2c0ed19585a0cabbf3a018b7d2f067e"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\vscode\\language-configuration.json": {
+    "mtime": 1781334794.2229471,
+    "ast_hash": "ab45351ce5285ab0fed0c497aeb240e5",
+    "semantic_hash": "ab45351ce5285ab0fed0c497aeb240e5"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\vscode\\package.json": {
+    "mtime": 1781449734.1017954,
+    "ast_hash": "c969a88b6149a8f9cc452a908dd8a37d",
+    "semantic_hash": "c969a88b6149a8f9cc452a908dd8a37d"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\vscode\\test-intellisense.mjs": {
+    "mtime": 1781449734.066241,
+    "ast_hash": "b94b8df20623f478f32d978fd4fd1c79",
+    "semantic_hash": "b94b8df20623f478f32d978fd4fd1c79"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\vscode\\vscode-shim.js": {
+    "mtime": 1781449734.103302,
+    "ast_hash": "c318647359c26cbf89c0662e6c7fff7f",
+    "semantic_hash": "c318647359c26cbf89c0662e6c7fff7f"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\vscode\\data\\aggregate-types.json": {
+    "mtime": 1781382535.7351427,
+    "ast_hash": "ee20bc93a371ae48d033a4b1a338ec30",
+    "semantic_hash": "ee20bc93a371ae48d033a4b1a338ec30"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\vscode\\data\\core-api.json": {
+    "mtime": 1781449734.1101797,
+    "ast_hash": "1948982a94dc684a31009aada23ff155",
+    "semantic_hash": "1948982a94dc684a31009aada23ff155"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\vscode\\data\\io-builtins.json": {
+    "mtime": 1781449734.0711303,
+    "ast_hash": "b84e18ae92384c8f98ed92cd356c1250",
+    "semantic_hash": "b84e18ae92384c8f98ed92cd356c1250"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\vscode\\data\\stdlib-classes.json": {
+    "mtime": 1781449734.0627034,
+    "ast_hash": "a0fb13591c8a3e186ccc131ea7754fc0",
+    "semantic_hash": "a0fb13591c8a3e186ccc131ea7754fc0"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\vscode\\scripts\\build-vsix.ps1": {
+    "mtime": 1781449734.1056418,
+    "ast_hash": "c87833db82975b927cc19c1620839446",
+    "semantic_hash": "c87833db82975b927cc19c1620839446"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\vscode\\scripts\\create-far-file-icon.ps1": {
+    "mtime": 1781449734.100796,
+    "ast_hash": "b7b87824ac2c0daa16dcdb35c767f1f7",
+    "semantic_hash": "b7b87824ac2c0daa16dcdb35c767f1f7"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\vscode\\scripts\\generate-core-api.mjs": {
+    "mtime": 1781334794.1684246,
+    "ast_hash": "69020c27e223bcaac58c47bf4dfaa079",
+    "semantic_hash": "69020c27e223bcaac58c47bf4dfaa079"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\vscode\\scripts\\register-far-windows.ps1": {
+    "mtime": 1781449734.1056418,
+    "ast_hash": "c23fea1cf7b8cf2ed34af181223325e1",
+    "semantic_hash": "c23fea1cf7b8cf2ed34af181223325e1"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\vscode\\scripts\\SFTA.ps1": {
+    "mtime": 1781346180.6143708,
+    "ast_hash": "0b6d4566dfe932188a97822054f9d7c6",
+    "semantic_hash": "0b6d4566dfe932188a97822054f9d7c6"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\vscode\\snippets\\far.json": {
+    "mtime": 1781449734.0637293,
+    "ast_hash": "9e774515afb9d756a488bd25fd46aa7f",
+    "semantic_hash": "9e774515afb9d756a488bd25fd46aa7f"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\vscode\\syntaxes\\far.tmLanguage.json": {
+    "mtime": 1781449734.1017954,
+    "ast_hash": "a50896dac9071a9344a4377b17ceec02",
+    "semantic_hash": "a50896dac9071a9344a4377b17ceec02"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\vscode\\themes\\far-syntax-color-theme.json": {
+    "mtime": 1781449734.1132405,
+    "ast_hash": "68ecf37059960de905bda95c00427177",
+    "semantic_hash": "68ecf37059960de905bda95c00427177"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\far_sandbox_ok.txt": {
+    "mtime": 1781726619.9169822,
+    "ast_hash": "444bcb3a3fcf8389296c49467f27e1d6",
+    "semantic_hash": "444bcb3a3fcf8389296c49467f27e1d6"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\README.md": {
+    "mtime": 1781679224.175622,
+    "ast_hash": "86c56ecec08f00f36315ceb83bb41473",
+    "semantic_hash": "86c56ecec08f00f36315ceb83bb41473"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\test_final.txt": {
+    "mtime": 1781714619.3985174,
+    "ast_hash": "1e8d4fd8d292d2e216329008fcfa42ed",
+    "semantic_hash": "1e8d4fd8d292d2e216329008fcfa42ed"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\test_out.txt": {
+    "mtime": 1781714317.9057689,
+    "ast_hash": "1e8d4fd8d292d2e216329008fcfa42ed",
+    "semantic_hash": "1e8d4fd8d292d2e216329008fcfa42ed"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\test_out2.txt": {
+    "mtime": 1781714409.405673,
+    "ast_hash": "1e8d4fd8d292d2e216329008fcfa42ed",
+    "semantic_hash": "1e8d4fd8d292d2e216329008fcfa42ed"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\test_run_out.txt": {
+    "mtime": 1781744881.0921507,
+    "ast_hash": "5fbd3a2874ab6af54e44018d2702564c",
+    "semantic_hash": "5fbd3a2874ab6af54e44018d2702564c"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\test_run_output.txt": {
+    "mtime": 1781708114.7533765,
+    "ast_hash": "4b3caa8adc6de503defb68fe288e2e07",
+    "semantic_hash": "4b3caa8adc6de503defb68fe288e2e07"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\benchmark\\README.md": {
+    "mtime": 1781674787.6987402,
+    "ast_hash": "aaf55d1d94a48ffed3343b2952206ada",
+    "semantic_hash": "aaf55d1d94a48ffed3343b2952206ada"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\install\\README.md": {
+    "mtime": 1781334794.1744268,
+    "ast_hash": "a18cc4ccd236ecc8106d826606ded5e2",
+    "semantic_hash": "a18cc4ccd236ecc8106d826606ded5e2"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\tests\\far_modern_pkg.txt": {
+    "mtime": 1781334794.1314244,
+    "ast_hash": "96a95891a1b828b6c20b396c19864f5a",
+    "semantic_hash": "96a95891a1b828b6c20b396c19864f5a"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\tests\\README.md": {
+    "mtime": 1781673688.1085296,
+    "ast_hash": "37718d61d7a2b8872cc68aebc633db04",
+    "semantic_hash": "37718d61d7a2b8872cc68aebc633db04"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\vscode\\README.md": {
+    "mtime": 1781358570.1533723,
+    "ast_hash": "46315ac08852ca1fb21958abf4113c4a",
+    "semantic_hash": "46315ac08852ca1fb21958abf4113c4a"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\vscode\\icons\\far-dark.svg": {
+    "mtime": 1781449734.1111794,
+    "ast_hash": "a8748495d56da2d302bce9d11eb03693",
+    "semantic_hash": "a8748495d56da2d302bce9d11eb03693"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\vscode\\icons\\far-file.png": {
+    "mtime": 1781382535.6193447,
+    "ast_hash": "000f01eea9568d6d60a40a49354f7f77",
+    "semantic_hash": "000f01eea9568d6d60a40a49354f7f77"
+  },
+  "E:\\Users\\Codex\\Projects\\Far\\vscode\\icons\\far-light.svg": {
+    "mtime": 1781449734.0726357,
+    "ast_hash": "da2317c0132f4541e33b705c8dbdd344",
+    "semantic_hash": "da2317c0132f4541e33b705c8dbdd344"
+  }
+}

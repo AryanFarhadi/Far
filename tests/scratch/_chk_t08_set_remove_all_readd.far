@@ -1,0 +1,18 @@
+fun t08_set_remove_all_readd() -> i64 {
+  st: Set<i64> = Set<i64>()
+  i = 0
+  while (i < 8) {
+    st.add(i)
+    i = i + 1
+  }
+  i = 0
+  while (i < 8) {
+    st.remove(i)
+    i = i + 1
+  }
+  st.add(42)
+  return eq(st.contains(42), 1)
+}
+
+
+fun main() -> i64 { return t08_set_remove_all_readd() }

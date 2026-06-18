@@ -1,0 +1,11 @@
+import fs
+import security
+
+fun main() -> i64 {
+  sandbox.open_sandbox(2)
+  sandbox.allow_path("allowed_only.txt")
+  if (fs.is_file("denied_secret.txt")) { return 1 }
+  if (fs.is_dir("denied_dir")) { return 2 }
+  sandbox.close_sandbox()
+  return 0
+}

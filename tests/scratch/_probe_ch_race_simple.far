@@ -1,0 +1,8 @@
+﻿fun ch_race() -> i64 {
+  ch = Channel<i64>(1)
+  h = spawn { ch.send(42); return 0 }
+  v = ch.recv()
+  threads.join(h)
+  return v
+}
+fun main() -> i64 { return ch_race() }

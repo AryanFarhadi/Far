@@ -1,0 +1,11 @@
+fun t22_match_wildcard_source_order() -> i64 {
+  match 2 {
+    1 => return 1
+    _ => return 0
+    2 => return 2
+  }
+  return 99
+}
+
+
+fun main() -> i64 { return t22_match_wildcard_source_order() }

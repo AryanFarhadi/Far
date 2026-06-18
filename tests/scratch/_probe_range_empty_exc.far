@@ -1,0 +1,1 @@
+﻿fun main() { n=0; for i in 5..<5 { n=1 }; return n }

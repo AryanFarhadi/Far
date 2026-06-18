@@ -1,0 +1,6 @@
+fun t77_fs_missing_read_empty() -> i64 {
+  return eq(len(fs.read_text("far_harden_missing_xyz_999.far")), 0)
+}
+
+
+fun main() -> i64 { return t77_fs_missing_read_empty() }

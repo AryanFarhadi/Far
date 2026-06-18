@@ -1,0 +1,9 @@
+import perf
+fun add_one(x: i64) -> i64 { return x + 1 }
+fun main() {
+  h = spawn add_one(41)
+  sleep(100)
+  r = threads.join(h)
+  print(r)
+  return 0
+}

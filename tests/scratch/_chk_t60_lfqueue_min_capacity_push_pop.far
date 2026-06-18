@@ -1,0 +1,9 @@
+fun t60_lfqueue_min_capacity_push_pop() -> i64 {
+  q = LockFreeQueue<i64>(1)
+  if (q.push(3) != 0) { return 1 }
+  if (q.push(4) != -1) { return 2 }
+  return eq(q.pop(), 3)
+}
+
+
+fun main() -> i64 { return t60_lfqueue_min_capacity_push_pop() }

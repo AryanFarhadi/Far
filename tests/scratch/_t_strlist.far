@@ -1,0 +1,5 @@
+fun main() -> i64 {
+  lst: List<string> = List<string>()
+  lst.push("a")
+  return 0
+}

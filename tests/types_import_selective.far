@@ -1,0 +1,29 @@
+import fixtures.exp_a { alpha }
+import fixtures.exp_b { visible as beta }
+import fixtures.exp_gadget { Gadget }
+
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+
+fun t01_alpha() -> i64 {
+  return eq(alpha(), 10)
+}
+
+fun t02_visible_private_helper() -> i64 {
+  return eq(beta(), 99)
+}
+
+fun t03_alias_coexist_sum() -> i64 {
+  return eq(alpha() + beta(), 109)
+}
+
+fun t04_type_import_private_ctor_helper() -> i64 {
+  g = Gadget()
+  return eq(g.val, 7)
+}
+
+fun main() -> i64 {
+  r = t01_alpha(); if (r != 0) { return r }
+  r = t02_visible_private_helper(); if (r != 0) { return r }
+  r = t03_alias_coexist_sum(); if (r != 0) { return r }
+  return t04_type_import_private_ctor_helper()
+}

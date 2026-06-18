@@ -18,7 +18,13 @@ for %%f in (tests\negative\*.far) do (
 
     echo|set /p="neg   %%~nxf ... "
 
-    call :do_neg_check "%%f"
+    if /i "%%~nxf"=="codegen_expr_depth.far" (
+      call :do_neg_emit_ir "%%f"
+    ) else if /i "%%~nxf"=="runtime_binop_depth.far" (
+      call :do_neg_emit_ir "%%f"
+    ) else (
+      call :do_neg_check "%%f"
+    )
 
   )
 
@@ -47,6 +53,26 @@ if errorlevel 1 (
 )
 
 echo FAIL ^(expected compile error^)
+
+set /a FAIL+=1
+
+exit /b 0
+
+:do_neg_emit_ir
+
+"%FAR%" emit-ir "%~1" >nul 2>&1
+
+if errorlevel 1 (
+
+  echo ok
+
+  set /a PASS+=1
+
+  exit /b 0
+
+)
+
+echo FAIL ^(expected codegen error^)
 
 set /a FAIL+=1
 

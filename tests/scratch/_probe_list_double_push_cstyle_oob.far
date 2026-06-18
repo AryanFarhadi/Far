@@ -1,0 +1,10 @@
+fun t_double_push_cstyle() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (i = 0; i < 2; i = i + 1) {
+    lst.push(i)
+    lst.push(i + 10)
+  }
+  lst[3] = 99
+  return 0
+}
+fun main() { return t_double_push_cstyle() }

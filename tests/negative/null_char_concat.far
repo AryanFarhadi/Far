@@ -1,0 +1,4 @@
+fun main() {
+  s = "a" + char(0) + "b"
+  return 0
+}

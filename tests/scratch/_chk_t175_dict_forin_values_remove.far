@@ -1,0 +1,15 @@
+fun t175_dict_forin_values_remove() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d.set(1, 10)
+  d.set(2, 20)
+  d.set(3, 30)
+  sum = 0
+  for v in d.values() {
+    sum = sum + v
+    if (v == 20) { d.remove(2) }
+  }
+  return eq(sum, 60)
+}
+
+
+fun main() -> i64 { return t175_dict_forin_values_remove() }

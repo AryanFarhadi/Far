@@ -1,0 +1,15 @@
+fun t04_forin_grow_bounded() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  lst.push(2)
+  n = 0
+  for x in lst {
+    n = n + 1
+    if (n == 2) { break }
+    lst.push(99)
+  }
+  return eq(n, 2)
+}
+
+
+fun main() -> i64 { return t04_forin_grow_bounded() }

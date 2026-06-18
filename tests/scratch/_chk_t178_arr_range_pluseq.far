@@ -1,0 +1,12 @@
+fun t178_arr_range_pluseq() -> i64 {
+  a = [1, 2, 3, 4, 5]
+  for i in 0..<3 {
+    a[i] += 1
+  }
+  if (a[0] != 2) { return 1 }
+  if (a[2] != 4) { return 2 }
+  return 0
+}
+
+
+fun main() -> i64 { return t178_arr_range_pluseq() }

@@ -1,0 +1,4 @@
+fun main() -> i64 {
+  q = LockFreeQueue<i64>(9223372036854775807)
+  return q.push(1)
+}

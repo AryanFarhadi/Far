@@ -1,0 +1,7 @@
+import perf
+
+fun main() -> i64 {
+  sem = Semaphore(0)
+  sem.wait()
+  return 0
+}

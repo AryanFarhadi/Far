@@ -203,6 +203,11 @@ fun t23_and_assign_in_while_condition() -> i64 {
   return eq(n, 1)
 }
 
+fun t24_and_if_else_fallthrough() -> i64 {
+  if (true and runtime_true() == 1) { } else { return 99 }
+  return 0
+}
+
 fun main() {
   r = 0
   r = run(1, t01_if_else()); if (r != 0) { return r }
@@ -228,6 +233,7 @@ fun main() {
   r = run(21, t21_defer_on_break()); if (r != 0) { return r }
   r = run(22, t22_or_assign_in_while_condition()); if (r != 0) { return r }
   r = run(23, t23_and_assign_in_while_condition()); if (r != 0) { return r }
+  r = run(24, t24_and_if_else_fallthrough()); if (r != 0) { return r }
   print(0)
   return 0
 }

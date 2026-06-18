@@ -1,0 +1,6 @@
+fun side() -> i64 { return 99 }
+
+fun main() -> i64 {
+  x = 0 ? side() : 20
+  return x
+}

@@ -1,0 +1,12 @@
+fun t82_list_clear_forin_empty() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  lst.push(2)
+  lst.clear()
+  n = 0
+  for x in lst { n = n + 1 }
+  return eq(n, 0)
+}
+
+
+fun main() -> i64 { return t82_list_clear_forin_empty() }

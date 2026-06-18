@@ -1,0 +1,13 @@
+fun main() -> i64 {
+  ch = Channel<i64>(2)
+  ch.send(1)
+  ch.send(2)
+  ch.close()
+  a = ch.try_recv()
+  b = ch.try_recv()
+  c = ch.try_recv()
+  if (a != 1) { return 1 }
+  if (b != 2) { return 2 }
+  if (c != -1) { return 3 }
+  return 0
+}

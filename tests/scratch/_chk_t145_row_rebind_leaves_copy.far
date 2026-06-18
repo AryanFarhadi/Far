@@ -1,0 +1,11 @@
+fun t145_row_rebind_leaves_copy() -> i64 {
+  a = [[1, 2], [3, 4]]
+  b = a[0]
+  a[0] = [9, 8]
+  if (b[0] != 1) { return 1 }
+  if (b[1] != 2) { return 2 }
+  return eq(a[0][0], 9)
+}
+
+
+fun main() -> i64 { return t145_row_rebind_leaves_copy() }

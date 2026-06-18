@@ -1,0 +1,7 @@
+fun main() -> i64 {
+  r = Rc<i64>(5)
+  r2 = r
+  if (r.get() != 5) { return 1 }
+  if (r2.get() != 5) { return 2 }
+  return 0
+}

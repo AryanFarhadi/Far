@@ -1,0 +1,14 @@
+fun t180_set_keys_forin_sum() -> i64 {
+  s: Set<i64> = Set<i64>()
+  s.add(1)
+  s.add(2)
+  s.add(3)
+  sum = 0
+  for k in s.keys() {
+    sum = sum + k
+  }
+  return eq(sum, 6)
+}
+
+
+fun main() -> i64 { return t180_set_keys_forin_sum() }

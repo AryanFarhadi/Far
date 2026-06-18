@@ -1,0 +1,9 @@
+fun main() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (i = 0; i < 2; i = i + 1) {
+    lst.push(i)
+  }
+  lst.set(1, 55)
+  return eq(lst.get(1), 55)
+}
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }

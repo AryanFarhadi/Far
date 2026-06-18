@@ -1,0 +1,8 @@
+fun main() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(42)
+  if (lst.get(0) != 42) { return 1 }
+  if (lst.get(1) != 0) { return 2 }
+  if (lst.get(-1) != 0) { return 3 }
+  return 0
+}

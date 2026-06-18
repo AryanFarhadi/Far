@@ -1,0 +1,11 @@
+fun t11_semaphore_try_wait() -> i64 {
+  sem = Semaphore(0)
+  if (sem.try_wait() != 0) { return 1 }
+  sem.signal()
+  if (sem.try_wait() != 1) { return 2 }
+  if (sem.try_wait() != 0) { return 3 }
+  return 0
+}
+
+
+fun main() -> i64 { return t11_semaphore_try_wait() }

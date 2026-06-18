@@ -1,0 +1,12 @@
+fun t109_queue_assign_copy_on_write() -> i64 {
+  q: Queue<i64> = Queue<i64>()
+  q.enqueue(1)
+  q2 = q
+  q2.enqueue(2)
+  if (len(q) != 1) { return 1 }
+  if (len(q2) != 2) { return 2 }
+  return eq(q.dequeue(), 1)
+}
+
+
+fun main() -> i64 { return t109_queue_assign_copy_on_write() }

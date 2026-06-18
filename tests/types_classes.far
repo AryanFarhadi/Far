@@ -37,11 +37,42 @@ fun t03_operator() -> i64 {
   w = Wallet(20)
   return eq(w + 5, 25)
 }
+
+class HasPrivateMethod {
+  private fun secret() -> i64 { return 11 }
+  public fun reveal() -> i64 { return secret() }
+}
+
+fun t04_private_method_intra_call() -> i64 {
+  return eq(HasPrivateMethod().reveal(), 11)
+}
+
+class StaticPrivate {
+  private static fun secret() -> i64 { return 5 }
+  public static fun reveal() -> i64 { return secret() }
+}
+
+class InstanceCallsStatic {
+  private static fun secret() -> i64 { return 6 }
+  public fun go() -> i64 { return secret() }
+}
+
+fun t05_static_private_bare_call() -> i64 {
+  return eq(StaticPrivate.reveal(), 5)
+}
+
+fun t06_instance_calls_static_private() -> i64 {
+  return eq(InstanceCallsStatic().go(), 6)
+}
+
 fun main() {
   r = 0
   r = run(1, t01_ctor_and_method()); if (r != 0) { return r }
   r = run(2, t02_property_get_set()); if (r != 0) { return r }
   r = run(3, t03_operator()); if (r != 0) { return r }
+  r = run(4, t04_private_method_intra_call()); if (r != 0) { return r }
+  r = run(5, t05_static_private_bare_call()); if (r != 0) { return r }
+  r = run(6, t06_instance_calls_static_private()); if (r != 0) { return r }
   print(0)
   return 0
-}
+}

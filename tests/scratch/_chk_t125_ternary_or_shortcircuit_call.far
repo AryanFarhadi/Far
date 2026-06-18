@@ -1,0 +1,7 @@
+fun t125_ternary_or_shortcircuit_call() -> i64 {
+  x = (0 || zero_call()) ? 99 : 20
+  return eq(x, 20)
+}
+
+
+fun main() -> i64 { return t125_ternary_or_shortcircuit_call() }

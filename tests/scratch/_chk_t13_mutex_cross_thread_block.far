@@ -1,0 +1,13 @@
+fun t13_mutex_cross_thread_block() -> i64 {
+  m = Mutex()
+  ch = Channel<i64>(1)
+  h = spawn mutex_holder(m, ch)
+  ch.recv()
+  m.lock()
+  m.unlock()
+  threads.join(h)
+  return 0
+}
+
+
+fun main() -> i64 { return t13_mutex_cross_thread_block() }

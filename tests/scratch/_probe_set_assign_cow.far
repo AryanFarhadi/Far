@@ -1,0 +1,11 @@
+fun main() -> i64 {
+  s: Set<i64> = Set<i64>()
+  s.add(1)
+  s2 = s
+  s2.add(2)
+  if (len(s) != 1) { return 1 }
+  if (len(s2) != 2) { return 2 }
+  if (!s.contains(1)) { return 3 }
+  if (!s2.contains(2)) { return 4 }
+  return 0
+}

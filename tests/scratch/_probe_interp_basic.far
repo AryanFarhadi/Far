@@ -1,0 +1,4 @@
+﻿fun main() -> i64 {
+  s = $"a{1}b"
+  return len(s)
+}

@@ -1,0 +1,6 @@
+fun main() -> i64 {
+  x = 0
+  n = 0
+  if (!x) { n = 1 }
+  return n
+}

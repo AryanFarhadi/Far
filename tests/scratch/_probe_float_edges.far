@@ -1,0 +1,7 @@
+﻿fun t_inf_div() -> i64 { x = 1.0/0.0; if (x > 0.0) { return 1 } return 0 }
+fun t_denorm() -> i64 { x = 0.0000000000000000000000000000000000000001; if (x == 0.0) { return 1 } return 0 }
+fun main() -> i64 {
+  if (t_inf_div() != 0) { return 1 }
+  if (t_denorm() != 0) { return 2 }
+  return 0
+}

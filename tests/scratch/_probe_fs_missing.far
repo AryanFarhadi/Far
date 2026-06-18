@@ -1,0 +1,5 @@
+import fs
+
+fun main() -> i64 {
+  return len(fs.read_text("far_missing_file_xyz_999.far"))
+}

@@ -1,0 +1,8 @@
+class HasPrivateMethod {
+  private fun secret() -> i64 { return 11 }
+  public fun reveal() -> i64 { return secret() }
+}
+
+fun main() -> i64 {
+  return HasPrivateMethod().secret()
+}

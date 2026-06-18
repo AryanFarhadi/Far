@@ -1,0 +1,14 @@
+fun t41_defer_nested_break() -> i64 {
+  n = 0
+  for i in 0..<3 {
+    defer n = n + 10
+    if (i == 1) {
+      defer n = n + 1
+      break
+    }
+  }
+  return eq(n, 21)
+}
+
+
+fun main() -> i64 { return t41_defer_nested_break() }

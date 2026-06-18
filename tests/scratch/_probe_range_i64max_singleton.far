@@ -1,0 +1,8 @@
+fun main() -> i64 {
+  n = 0
+  for i in 9223372036854775807..9223372036854775807 {
+    n = 1
+  }
+  return eq(n, 1)
+}
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }

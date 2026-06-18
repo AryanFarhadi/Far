@@ -1,0 +1,10 @@
+fun t48_parallel_for_atomic_add() -> i64 {
+  at = Atomic<i64>(0)
+  parallel for i in 0..<64 {
+    at.fetch_add(1)
+  }
+  return eq(at.load(), 64)
+}
+
+
+fun main() -> i64 { return t48_parallel_for_atomic_add() }

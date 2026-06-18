@@ -1,0 +1,14 @@
+fun side() -> i64 {
+  return 99
+}
+
+fun f(x: i64 = side()) -> i64 {
+  return x
+}
+
+fun main() -> i64 {
+  if (f() != 99) { return 1 }
+  if (f() != 99) { return 2 }
+  if (f(1) != 1) { return 3 }
+  return 0
+}

@@ -1,0 +1,11 @@
+fun t170_interp_brace_escape() -> i64 {
+  s = $"{{}}"
+  if (len(s) != 2) { return 1 }
+  x = 7
+  s2 = $"v={x}"
+  if (len(s2) != 3) { return 2 }
+  return 0
+}
+
+
+fun main() -> i64 { return t170_interp_brace_escape() }

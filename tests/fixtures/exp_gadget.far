@@ -1,0 +1,10 @@
+private fun gadget_secret() -> i64 {
+  return 7
+}
+
+public class Gadget {
+  public val: i64 = 0
+  public Gadget() {
+    val = gadget_secret()
+  }
+}

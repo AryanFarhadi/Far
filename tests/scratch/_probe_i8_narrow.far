@@ -1,0 +1,4 @@
+fun main() -> i64 {
+  x: i8 = 200
+  return x
+}

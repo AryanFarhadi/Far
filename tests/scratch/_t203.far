@@ -1,0 +1,11 @@
+import vectors
+
+fun main() -> i64 {
+  a = dvec2(3.0, 4.0)
+  s = a * 2.0
+  if (s.x != 6.0) { return 1 }
+  if (s.y != 8.0) { return 2 }
+  c = a + dvec2(1.0, 1.0)
+  if (c.x != 4.0) { return 3 }
+  return 0
+}

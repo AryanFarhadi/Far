@@ -1,0 +1,13 @@
+fun t79_arena_many_allocs() -> i64 {
+  a = Arena(8192)
+  i = 0
+  while (i < 512) {
+    p = a.alloc(8)
+    if (p == 0) { return 1 }
+    i = i + 1
+  }
+  return eq(i, 512)
+}
+
+
+fun main() -> i64 { return t79_arena_many_allocs() }

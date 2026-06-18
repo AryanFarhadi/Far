@@ -1,0 +1,15 @@
+fun t107_nested_row_index_assign_copy() -> i64 {
+  a = [[1, 2], [3, 4]]
+  b = a[0]
+  b[0] = 99
+  if (a[0][0] != 1) { return 1 }
+  if (b[0] != 99) { return 2 }
+  b = a[1]
+  if (a[0][0] != 1) { return 3 }
+  if (a[0][1] != 2) { return 4 }
+  if (b[0] != 3) { return 5 }
+  return 0
+}
+
+
+fun main() -> i64 { return t107_nested_row_index_assign_copy() }

@@ -1,0 +1,8 @@
+fun t36_f64_nan_neq_self() -> i64 {
+  x = 0.0 / 0.0
+  if (x == x) { return 1 }
+  return 0
+}
+
+
+fun main() -> i64 { return t36_f64_nan_neq_self() }

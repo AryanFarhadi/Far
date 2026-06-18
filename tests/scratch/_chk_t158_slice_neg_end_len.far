@@ -1,0 +1,8 @@
+fun t158_slice_neg_end_len() -> i64 {
+  a = [1, 2, 3, 4, 5]
+  sl = a.slice(1, -1)
+  return eq(len(sl), 3)
+}
+
+
+fun main() -> i64 { return t158_slice_neg_end_len() }

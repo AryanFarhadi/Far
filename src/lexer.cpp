@@ -415,6 +415,12 @@ char Lexer::decodeEscape(char esc, int line, int col) {
   }
 }
 
+char Lexer::decodeStringEscape(char esc, int line, int col) {
+  if (esc == '0')
+    throw FarError("null byte escape \\0 is not allowed in string literals", line, col);
+  return decodeEscape(esc, line, col);
+}
+
 void Lexer::appendUtf8Char(std::string& value, int line, int col) {
   if (pos_ >= source_.size())
     throw FarError("unexpected end of input", line, col);
@@ -462,7 +468,7 @@ Token Lexer::readString(int line, int col) {
       advance();
       if (pos_ >= source_.size())
         throw FarError("unterminated string", line, col);
-      value += decodeEscape(advance(), line, col);
+      value += decodeStringEscape(advance(), line, col);
       checkLexSize(value.size(), kMaxStringLiteralLen, line, col, "string literal");
       continue;
     }
@@ -548,7 +554,23 @@ Token Lexer::readInterpString(int line, int col) {
       tok.interp_texts.push_back(current);
       return tok;
     }
+    if (ch == '}') {
+      if (pos_ + 1 < source_.size() && source_[pos_ + 1] == '}') {
+        advance();
+        advance();
+        current += '}';
+        checkLexSize(current.size(), kMaxStringLiteralLen, line, col, "interpolated string literal");
+        continue;
+      }
+    }
     if (ch == '{') {
+      if (pos_ + 1 < source_.size() && source_[pos_ + 1] == '{') {
+        advance();
+        advance();
+        current += '{';
+        checkLexSize(current.size(), kMaxStringLiteralLen, line, col, "interpolated string literal");
+        continue;
+      }
       tok.interp_texts.push_back(current);
       current.clear();
       advance(); // {
@@ -585,7 +607,7 @@ Token Lexer::readInterpString(int line, int col) {
       advance();
       if (pos_ >= source_.size())
         throw FarError("unterminated interpolated string", line, col);
-      current += decodeEscape(advance(), line, col);
+      current += decodeStringEscape(advance(), line, col);
       checkLexSize(current.size(), kMaxStringLiteralLen, line, col, "interpolated string literal");
       continue;
     }

@@ -1,0 +1,8 @@
+fun main() -> i64 {
+  t = (1, 2)
+  t2 = t
+  t2.0 = 99
+  if (t.0 != 1) { return 1 }
+  if (t2.0 != 99) { return 2 }
+  return 0
+}

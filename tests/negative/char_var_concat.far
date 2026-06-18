@@ -1,0 +1,5 @@
+fun main() -> i64 {
+  c: char = 0
+  s = "a" + c + "b"
+  return 0
+}

@@ -1,0 +1,13 @@
+fun t74_range_desc_exclusive() -> i64 {
+  n = 0
+  s = 0
+  for i in 5..<1 {
+    n = n + 1
+    s = s + i
+  }
+  if (n != 4) { return 1 }
+  return eq(s, 14)
+}
+
+
+fun main() -> i64 { return t74_range_desc_exclusive() }

@@ -207,8 +207,90 @@ int64_t far_date_second(int64_t ms) {
 extern int64_t far_sec_sandbox_active(void);
 extern int64_t far_sec_sandbox_can(const char* path);
 
-static int far_fs_allowed(const char* path) {
+static int far_fs_path_has_dotdot(const char* path) {
   if (!path)
+    return 0;
+  if (path[0] == '.' && path[1] == '.' &&
+      (path[2] == '\0' || path[2] == '/' || path[2] == '\\'))
+    return 1;
+  for (const char* p = path; *p; ++p) {
+    if ((p[0] == '/' || p[0] == '\\') && p[1] == '.' && p[2] == '.' &&
+        (p[3] == '\0' || p[3] == '/' || p[3] == '\\'))
+      return 1;
+  }
+  return 0;
+}
+
+static int far_fs_path_is_absolute(const char* path) {
+  if (!path || !path[0])
+    return 0;
+#if defined(_WIN32)
+  if (path[0] == '/' || path[0] == '\\')
+    return 1;
+  if (path[1] == ':') {
+    char c = path[0];
+    if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'))
+      return 1;
+  }
+#else
+  if (path[0] == '/')
+    return 1;
+#endif
+  return 0;
+}
+
+static char far_fs_lower(char c) {
+  if (c >= 'A' && c <= 'Z')
+    return (char)(c - 'A' + 'a');
+  return c;
+}
+
+static int far_fs_name_eq(const char* name, const char* lit) {
+  for (; *lit; ++name, ++lit) {
+    if (!*name || far_fs_lower(*name) != *lit)
+      return 0;
+  }
+  return *name == '\0';
+}
+
+static int far_fs_path_is_reserved_device(const char* path) {
+  if (!path || !path[0])
+    return 1;
+  const char* base = path;
+  for (const char* p = path; *p; ++p) {
+    if (*p == '/' || *p == '\\')
+      base = p + 1;
+  }
+  char stem[16];
+  size_t i = 0;
+  for (; base[i] && base[i] != '.' && i + 1 < sizeof(stem); ++i)
+    stem[i] = far_fs_lower(base[i]);
+  stem[i] = '\0';
+  if (stem[0] == '\0')
+    return 1;
+  if (far_fs_name_eq(stem, "con") || far_fs_name_eq(stem, "prn") || far_fs_name_eq(stem, "aux") ||
+      far_fs_name_eq(stem, "nul"))
+    return 1;
+  if ((far_fs_name_eq(stem, "com1") || far_fs_name_eq(stem, "com2") || far_fs_name_eq(stem, "com3") ||
+       far_fs_name_eq(stem, "com4") || far_fs_name_eq(stem, "com5") || far_fs_name_eq(stem, "com6") ||
+       far_fs_name_eq(stem, "com7") || far_fs_name_eq(stem, "com8") || far_fs_name_eq(stem, "com9") ||
+       far_fs_name_eq(stem, "lpt1") || far_fs_name_eq(stem, "lpt2") || far_fs_name_eq(stem, "lpt3") ||
+       far_fs_name_eq(stem, "lpt4") || far_fs_name_eq(stem, "lpt5") || far_fs_name_eq(stem, "lpt6") ||
+       far_fs_name_eq(stem, "lpt7") || far_fs_name_eq(stem, "lpt8") || far_fs_name_eq(stem, "lpt9")))
+    return 1;
+  return 0;
+}
+
+static int far_fs_allowed(const char* path) {
+  if (!path || !path[0])
+    return 0;
+  if (far_fs_path_has_dotdot(path))
+    return 0;
+  if (far_fs_path_is_absolute(path))
+    return 0;
+  if (strchr(path, '\\') != NULL)
+    return 0;
+  if (far_fs_path_is_reserved_device(path))
     return 0;
   if (far_sec_sandbox_active() && !far_sec_sandbox_can(path))
     return 0;
@@ -295,6 +377,10 @@ int64_t far_fs_exists(const char* path) {
 }
 
 int64_t far_fs_is_file(const char* path) {
+  if (!path)
+    return 0;
+  if (!far_fs_allowed(path))
+    return 0;
 #ifdef _WIN32
   struct _stat st;
   if (_stat(path, &st) != 0)
@@ -309,6 +395,10 @@ int64_t far_fs_is_file(const char* path) {
 }
 
 int64_t far_fs_is_dir(const char* path) {
+  if (!path)
+    return 0;
+  if (!far_fs_allowed(path))
+    return 0;
 #ifdef _WIN32
   struct _stat st;
   if (_stat(path, &st) != 0)

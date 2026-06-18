@@ -1,0 +1,17 @@
+fun t222_switch_default_continue_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for x in 0..<6 {
+    switch x {
+      case 0: { }
+      case 2: { }
+      default: { continue }
+    }
+    if (x == 4) { break }
+    lst.push(x)
+  }
+  lst[1] = 22
+  return eq(lst.get(1), 22)
+}
+
+
+fun main() -> i64 { return t222_switch_default_continue_bracket() }

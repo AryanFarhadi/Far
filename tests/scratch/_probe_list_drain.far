@@ -1,0 +1,14 @@
+fun main() -> i64 {
+  lst: List<i64> = List<i64>()
+  i = 0
+  while (i < 100) {
+    lst.push(i)
+    i = i + 1
+  }
+  while (len(lst) > 0) {
+    lst.pop()
+  }
+  if (len(lst) != 0) { return 1 }
+  if (lst.pop() != 0) { return 2 }
+  return 0
+}

@@ -1,0 +1,5 @@
+fun main() -> i64 {
+  a = [1, 2, 3, 4, 5]
+  sl = a.slice(4, 1)
+  return len(sl)
+}

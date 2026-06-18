@@ -1,0 +1,15 @@
+fun t03_forin_shrink_no_oob() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  lst.push(2)
+  lst.push(3)
+  n = 0
+  for x in lst {
+    n = n + x
+    if (x == 2) { lst.remove(1) }
+  }
+  return eq(n, 3)
+}
+
+
+fun main() -> i64 { return t03_forin_shrink_no_oob() }

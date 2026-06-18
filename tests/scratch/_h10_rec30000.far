@@ -1,0 +1,2 @@
+fun rec(n: i64) -> i64 { if (n <= 0) { return 0 }; return rec(n - 1) + 1 }
+fun main() -> i64 { return rec(30000) }

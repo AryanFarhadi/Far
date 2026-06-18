@@ -1,0 +1,6 @@
+fun t104_tri_circular_import_val_c() -> i64 {
+  return eq(val_c(), 7)
+}
+
+
+fun main() -> i64 { return t104_tri_circular_import_val_c() }

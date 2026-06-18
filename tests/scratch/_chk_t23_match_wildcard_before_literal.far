@@ -1,0 +1,16 @@
+fun t23_match_wildcard_before_literal() -> i64 {
+  match 2 {
+    _ => return 0
+    2 => return 2
+  }
+  return 99
+}
+
+class Counter {
+  public n: i64 = 0
+  public Counter(start: i64) { n = start }
+  public fun bump() -> i64 { n = n + 1; return n }
+}
+
+
+fun main() -> i64 { return t23_match_wildcard_before_literal() }

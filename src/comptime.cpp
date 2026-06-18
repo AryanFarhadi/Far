@@ -139,6 +139,7 @@ static bool checkedMulI64(int64_t a, int64_t b, int64_t& out) {
 static std::optional<ComptimeValue> evalComptimeStmt(ComptimeContext& ctx, const Stmt& stmt);
 
 static constexpr int64_t kMaxComptimeLoopIters = 1'000'000;
+static constexpr size_t kMaxComptimeStringLen = 64 * 1024 * 1024;
 
 static void bumpComptimeLoopIter(ComptimeContext& ctx) {
   if (++ctx.loop_iters > kMaxComptimeLoopIters)
@@ -646,9 +647,7 @@ bool tryEvalExpr(ComptimeContext& ctx, const Expr& expr, ComptimeValue& out) {
     out = evalExpr(ctx, expr);
     return true;
   } catch (const FarError& e) {
-    if (e.message.find("depth exceeded") != std::string::npos ||
-        e.message.find("loop iterations exceeded") != std::string::npos ||
-        e.message.find("division by zero") != std::string::npos ||
+    if (e.message.find("division by zero") != std::string::npos ||
         e.message.find("modulo by zero") != std::string::npos)
       throw;
     return false;
@@ -1001,8 +1000,11 @@ ComptimeValue evalExpr(ComptimeContext& ctx, const Expr& expr) {
       if (op == "!=")
         return makeIntVal(comptimeEq(l, r) ? 0 : 1);
       if (op == "+") {
-        if (l.kind == ComptimeValue::Kind::String && r.kind == ComptimeValue::Kind::String)
+        if (l.kind == ComptimeValue::Kind::String && r.kind == ComptimeValue::Kind::String) {
+          if (l.str.size() > kMaxComptimeStringLen - r.str.size())
+            throw FarError("comptime string concatenation exceeds maximum length");
           return makeStringVal(l.str + r.str);
+        }
         if (l.kind == ComptimeValue::Kind::Float || r.kind == ComptimeValue::Kind::Float) {
           auto asF64 = [](const ComptimeValue& v, const TypeDesc& ty) -> double {
             if (v.kind == ComptimeValue::Kind::Float)

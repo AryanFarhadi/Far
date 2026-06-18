@@ -1,0 +1,8 @@
+fun t40_range_exclusive_empty() -> i64 {
+  n = 0
+  for i in 5..<5 { n = 1 }
+  return eq(n, 0)
+}
+
+
+fun main() -> i64 { return t40_range_exclusive_empty() }

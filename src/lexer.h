@@ -112,6 +112,7 @@ private:
   void appendUtf8Char(std::string& value, int line, int col);
 
   static char decodeEscape(char esc, int line, int col);
+  static char decodeStringEscape(char esc, int line, int col);
 
 };
 

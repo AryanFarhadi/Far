@@ -1,0 +1,19 @@
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun t_forin_arr() -> i64 {
+  a = [10, 20, 30]
+  n = 0
+  for x in a { n = n + x }
+  return eq(n, 60)
+}
+fun t_forin_slice() -> i64 {
+  a = [1, 2, 3, 4, 5]
+  s = a.slice(1, 4)
+  n = 0
+  for x in s { n = n + x }
+  return eq(n, 9)
+}
+fun main() {
+  if (t_forin_arr() != 0) { print(1); return 1 }
+  if (t_forin_slice() != 0) { print(2); return 2 }
+  print(0); return 0
+}

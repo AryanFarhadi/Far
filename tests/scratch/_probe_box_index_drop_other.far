@@ -1,0 +1,12 @@
+fun main() -> i64 {
+  boxes = [Box<i64>(1), Box<i64>(2)]
+  b2 = boxes[1]
+  drop(boxes[1])
+  p = b2.get()
+  if (p == 0) { return 1 }
+  v = 0
+  unsafe { v = *p }
+  return eq(v, 2)
+}
+
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }

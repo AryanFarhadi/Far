@@ -1,0 +1,16 @@
+﻿import perf
+fun park(ch: Channel<i64>) -> i64 { return ch.recv() }
+fun main() -> i64 {
+  ch = Channel<i64>(1)
+  hs: List<i64> = List<i64>()
+  i = 0
+  while (i < 128) {
+    h = spawn park(ch)
+    if (h < 0) { return eq(i, 128) }
+    hs.push(h)
+    i = i + 1
+  }
+  ch.send(0)
+  for h in hs { threads.join(h) }
+  return 0
+}

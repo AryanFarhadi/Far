@@ -1,0 +1,15 @@
+fun main() -> i64 {
+  lst: List<i64> = List<i64>()
+  i = 0
+  while (i < 6) {
+    if (i == 1) {
+      i = i + 1
+      continue
+    }
+    lst.push(i)
+    if (i == 3) { break }
+    i = i + 1
+  }
+  lst[2] = 22
+  return lst.get(2)
+}

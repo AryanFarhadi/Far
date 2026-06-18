@@ -1,0 +1,13 @@
+fun t135_list_insert_at_end_index() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  lst.insert(1, 2)
+  if (len(lst) != 2) { return 1 }
+  if (lst.get(0) != 1) { return 2 }
+  if (lst.get(1) != 2) { return 3 }
+  lst.insert(2, 3)
+  return eq(len(lst), 3)
+}
+
+
+fun main() -> i64 { return t135_list_insert_at_end_index() }

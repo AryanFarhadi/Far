@@ -1,0 +1,14 @@
+fun t146_dict_remove_all_reinsert() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d.set(1, 10)
+  d.set(2, 20)
+  d.remove(1)
+  d.remove(2)
+  if (len(d) != 0) { return 1 }
+  d.set(3, 30)
+  if (len(d) != 1) { return 2 }
+  return eq(d.get(3), 30)
+}
+
+
+fun main() -> i64 { return t146_dict_remove_all_reinsert() }

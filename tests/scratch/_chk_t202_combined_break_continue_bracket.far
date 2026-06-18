@@ -1,0 +1,17 @@
+fun t202_combined_break_continue_bracket() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (i = 0; i < 8; i = i + 1) {
+    if (i == 3) {
+      continue
+    }
+    if (i == 6) {
+      break
+    }
+    lst.push(i)
+  }
+  lst[4] = 44
+  return eq(lst.get(4), 44)
+}
+
+
+fun main() -> i64 { return t202_combined_break_continue_bracket() }

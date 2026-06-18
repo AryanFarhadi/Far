@@ -1,0 +1,10 @@
+fun main() -> i64 {
+  sandbox.open_sandbox(2)
+  sandbox.allow_path("safe.txt")
+  fs.write_text("safe.txt", "ok")
+  if (fs.read_text("safe/../safe.txt") != "") { return 1 }
+  if (fs.read_text("../safe.txt") != "") { return 2 }
+  sandbox.close_sandbox()
+  fs.remove("safe.txt")
+  return 0
+}

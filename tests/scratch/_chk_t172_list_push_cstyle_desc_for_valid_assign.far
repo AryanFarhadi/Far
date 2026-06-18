@@ -1,0 +1,11 @@
+fun t172_list_push_cstyle_desc_for_valid_assign() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (i = 2; i > 0; i = i - 1) {
+    lst.push(i)
+  }
+  lst[1] = 88
+  return eq(lst.get(1), 88)
+}
+
+
+fun main() -> i64 { return t172_list_push_cstyle_desc_for_valid_assign() }

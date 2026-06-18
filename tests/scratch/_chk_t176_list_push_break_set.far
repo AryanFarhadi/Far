@@ -1,0 +1,14 @@
+fun t176_list_push_break_set() -> i64 {
+  lst: List<i64> = List<i64>()
+  for (i = 0; i < 10; i = i + 1) {
+    lst.push(i)
+    if (i == 1) {
+      break
+    }
+  }
+  lst[1] = 9
+  return eq(lst.get(1), 9)
+}
+
+
+fun main() -> i64 { return t176_list_push_break_set() }

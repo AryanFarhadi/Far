@@ -1,0 +1,12 @@
+fun t78_arena_reset_fresh_alloc() -> i64 {
+  a = Arena(64)
+  p1 = a.alloc(8)
+  unsafe { *p1 = i8(11) }
+  a.reset()
+  p2 = a.alloc(8)
+  unsafe { *p2 = i8(22) }
+  return eq(*p2, 22)
+}
+
+
+fun main() -> i64 { return t78_arena_reset_fresh_alloc() }

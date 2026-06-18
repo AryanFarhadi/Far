@@ -1,0 +1,13 @@
+fun sum_n(n: i64...) -> i64 {
+  total = 0
+  i = 0
+  while (i < len(n)) {
+    total = total + n[i]
+    i = i + 1
+  }
+  return total
+}
+fun main() -> i64 {
+  if (sum_n() != 0) { return 1 }
+  return eq(sum_n(1, 2, 3), 6)
+}

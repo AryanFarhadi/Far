@@ -1494,16 +1494,16 @@ fun t255_list_insert_negative_noop() -> i64 {
   return eq(a.get(0), 10)
 }
 
-fun t256_for_inclusive_inverted_empty() -> i64 {
+fun t256_for_inclusive_descending() -> i64 {
   n = 0
   for i in 10..0 { n = n + 1 }
-  return eq(n, 0)
+  return eq(n, 11)
 }
 
-fun t257_for_halfopen_inverted_empty() -> i64 {
+fun t257_for_exclusive_descending() -> i64 {
   n = 0
   for i in 5..<3 { n = n + 1 }
-  return eq(n, 0)
+  return eq(n, 2)
 }
 
 fun t258_list_remove_while_iter() -> i64 {
@@ -1519,6 +1519,127 @@ fun t258_list_remove_while_iter() -> i64 {
     if (v == 2) { lst.remove(i) } else { i = i + 1 }
   }
   return eq(sum, 6)
+}
+
+fun t259_dict_keys_remove_iter() -> i64 {
+  d: Dict<i64, i64> = Dict<i64, i64>()
+  d.set(1, 10)
+  d.set(2, 20)
+  d.set(3, 30)
+  ks = d.keys()
+  i = 0
+  sum = 0
+  while (i < len(ks)) {
+    k = ks.get(i)
+    sum = sum + k
+    if (k == 2) { d.remove(2) }
+    i = i + 1
+  }
+  return eq(sum, 6)
+}
+
+fun t260_set_remove_readd() -> i64 {
+  s: Set<i64> = Set<i64>()
+  s.add(1)
+  s.add(2)
+  s.remove(1)
+  s.add(1)
+  return eq(len(s), 2)
+}
+
+fun t261_nested_array_index() -> i64 {
+  a = [[1, 2], [3, 4]]
+  return eq(a[1][0], 3)
+}
+
+fun t262_forin_list_shrink() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  lst.push(2)
+  lst.push(3)
+  n = 0
+  for x in lst {
+    n = n + x
+    if (x == 2) { lst.remove(1) }
+  }
+  return eq(n, 3)
+}
+
+fun t263_char_concat_nonnull() -> i64 {
+  s = "a" + char(98)
+  if (len(s) != 2) { return 1 }
+  if (int(s[0]) != 97) { return 2 }
+  if (int(s[1]) != 98) { return 3 }
+  return 0
+}
+
+fun t264_forin_fixed_array() -> i64 {
+  a = [10, 20, 30]
+  s = 0
+  for x in a {
+    s = s + x
+  }
+  return eq(s, 60)
+}
+
+fun t265_forin_nested_array() -> i64 {
+  m = [[1, 2], [3, 4]]
+  s = 0
+  for row in m {
+    for x in row {
+      s = s + x
+    }
+  }
+  return eq(s, 10)
+}
+
+fun t266_mutex_double_unlock_noop() -> i64 {
+  mu = Mutex()
+  mu.lock()
+  mu.unlock()
+  mu.unlock()
+  return 0
+}
+
+fun t267_i64min_div_negone() -> i64 {
+  return eq((-9223372036854775808) / -1, -9223372036854775808)
+}
+
+fun t268_i64min_mod_negone() -> i64 {
+  return eq((-9223372036854775808) % -1, 0)
+}
+
+fun t269_comptime_i64min_div_fold() -> i64 {
+  x = (-9223372036854775808) / -1
+  return eq(x, -9223372036854775808)
+}
+
+fun t270_while_zero_iterations() -> i64 {
+  n = 0
+  while (0) {
+    n = n + 1
+  }
+  return eq(n, 0)
+}
+
+fun t271_negative_array_index_noop() -> i64 {
+  a = [5, 6, 7]
+  if (a[-1] != 0) { return 1 }
+  if (a[99] != 0) { return 2 }
+  return 0
+}
+
+fun t272_forin_list_push_bounded() -> i64 {
+  lst: List<i64> = List<i64>()
+  lst.push(1)
+  lst.push(2)
+  lst.push(3)
+  n = 0
+  for x in lst {
+    n = n + x
+    lst.push(99)
+  }
+  return eq(n, 6)
 }
 
 fun main() {
@@ -1779,9 +1900,23 @@ fun main() {
   r = run(253, t253_or_short_circuit_side()); if (r != 0) { return r }
   r = run(254, t254_channel_i64min_value()); if (r != 0) { return r }
   r = run(255, t255_list_insert_negative_noop()); if (r != 0) { return r }
-  r = run(256, t256_for_inclusive_inverted_empty()); if (r != 0) { return r }
-  r = run(257, t257_for_halfopen_inverted_empty()); if (r != 0) { return r }
+  r = run(256, t256_for_inclusive_descending()); if (r != 0) { return r }
+  r = run(257, t257_for_exclusive_descending()); if (r != 0) { return r }
   r = run(258, t258_list_remove_while_iter()); if (r != 0) { return r }
+  r = run(259, t259_dict_keys_remove_iter()); if (r != 0) { return r }
+  r = run(260, t260_set_remove_readd()); if (r != 0) { return r }
+  r = run(261, t261_nested_array_index()); if (r != 0) { return r }
+  r = run(262, t262_forin_list_shrink()); if (r != 0) { return r }
+  r = run(263, t263_char_concat_nonnull()); if (r != 0) { return r }
+  r = run(264, t264_forin_fixed_array()); if (r != 0) { return r }
+  r = run(265, t265_forin_nested_array()); if (r != 0) { return r }
+  r = run(266, t266_mutex_double_unlock_noop()); if (r != 0) { return r }
+  r = run(267, t267_i64min_div_negone()); if (r != 0) { return r }
+  r = run(268, t268_i64min_mod_negone()); if (r != 0) { return r }
+  r = run(269, t269_comptime_i64min_div_fold()); if (r != 0) { return r }
+  r = run(270, t270_while_zero_iterations()); if (r != 0) { return r }
+  r = run(271, t271_negative_array_index_noop()); if (r != 0) { return r }
+  r = run(272, t272_forin_list_push_bounded()); if (r != 0) { return r }
   print(0)
   return 0
 }

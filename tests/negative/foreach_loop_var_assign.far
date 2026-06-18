@@ -1,0 +1,8 @@
+fun main() -> i64 {
+  xs: List<i64> = List<i64>()
+  xs.push(1)
+  for x in xs {
+    x = 99
+  }
+  return 0
+}

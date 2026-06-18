@@ -1,0 +1,9 @@
+import fs
+
+fun main() -> i64 {
+  if (len(fs.read_text("/etc/passwd")) != 0) { print(1); return 1 }
+  if (len(fs.read_text("C:\\Windows\\win.ini")) != 0) { print(2); return 2 }
+  if (fs.write_text("C:\\evil_far_test.txt", "x") != -1) { print(3); return 3 }
+  print(0)
+  return 0
+}

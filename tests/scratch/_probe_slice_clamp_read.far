@@ -1,0 +1,5 @@
+fun main() -> i64 {
+  a = [1, 2, 3]
+  sl = a.slice(0, 100)
+  return sl[0]
+}

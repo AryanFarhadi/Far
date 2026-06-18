@@ -1,0 +1,9 @@
+fun t85_slice_negative_start_end_combo() -> i64 {
+  a = [10, 20, 30, 40, 50]
+  sl = a.slice(-2, -1)
+  if (len(sl) != 1) { return 1 }
+  return eq(sl[0], 40)
+}
+
+
+fun main() -> i64 { return t85_slice_negative_start_end_combo() }

@@ -1,0 +1,15 @@
+import compress
+import json
+import math
+import network
+import regex
+import security
+import yaml
+import xml
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }
+fun t270_while_zero_iterations() -> i64 {
+  n = 0
+  while (0) { n = n + 1 }
+  return eq(n, 0)
+}
+fun main() { return t270_while_zero_iterations() }

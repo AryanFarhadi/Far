@@ -1,0 +1,6 @@
+import fixtures.exp_b { visible as beta }
+import fixtures.exp_c
+
+fun main() -> i64 {
+  return beta.val() + fixtures.exp_c.val()
+}

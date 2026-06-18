@@ -1,0 +1,12 @@
+fun main() -> i64 {
+  rc_boxes = [Rc<i64>(5)]
+  r2 = rc_boxes[0]
+  drop(rc_boxes[0])
+  p = r2.get()
+  if (p == 0) { return 1 }
+  v = 0
+  unsafe { v = *p }
+  return eq(v, 5)
+}
+
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }

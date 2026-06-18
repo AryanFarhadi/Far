@@ -1,0 +1,7 @@
+fun main() -> i64 {
+  n = 0
+  parallel for i in 0..<4 {
+    n += 1
+  }
+  return n
+}

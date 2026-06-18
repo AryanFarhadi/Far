@@ -1,0 +1,8 @@
+fun t80_channel_send_closed() -> i64 {
+  ch = Channel<i64>(1)
+  ch.close()
+  return eq(ch.send(42), -1)
+}
+
+
+fun main() -> i64 { return t80_channel_send_closed() }

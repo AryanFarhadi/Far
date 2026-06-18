@@ -1,0 +1,8 @@
+fun t57_inclusive_range_singleton() -> i64 {
+  n = 0
+  for i in 5..5 { n = n + 1 }
+  return eq(n, 1)
+}
+
+
+fun main() -> i64 { return t57_inclusive_range_singleton() }

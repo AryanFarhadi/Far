@@ -1,0 +1,8 @@
+fun main() -> i64 {
+  s = "abc"
+  c = s[-1]
+  if (c != int('c')) { return 1 }
+  if (s[-3] != int('a')) { return 2 }
+  if (s[-99] != 0) { return 3 }
+  return 0
+}

@@ -1,0 +1,10 @@
+fun main() -> i64 {
+  ch: Channel<i64> = Channel<i64>(1)
+  if (ch.try_send(1) != 1) { return 1 }
+  if (ch.try_send(2) != 0) { return 2 }
+  if (ch.recv() != 1) { return 3 }
+  if (ch.try_send(3) != 1) { return 4 }
+  return eq(ch.recv(), 3)
+}
+
+fun eq(a: i64, b: i64) -> i64 { if (a != b) { return 1 } return 0 }

@@ -1,0 +1,12 @@
+fun main() -> i64 {
+  s: Set<i64> = Set<i64>()
+  s.add(1)
+  s.add(2)
+  sum = 0
+  for k in s.keys() {
+    sum = sum + k
+    if (k == 1) { s.remove(1) }
+  }
+  print(sum)
+  return 0
+}

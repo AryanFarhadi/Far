@@ -1,0 +1,8 @@
+﻿fun main() -> i64 {
+  s = "abc"
+  sum = 0
+  for c in s {
+    sum = sum + 1
+  }
+  return sum
+}

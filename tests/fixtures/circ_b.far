@@ -1,0 +1,5 @@
+import fixtures.circ_a
+
+public fun val_b() -> i64 {
+  return val_a() + 2
+}

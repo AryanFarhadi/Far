@@ -19,7 +19,8 @@ static const CollConstructorInfo kCollConstructors[] = {
 static const CollMethodInfo kListMethods[] = {
     {CollMethodId::Push, "push", 1},
     {CollMethodId::Pop, "pop", 0},         {CollMethodId::Insert, "insert", 2},
-    {CollMethodId::Remove, "remove", 1},   {CollMethodId::Clear, "clear", 0},
+    {CollMethodId::Remove, "remove", 1},   {CollMethodId::RemoveValue, "remove_value", 1},
+    {CollMethodId::Clear, "clear", 0},
     {CollMethodId::Get, "get", 1},         {CollMethodId::Set, "set", 2},
     {CollMethodId::Slice, "slice", 2},
 };
@@ -34,6 +35,7 @@ static const CollMethodInfo kDictMethods[] = {
 static const CollMethodInfo kSetMethods[] = {
     {CollMethodId::Add, "add", 1},
     {CollMethodId::Remove, "remove", 1},   {CollMethodId::Contains, "contains", 1},
+    {CollMethodId::Keys, "keys", 0},
 };
 
 static const CollMethodInfo kQueueMethods[] = {
@@ -129,6 +131,8 @@ TypeDesc collMethodRetType(TypeForm form, CollMethodId id, const TypeDesc& recv,
     case CollMethodId::Contains:
     case CollMethodId::ContainsKey:
       return TypeDesc::prim(FarTypeId::I64);
+    case CollMethodId::RemoveValue:
+      return TypeDesc::prim(FarTypeId::I64);
     case CollMethodId::Push:
     case CollMethodId::Insert:
     case CollMethodId::Remove:
@@ -193,6 +197,7 @@ void declareCollectionRuntime(std::ostringstream& out) {
   out << "declare i64 @far_list_slice(i64, i64, i64)\n";
   out << "declare void @far_list_insert(i64, i64, i64)\n";
   out << "declare void @far_list_remove_at(i64, i64)\n";
+  out << "declare i64 @far_list_remove_value(i64, i64)\n";
   out << "declare void @far_list_drop(i64)\n";
   out << "declare void @far_print_list(i64)\n";
 
@@ -211,6 +216,7 @@ void declareCollectionRuntime(std::ostringstream& out) {
   out << "declare void @far_set_add(i64, i64)\n";
   out << "declare i64 @far_set_contains(i64, i64)\n";
   out << "declare void @far_set_remove(i64, i64)\n";
+  out << "declare i64 @far_set_keys(i64)\n";
   out << "declare void @far_set_drop(i64)\n";
 
   out << "declare i64 @far_queue_new(i16)\n";

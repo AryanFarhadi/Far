@@ -1,0 +1,11 @@
+fun t137_arena_byte_cap_exhaust() -> i64 {
+  a = Arena(64)
+  p = a.alloc(57)
+  if (p == 0) { return 1 }
+  p2 = a.alloc(8)
+  if (p2 != 0) { return 2 }
+  return 0
+}
+
+
+fun main() -> i64 { return t137_arena_byte_cap_exhaust() }

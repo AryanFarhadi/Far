@@ -1,0 +1,13 @@
+fun t173_list_push_while_desc_valid_assign() -> i64 {
+  lst: List<i64> = List<i64>()
+  i = 2
+  while (i > 0) {
+    lst.push(i)
+    i = i - 1
+  }
+  lst[1] = 77
+  return eq(lst.get(1), 77)
+}
+
+
+fun main() -> i64 { return t173_list_push_while_desc_valid_assign() }

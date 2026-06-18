@@ -1,0 +1,8 @@
+fun main() -> i64 {
+  a = [1, 2, 3]
+  sl = a.slice(0, 2)
+  sl[0] += 10
+  if (sl[0] != 11) { return 1 }
+  if (a[0] != 11) { return 2 }
+  return 0
+}

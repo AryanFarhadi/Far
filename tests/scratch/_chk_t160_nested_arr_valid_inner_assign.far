@@ -1,0 +1,8 @@
+fun t160_nested_arr_valid_inner_assign() -> i64 {
+  a = [[1, 2], [3, 4]]
+  a[0][1] = 99
+  return eq(a[0][1], 99)
+}
+
+
+fun main() -> i64 { return t160_nested_arr_valid_inner_assign() }

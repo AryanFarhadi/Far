@@ -1,0 +1,10 @@
+fun zero_call() -> i64 { return 0 }
+
+fun main() -> i64 {
+  n = 0
+  while (1 && zero_call()) {
+    n = n + 1
+    break
+  }
+  return n
+}

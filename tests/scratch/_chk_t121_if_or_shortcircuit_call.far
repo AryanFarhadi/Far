@@ -1,0 +1,8 @@
+fun t121_if_or_shortcircuit_call() -> i64 {
+  n = 0
+  if (0 || zero_call()) { n = 1 }
+  return n
+}
+
+
+fun main() -> i64 { return t121_if_or_shortcircuit_call() }

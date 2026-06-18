@@ -1,0 +1,14 @@
+fun t138_queue_dequeue_cow_independent() -> i64 {
+  q: Queue<i64> = Queue<i64>()
+  q.enqueue(1)
+  q2 = q
+  q2.enqueue(2)
+  if (len(q) != 1) { return 1 }
+  if (q.dequeue() != 1) { return 2 }
+  if (len(q2) != 2) { return 3 }
+  if (q2.dequeue() != 1) { return 4 }
+  return eq(q2.dequeue(), 2)
+}
+
+
+fun main() -> i64 { return t138_queue_dequeue_cow_independent() }

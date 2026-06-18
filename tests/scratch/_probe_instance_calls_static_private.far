@@ -1,0 +1,5 @@
+﻿class Util2 {
+  private static fun secret() -> i64 { return 5 }
+  public fun reveal() -> i64 { return secret() }
+}
+fun main() -> i64 { return Util2().reveal() }
